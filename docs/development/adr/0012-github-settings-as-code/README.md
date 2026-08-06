@@ -69,23 +69,31 @@ CI instead runs two checks, both defined in `.github/workflows/infra.yml`:
 - **`validate`** parses and schema-checks the manifest. It makes no GitHub API call, needs no
   credential, and therefore also runs unmodified on pull requests from forks.
 - **`plan`** reports drift between the manifest and live GitHub state, authenticating with a GitHub
-  App installation token that is granted only `Administration: read`, `Contents: read`,
+  App installation token. The App must be granted exactly `Administration: read`, `Contents: read`,
   `Issues: read`, `Metadata: read`, `Secrets: read`, and `Variables: read` — enough to read every
   setting `gh-infra` manages, and structurally incapable of writing any of them. The last two are
   required even though this manifest declares no `spec.secrets`/`spec.variables`: `gh infra plan`
   was found, empirically, to unconditionally list a repository's secret and variable names while
   building its full state view, regardless of what the manifest itself declares; both permissions
   expose names and metadata only; GitHub never returns secret or variable values through this or
-  any API. It runs on same-repository pull requests (surfacing the diff for review, without `--ci`,
-  since a settings pull request is expected to show one), and with `--ci` on a monthly schedule and
-  on manual dispatch, where any diff means unreviewed drift. Verifying `gh infra plan --ci`'s actual
-  behavior found it exits `0` even when every API call failed to authenticate, so a stale or
-  misconfigured App credential could be silently reported as "no drift"; the `plan` job therefore
-  also runs a preflight API read with the same token before calling `plan`, and separately fails if
-  `plan`'s own output reports repositories skipped due to errors, regardless of `plan`'s exit code.
-  This preflight guard was itself confirmed live: the App's first token, granted only the first four
-  permissions, made `plan` fail to list secrets with an HTTP 403, and the job correctly failed
-  instead of reporting false "no drift".
+  any API. The workflow does not narrow the minted token to an explicit permission subset the way
+  it initially did: `actions/create-github-app-token@v3.2.0` has no input for the `Variables`
+  permission at all, and requesting any explicit subset excludes everything unlisted regardless of
+  what the installation actually grants, so a partial narrowing (five requested permissions plus
+  whatever Variables access the App happens to have) is not expressible with this action. The App's
+  own installation permissions are therefore the only boundary on this token, which is why they
+  must be exactly those six, read-only, with nothing else granted. It runs on same-repository pull
+  requests (surfacing the diff for review, without `--ci`, since a settings pull request is expected
+  to show one), and with `--ci` on a monthly schedule and on manual dispatch, where any diff means
+  unreviewed drift. Verifying `gh infra plan --ci`'s actual behavior found it exits `0` even when
+  every API call failed to authenticate, so a stale or misconfigured App credential could be
+  silently reported as "no drift"; the `plan` job therefore also runs a preflight API read with the
+  same token before calling `plan`, and separately fails if `plan`'s own output reports repositories
+  skipped due to errors, regardless of `plan`'s exit code. This preflight guard was itself confirmed
+  live, twice: an App granted only four of the six permissions made `plan` fail to list secrets with
+  an HTTP 403, and, after adding `Secrets: read`, an App still missing `Variables: read` made it fail
+  to list variables the same way — both times the job correctly failed instead of reporting false
+  "no drift".
 
 The full operating model, the token/permission table, and the settings `gh-infra` cannot manage at
 all (GitHub Pages, Environments, the CodeQL default setup, webhooks, and others) are documented in
@@ -121,6 +129,13 @@ here.
 - `authoritative` reconcile makes deleting a manifest entry a real deletion: removing a label
   strips it from every issue and pull request currently carrying it. `gh infra plan` must be
   reviewed before every `apply`.
+- The `plan` job's token carries no App-side narrowing to an explicit permission subset, since
+  `actions/create-github-app-token@v3.2.0` cannot express the `Variables` permission and any
+  narrowing would otherwise silently exclude it. The App's own installation permissions are the
+  only thing keeping this token to exactly six read scopes; a future accidental grant of a seventh
+  permission, or of write access on any of the six, would flow into the token unnoticed by anything
+  in this repository, rather than being caught immediately the way an over-broad request would have
+  been with explicit narrowing.
 
 ### Neutral
 

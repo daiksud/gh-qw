@@ -70,32 +70,23 @@ jobs:
         with:
           app-id: ${{ secrets.GH_INFRA_APP_ID }}
           private-key: ${{ secrets.GH_INFRA_APP_PRIVATE_KEY }}
-          # Narrows the minted token to exactly these read permissions and
-          # errors out if the App installation is missing any of them,
-          # instead of silently issuing an under- or over-scoped token. This
-          # is a second, executable check on top of the App's own
-          # (read-only) installation permissions.
-          #
-          # secrets is required even though gh-qw declares none in spec:
-          # `gh infra plan` unconditionally lists a repository's secret
-          # names while building its full state view, regardless of what
-          # the manifest declares (verified empirically - it fails
-          # fetching secrets with HTTP 403 otherwise). This exposes
-          # names/metadata only; GitHub never returns secret values through
-          # this or any API.
-          #
-          # There is deliberately no permission-variables line: this
-          # action's create-github-app-token@v3.2.0 does not recognize that
-          # input at all (confirmed against its action.yml) even though
-          # "Variables" is a real, grantable GitHub App permission: passing
-          # it is silently dropped with a warning, not enforced. If `gh
-          # infra plan` turns out to need Variables too, granting it on the
-          # App is not narrowable here the way the others are.
-          permission-administration: read
-          permission-secrets: read
-          permission-contents: read
-          permission-issues: read
-          permission-metadata: read
+          # No permission-* narrowing here, deliberately. `gh infra plan`
+          # needs Administration/Contents/Issues/Metadata/Secrets/Variables
+          # (all read) - the last two only to list secret/variable names
+          # while building its full state view, even though this manifest
+          # declares neither (verified empirically via HTTP 403s on each
+          # in turn). create-github-app-token@v3.2.0 has no
+          # permission-variables input at all (confirmed against its
+          # action.yml), and specifying any permission-* input narrows the
+          # token to exactly that explicit set - there is no way to narrow
+          # to "these five, plus whatever Variables the app has" with this
+          # action. The App's own installation permissions are therefore
+          # the only boundary on this token: it must be granted exactly
+          # Administration/Contents/Issues/Metadata/Secrets/Variables, all
+          # read-only, and nothing else - see the repository settings
+          # reference for the authoritative list. A misconfigured
+          # installation is still caught, just one step later, by the
+          # preflight and plan/guard steps below rather than at minting.
 
       - name: Preflight - confirm the token can read admin-scoped settings
         # `gh infra plan --ci` exits 0 even when every API call failed to

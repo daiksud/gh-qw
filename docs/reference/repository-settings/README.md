@@ -69,16 +69,20 @@ never returns secret or variable values through this or any API.
 
 - **`validate`** makes no GitHub API call at all and needs no credential. It runs unmodified on
   pull requests from forks, where secrets are never available.
-- **`plan`** authenticates with a GitHub App installation token scoped to **`Administration: read`,
-  `Contents: read`, `Issues: read`, `Metadata: read`, `Secrets: read`, `Variables: read` only** —
-  enough to detect drift in everything the manifest manages, and structurally incapable of writing
-  any of it. The App must be installed on `daiksud/gh-qw` with exactly those six permissions as
-  read-only, with its ID and private key stored as the `GH_INFRA_APP_ID` and
-  `GH_INFRA_APP_PRIVATE_KEY` repository secrets. The workflow
-  additionally requests the same six permissions explicitly on the minted token
-  (`permission-administration: read`, etc.); requesting a permission the App installation lacks
-  fails the token-minting step outright, so a misconfigured App is caught immediately rather than
-  producing an under-scoped token silently.
+- **`plan`** authenticates with a GitHub App installation token. The App must be installed on
+  `daiksud/gh-qw` with **exactly** `Administration: read`, `Contents: read`, `Issues: read`,
+  `Metadata: read`, `Secrets: read`, and `Variables: read` — enough to detect drift in everything
+  the manifest manages, and structurally incapable of writing any of it — with its ID and private
+  key stored as the `GH_INFRA_APP_ID` and `GH_INFRA_APP_PRIVATE_KEY` repository secrets. The
+  workflow does **not** narrow the minted token to an explicit permission subset:
+  `actions/create-github-app-token@v3.2.0` has no input for the `Variables` permission at all
+  (confirmed against its `action.yml`), and specifying any explicit permission subset excludes
+  everything unlisted regardless of what the installation grants — there is no way to request "the
+  other five, plus whatever Variables access the App has" with this action. The App's own
+  installation permissions are therefore the only boundary on this token, which is why they must be
+  exactly those six, read-only, with nothing else granted; a misconfigured installation is still
+  caught, one step later, by the preflight and output-scanning guards described below rather than
+  at token-minting.
 
 No credential in this repository's CI can apply a settings change. `apply` requires a fine-grained
 personal access token or GitHub App installation token with `Administration: write`, deliberately
