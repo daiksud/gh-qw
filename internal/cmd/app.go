@@ -261,7 +261,10 @@ func Execute(
 	command.SetArgs(args)
 
 	if err := command.Execute(); err != nil {
-		_, _ = fmt.Fprintf(command.ErrOrStderr(), "gh-qw: %v\n", err)
+		var silent *silentStatusError
+		if !errors.As(err, &silent) {
+			_, _ = fmt.Fprintf(command.ErrOrStderr(), "gh-qw: %v\n", err)
+		}
 		return ExitCode(err)
 	}
 	return 0
@@ -271,6 +274,10 @@ func Execute(
 func ExitCode(err error) int {
 	if err == nil {
 		return 0
+	}
+	var silent *silentStatusError
+	if errors.As(err, &silent) {
+		return silent.status
 	}
 	for _, usageError := range []error{
 		ErrCommandUsage,

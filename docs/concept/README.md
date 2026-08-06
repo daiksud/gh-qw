@@ -73,6 +73,10 @@ Compatibility is limited to the directory convention and familiar repository ide
 - multiple version-control systems or `--vcs`; or
 - Git-config-backed settings such as `ghq.root`.
 
+`list --fzf` composes with the external `fzf` executable for interactive selection, but it still
+only ever prints the selected entry's absolute path; `gh-qw` itself never launches a shell or
+changes directory (see [ADR-0009](../development/adr/0009-interactive-selection-via-fzf/)).
+
 Normal settings belong to `gh-qw`'s configuration file or environment. Migration may inspect
 ghq settings only to locate a source root; they do not become ongoing `gh-qw` configuration.
 

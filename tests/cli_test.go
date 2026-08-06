@@ -434,6 +434,60 @@ func TestCLIGetFailsClearlyWhenGhSubprocessFails(t *testing.T) {
 	assertPathMissing(t, wantPath)
 }
 
+// TestCLIListFzfSelectionAndExitStatuses exercises `list --fzf` end-to-end
+// against a fake fzf (see buildFakeFzf) standing in for the real,
+// interactive picker. It confirms: a real selection prints the entry's
+// absolute path exactly like other gh-qw path output (so a caller can
+// `cd "$(gh qw list --fzf)"`); canceling fzf (Esc/Ctrl-C, exit 130) and fzf
+// finding no match (exit 1) both exit with that same status but produce no
+// output at all, including no "gh-qw: " diagnostic line; and any other fzf
+// failure (exit 2) is reported clearly with gh-qw's usual diagnostic
+// prefix.
+func TestCLIListFzfSelectionAndExitStatuses(t *testing.T) {
+	fixture := newCLIFixture(t)
+	remoteURL := fixture.createBareRemote(t, "acme", "widget")
+	fixture.seedRemote(t, remoteURL)
+
+	mainPath := filepath.Join(fixture.repository, "github.com", "acme", "widget")
+	fixture.cloneMain(t, remoteURL, mainPath)
+	assertPathExists(t, mainPath)
+
+	fakeFzfDir := fixture.buildFakeFzf(t)
+	baseEnv := fixture.envWithPathPrepended(fakeFzfDir)
+
+	t.Run("selection prints absolute path", func(t *testing.T) {
+		env := append(append([]string(nil), baseEnv...), "FAKE_FZF_SELECT="+testIdentity)
+		result := fixture.runCLIWithEnv(t, env, "list", "--fzf")
+		assertStatus(t, result, 0)
+		assertStdout(t, result, filepath.ToSlash(mainPath)+"\n")
+		assertStderr(t, result, "")
+	})
+
+	t.Run("cancellation exits 130 without any output", func(t *testing.T) {
+		env := append(append([]string(nil), baseEnv...), "FAKE_FZF_EXIT_CODE=130")
+		result := fixture.runCLIWithEnv(t, env, "list", "--fzf")
+		assertStatus(t, result, 130)
+		assertStdout(t, result, "")
+		assertStderr(t, result, "")
+	})
+
+	t.Run("no match exits 1 without any output", func(t *testing.T) {
+		env := append(append([]string(nil), baseEnv...), "FAKE_FZF_EXIT_CODE=1")
+		result := fixture.runCLIWithEnv(t, env, "list", "--fzf")
+		assertStatus(t, result, 1)
+		assertStdout(t, result, "")
+		assertStderr(t, result, "")
+	})
+
+	t.Run("other fzf failure is reported", func(t *testing.T) {
+		env := append(append([]string(nil), baseEnv...), "FAKE_FZF_EXIT_CODE=2")
+		result := fixture.runCLIWithEnv(t, env, "list", "--fzf")
+		assertStatus(t, result, 1)
+		assertStdout(t, result, "")
+		assertContains(t, result.stderr, "gh-qw:")
+	})
+}
+
 func newCLIFixture(t *testing.T) *cliFixture {
 	t.Helper()
 
@@ -763,6 +817,82 @@ func (fixture *cliFixture) buildFailingFakeGh(t *testing.T) string {
 		t.Fatalf("build failing fake gh: %v\n%s", err, buildOutput.String())
 	}
 	return failingGhDir
+}
+
+// fakeFzfSource is a minimal stand-in for the real fzf executable, built by
+// buildFakeFzf. It always drains its candidate list from stdin first,
+// mirroring real fzf's own stdin usage (see internal/fzf.Runner.Select), so
+// gh-qw's stdin-copy goroutine never sees a broken pipe. Its behavior is
+// then controlled entirely by environment variables instead of an
+// interactive terminal: a non-empty FAKE_FZF_EXIT_CODE exits with that
+// status and no output, letting a test simulate cancellation (130), no
+// match (1), or an fzf-reported error (2); otherwise it prints
+// FAKE_FZF_SELECT to stdout and exits 0, simulating a real selection. This
+// lets CLI tests exercise gh-qw's real `list --fzf` pipeline end-to-end
+// without depending on a real, interactive fzf being installed or a
+// controlling terminal being available in CI.
+const fakeFzfSource = `package main
+
+import (
+	"fmt"
+	"io"
+	"os"
+	"strconv"
+)
+
+func main() {
+	if _, err := io.ReadAll(os.Stdin); err != nil {
+		fmt.Fprintf(os.Stderr, "fake fzf: read stdin: %v\n", err)
+		os.Exit(1)
+	}
+
+	if raw := os.Getenv("FAKE_FZF_EXIT_CODE"); raw != "" {
+		code, err := strconv.Atoi(raw)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "fake fzf: invalid FAKE_FZF_EXIT_CODE %q\n", raw)
+			os.Exit(1)
+		}
+		os.Exit(code)
+	}
+
+	selection := os.Getenv("FAKE_FZF_SELECT")
+	if selection == "" {
+		fmt.Fprintln(os.Stderr, "fake fzf: FAKE_FZF_SELECT is required")
+		os.Exit(2)
+	}
+	fmt.Fprintln(os.Stdout, selection)
+}
+`
+
+// buildFakeFzf compiles fakeFzfSource into an executable named fzf (fzf.exe
+// on Windows) and returns the directory containing it, ready to be
+// prepended onto PATH (see envWithPathPrepended) so gh-qw's own `list
+// --fzf` resolves it instead of any real fzf installed on the host running
+// this test.
+func (fixture *cliFixture) buildFakeFzf(t *testing.T) string {
+	t.Helper()
+
+	sourcePath := filepath.Join(t.TempDir(), "fakefzf.go")
+	if err := os.WriteFile(sourcePath, []byte(fakeFzfSource), 0o644); err != nil {
+		t.Fatalf("write fake fzf source: %v", err)
+	}
+
+	fakeFzfDir := filepath.Join(fixture.base, "fakebin-fzf")
+	if err := os.MkdirAll(fakeFzfDir, 0o755); err != nil {
+		t.Fatalf("create fake fzf directory: %v", err)
+	}
+	fakeFzfPath := filepath.Join(fakeFzfDir, "fzf")
+	if runtime.GOOS == "windows" {
+		fakeFzfPath += ".exe"
+	}
+	build := exec.Command("go", "build", "-o", fakeFzfPath, sourcePath)
+	var buildOutput bytes.Buffer
+	build.Stdout = &buildOutput
+	build.Stderr = &buildOutput
+	if err := build.Run(); err != nil {
+		t.Fatalf("build fake fzf: %v\n%s", err, buildOutput.String())
+	}
+	return fakeFzfDir
 }
 
 // envWithPathPrepended returns a copy of fixture.env with directory

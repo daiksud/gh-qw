@@ -46,3 +46,4 @@ it appear that the new choice was always in effect.
 | [0006](0006-command-set-v1/) | Define the v1 command set | Accepted |
 | [0007](0007-configuration-sources/) | Configure gh-qw through its file and environment variables | Accepted |
 | [0008](0008-conventional-commits-and-release-notes/) | Adopt Conventional Commits and automated release notes | Accepted |
+| [0009](0009-interactive-selection-via-fzf/) | Add fzf-based interactive selection to list | Accepted |
