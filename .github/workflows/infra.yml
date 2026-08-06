@@ -98,6 +98,11 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
 
+      - name: TEMP DEBUG - raw repo fields via app token
+        run: gh api "repos/${{ github.repository }}" --jq '{allow_auto_merge,squash_merge_commit_title,merge_commit_title,merge_commit_message,squash_merge_commit_message,has_pull_requests,pull_request_creation_policy}'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+
       - name: Run plan and enforce drift/failure detection
         run: |
           set -o pipefail
