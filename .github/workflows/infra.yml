@@ -18,12 +18,21 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # NOTE: sha_pinning_required is enforced repo-wide (see
+  # .github/settings.yml -> spec.actions.sha_pinning_required), with no
+  # exemption for GitHub-owned actions in practice, despite
+  # .github/instructions/actions.instructions.md documenting major-tag
+  # pinning as sufficient for actions published by GitHub. This workflow
+  # pins every action to a full commit SHA to comply with what GitHub
+  # actually enforces; the instructions file and the repository's other,
+  # pre-existing workflows were not touched here, since reconciling that
+  # repo-wide policy mismatch is a separate decision outside this change.
   validate:
     name: Validate settings manifest
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install gh-infra
         # Pinned: gh-infra treats unknown YAML keys as hard errors, so the
@@ -48,7 +57,7 @@ jobs:
       github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - name: Check out repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install gh-infra
         run: gh extension install babarot/gh-infra --pin v0.13.0
@@ -57,7 +66,7 @@ jobs:
 
       - name: Mint read-only installation token
         id: app-token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         with:
           app-id: ${{ secrets.GH_INFRA_APP_ID }}
           private-key: ${{ secrets.GH_INFRA_APP_PRIVATE_KEY }}
