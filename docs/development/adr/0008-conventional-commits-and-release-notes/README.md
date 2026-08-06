@@ -9,7 +9,7 @@ timestamp: 2026-08-05
 
 # ADR-0008: Adopt Conventional Commits and automated release notes
 
-- **Status:** Accepted
+- **Status:** Superseded by [ADR-0011](../0011-type-named-release-labels/)
 - **Date:** 2026-08-05
 - **Deciders:** gh-qw maintainers
 - **Related:** [ADR-0002](../0002-distribute-as-gh-cli-extension/), [ADR-0003](../0003-go-cobra-prebuilt-binaries/)

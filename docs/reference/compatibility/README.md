@@ -10,8 +10,9 @@ timestamp: 2026-08-06
 # Compatibility reference
 
 This page records the current compatibility and interoperability contracts for `gh-qw`. The
-[CLI reference](../cli/) and [configuration reference](../configuration/) are normative; the
-tables below connect those contracts to implementation and regression evidence.
+[CLI reference](../cli/), [configuration reference](../configuration/), and
+[versioning reference](../versioning/) are normative; the tables below connect those contracts to
+implementation and regression evidence.
 
 ## ghq compatibility
 

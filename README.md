@@ -94,6 +94,7 @@ roots, path safety, and ghq migration source discovery.
 - [Concept](docs/concept/README.md)
 - [CLI reference](docs/reference/cli/README.md)
 - [Configuration reference](docs/reference/configuration/README.md)
+- [Versioning reference](docs/reference/versioning/README.md)
 - [Compatibility reference](docs/reference/compatibility/README.md)
 - [Architecture decisions](docs/development/README.md)
 

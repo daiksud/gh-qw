@@ -45,5 +45,7 @@ it appear that the new choice was always in effect.
 | [0005](0005-dedicated-worktree-root/) | Use a dedicated worktree root and `worktree` subcommand | Accepted |
 | [0006](0006-command-set-v1/) | Define the v1 command set | Accepted |
 | [0007](0007-configuration-sources/) | Configure gh-qw through its file and environment variables | Accepted |
-| [0008](0008-conventional-commits-and-release-notes/) | Adopt Conventional Commits and automated release notes | Accepted |
+| [0008](0008-conventional-commits-and-release-notes/) | Adopt Conventional Commits and automated release notes | Superseded by [0011](0011-type-named-release-labels/) |
 | [0009](0009-interactive-selection-via-fzf/) | Add fzf-based interactive selection to list | Accepted |
+| [0010](0010-public-api-and-semantic-versioning/) | Declare a public API and follow Semantic Versioning | Accepted |
+| [0011](0011-type-named-release-labels/) | Name release labels after Conventional Commits types | Accepted |

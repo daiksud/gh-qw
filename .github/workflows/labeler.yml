@@ -1,0 +1,27 @@
+name: Labeler
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  labeler:
+    name: Apply labels
+    runs-on: ubuntu-latest
+    steps:
+      # No checkout: actions/labeler reads .github/labeler.yml from the base
+      # repository through the GitHub API, so a fork pull request's code is
+      # never checked out or executed by this privileged pull_request_target
+      # workflow.
+      - name: Apply labels from branch name and changed files
+        uses: actions/labeler@v7
+        with:
+          sync-labels: true
