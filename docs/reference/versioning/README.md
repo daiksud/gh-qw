@@ -158,7 +158,11 @@ introduce ambiguity into the version computation.
 
 ### Label colors
 
-Label color encodes both the SemVer tier and whether a label affects the version:
+Label color encodes both the SemVer tier and whether a label affects the version. The labels
+themselves — their exact colors and descriptions — are defined once, in
+[`.github/settings.yml`](https://github.com/daiksud/gh-qw/blob/main/.github/settings.yml) (see the
+[repository settings reference](../repository-settings/)); this section explains the rationale
+behind that scheme, not the literal values:
 
 - **`BREAKING CHANGE`** uses solid red — the MAJOR tier (MINOR today, under `0.y.z`).
 - **`DEPRECATED`** uses solid yellow, deliberately outside the red/green/blue tiers below: it is a

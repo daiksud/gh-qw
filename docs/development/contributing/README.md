@@ -12,7 +12,8 @@ timestamp: 2026-08-05
 Keep changes focused and preserve the contracts in the [concept](../../concept/),
 [CLI reference](../../reference/cli/), [configuration reference](../../reference/configuration/),
 [versioning reference](../../reference/versioning/),
-[compatibility reference](../../reference/compatibility/), and
+[compatibility reference](../../reference/compatibility/),
+[repository settings reference](../../reference/repository-settings/), and
 [Architecture Decision Records](../adr/). Record a future durable choice by copying the
 [ADR template](../adr/template/) and follow ADR-0001's immutability policy after acceptance.
 
@@ -44,6 +45,32 @@ Every merged pull request's label feeds both the generated release notes and a t
 job that computes the next release version from those labels and fails the release if a pushed tag
 does not match. See the [versioning reference](../../reference/versioning/) for the full public API
 declaration, the `0.y.z` version-selection rule, and the exhaustive label table.
+
+## Repository settings
+
+`.github/settings.yml` declares GitHub repository settings — labels, merge strategy, security
+options, and rulesets — as a `gh-infra` manifest. To change a setting:
+
+1. Edit `.github/settings.yml` and open a pull request.
+2. CI validates the manifest and, for same-repository pull requests, posts a `gh infra plan` diff
+   to the job summary. Review that diff like any other code change.
+3. After merge, a maintainer applies the change from a local machine:
+
+   ```console
+   $ gh extension install babarot/gh-infra --pin v0.13.0
+   $ gh infra plan .github/settings.yml
+   $ gh infra apply .github/settings.yml
+   ```
+
+Always pass the file path, not the `.github/` directory, to `gh-infra` — a directory argument also
+scans non-manifest YAML such as `labeler.yml`, which `gh-infra` silently skips by default, but the
+file path avoids relying on that behavior. `apply` is never run in CI; see
+[ADR-0012](../adr/0012-github-settings-as-code/) for why.
+
+`.github/settings.yml` reconciles labels and rulesets **authoritatively**: an entry removed from
+the manifest is deleted on GitHub, not merely left untracked. Always review `gh infra plan`'s
+output before running `apply`. See the
+[repository settings reference](../../reference/repository-settings/) for the full contract.
 
 ## Validate changes
 
