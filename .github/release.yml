@@ -1,38 +1,41 @@
+# Categorizes generated GitHub Release notes by pull request label. See the
+# versioning reference (docs/reference/versioning/) and ADR-0011 for the full
+# label vocabulary and version-impact rules; this file is the executable half
+# of the release-notes contract. Categories are evaluated top to bottom, and
+# a pull request's first matching category wins.
+#
+# No exclude list: every merged pull request is visible in the release notes
+# it ships in (see the versioning reference's "no override, no re-release"
+# policy).
 changelog:
-  exclude:
-    labels:
-      - skip-release
   categories:
-    - title: Breaking Changes
+    - title: "💥 BREAKING CHANGE"
       labels:
-        - breaking
-    - title: Features
+        - "BREAKING CHANGE"
+    - title: "⚠️ DEPRECATED"
+      labels:
+        - "DEPRECATED"
+    - title: "🚀 Features"
       labels:
         - feat
-    - title: Bug Fixes
+        - perf
+    - title: "🐛 Bug Fixes"
       labels:
         - fix
-    - title: Performance Improvements
+    - title: "⏪ Reverts"
       labels:
-        - perf
-    - title: Documentation
+        - revert
+    - title: "📝 Documentation"
       labels:
         - docs
-    - title: Code Quality
+    - title: "🧹 Maintenance"
       labels:
         - refactor
         - style
         - test
-    - title: Build and CI
-      labels:
         - build
         - ci
-    - title: Maintenance
-      labels:
         - chore
-    - title: Reverts
-      labels:
-        - revert
-    - title: Other Changes
+    - title: "🔧 Other Changes"
       labels:
         - "*"

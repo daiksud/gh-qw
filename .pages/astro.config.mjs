@@ -15,6 +15,9 @@ const adrPages = [
   '0006-command-set-v1',
   '0007-configuration-sources',
   '0008-conventional-commits-and-release-notes',
+  '0009-interactive-selection-via-fzf',
+  '0010-public-api-and-semantic-versioning',
+  '0011-type-named-release-labels',
 ].map((name) => `development/adr/${name}/index`);
 
 export default defineConfig({
@@ -68,6 +71,7 @@ export default defineConfig({
               label: 'Configuration',
               link: 'reference/configuration/index',
             },
+            { label: 'Versioning', link: 'reference/versioning/index' },
           ],
         },
         {

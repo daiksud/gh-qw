@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: read
 
 defaults:
   run:
@@ -17,8 +18,120 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  version-check:
+    name: Verify tag version
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check out full history and tags
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Compute and enforce the expected version
+        run: |
+          set -euo pipefail
+
+          # gh-qw's public API, SemVer policy, and label vocabulary are
+          # defined in docs/reference/versioning/ and ADR-0010/ADR-0011. This
+          # step is their sole executable enforcement point: it recomputes
+          # the version this tag should be from the labels of every pull
+          # request merged since the last release, and fails the workflow —
+          # before any artifact is built or any release is created — if the
+          # pushed tag disagrees, or if nothing merged since the last
+          # release actually affects the version. There is no override.
+          CURRENT_TAG="${GITHUB_REF_NAME}"
+
+          if [[ ! "$CURRENT_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Tag '${CURRENT_TAG}' is not a plain v<major>.<minor>.<patch> release tag." >&2
+            exit 1
+          fi
+          CURRENT_SHA="$(git rev-list -n 1 "$CURRENT_TAG")"
+
+          # Find the highest v<major>.<minor>.<patch> tag that is both an
+          # ancestor of this tag's commit and not this tag itself: the
+          # release this tag is meant to follow.
+          mapfile -t CANDIDATE_TAGS < <(
+            git tag -l 'v*' \
+              | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+              | grep -v -x "$CURRENT_TAG" || true
+          )
+          ANCESTOR_TAGS=()
+          for tag in "${CANDIDATE_TAGS[@]}"; do
+            tag_sha="$(git rev-list -n 1 "$tag")"
+            if git merge-base --is-ancestor "$tag_sha" "$CURRENT_SHA"; then
+              ANCESTOR_TAGS+=("$tag")
+            fi
+          done
+
+          if [ "${#ANCESTOR_TAGS[@]}" -eq 0 ]; then
+            echo "::error::No earlier v<major>.<minor>.<patch> tag reachable from ${CURRENT_TAG}; cannot compute its expected version." >&2
+            exit 1
+          fi
+          PREV_TAG="$(printf '%s\n' "${ANCESTOR_TAGS[@]}" | sort -V | tail -n1)"
+          PREV_SHA="$(git rev-list -n 1 "$PREV_TAG")"
+
+          IFS='.' read -r PREV_MAJOR PREV_MINOR PREV_PATCH <<< "${PREV_TAG#v}"
+
+          # gh-qw only implements the documented 0.y.z policy (breaking
+          # change -> MINOR, every other version-affecting change -> PATCH;
+          # see docs/reference/versioning/#versioning-during-major-version-zero).
+          # Declaring 1.0.0 is a deliberate decision this job never makes on
+          # its own (see ADR-0010) — update this job first if that decision
+          # is ever made.
+          if [ "$PREV_MAJOR" != "0" ]; then
+            echo "::error::Previous release ${PREV_TAG} is already major version ${PREV_MAJOR}; this job only implements the 0.y.z policy documented in docs/reference/versioning/. Update it before tagging past 1.0.0." >&2
+            exit 1
+          fi
+
+          # Collect the version-affecting labels of every pull request
+          # merged since ${PREV_TAG}, resolved from each new commit's
+          # associated pull request rather than parsed from squash-merge
+          # subjects.
+          HAS_BREAKING=false
+          HAS_VERSION_LABEL=false
+          declare -A SEEN_PRS
+          while IFS= read -r sha; do
+            [ -z "$sha" ] && continue
+            pr_numbers="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${sha}/pulls" --jq '.[].number' 2>/dev/null || true)"
+            for pr in $pr_numbers; do
+              [ -n "${SEEN_PRS[$pr]:-}" ] && continue
+              SEEN_PRS[$pr]=1
+              labels="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr}" --jq '.labels[].name')"
+              while IFS= read -r label; do
+                case "$label" in
+                  "BREAKING CHANGE")
+                    HAS_BREAKING=true
+                    HAS_VERSION_LABEL=true
+                    ;;
+                  "DEPRECATED" | feat | perf | fix | revert)
+                    HAS_VERSION_LABEL=true
+                    ;;
+                esac
+              done <<< "$labels"
+            done
+          done < <(git log --format=%H "${PREV_SHA}..${CURRENT_SHA}")
+
+          if $HAS_BREAKING; then
+            EXPECTED_TAG="v${PREV_MAJOR}.$((PREV_MINOR + 1)).0"
+          elif $HAS_VERSION_LABEL; then
+            EXPECTED_TAG="v${PREV_MAJOR}.${PREV_MINOR}.$((PREV_PATCH + 1))"
+          else
+            echo "::error::No pull request merged since ${PREV_TAG} carries a version-affecting label (BREAKING CHANGE, DEPRECATED, feat, perf, fix, revert). Refusing to release ${CURRENT_TAG}." >&2
+            exit 1
+          fi
+
+          if [ "$CURRENT_TAG" != "$EXPECTED_TAG" ]; then
+            echo "::error::Tag ${CURRENT_TAG} does not match the version computed from merged pull requests since ${PREV_TAG} (expected ${EXPECTED_TAG}). There is no override; push the correct tag instead." >&2
+            exit 1
+          fi
+
+          echo "Verified ${CURRENT_TAG} against ${PREV_TAG} (expected ${EXPECTED_TAG})."
+
   build:
     name: Build ${{ matrix.asset }}
+    needs: version-check
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
