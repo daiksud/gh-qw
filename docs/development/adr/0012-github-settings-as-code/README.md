@@ -70,15 +70,22 @@ CI instead runs two checks, both defined in `.github/workflows/infra.yml`:
   credential, and therefore also runs unmodified on pull requests from forks.
 - **`plan`** reports drift between the manifest and live GitHub state, authenticating with a GitHub
   App installation token that is granted only `Administration: read`, `Contents: read`,
-  `Issues: read`, and `Metadata: read` — enough to read every setting `gh-infra` manages, and
-  structurally incapable of writing any of them. It runs on same-repository pull requests (surfacing
-  the diff for review, without `--ci`, since a settings pull request is expected to show one), and
-  with `--ci` on a monthly schedule and on manual dispatch, where any diff means unreviewed drift.
-  Verifying `gh infra plan --ci`'s actual behavior found it exits `0` even when every API call failed
-  to authenticate, so a stale or misconfigured App credential could be silently reported as "no
-  drift"; the `plan` job therefore also runs a preflight API read with the same token before calling
-  `plan`, and separately fails if `plan`'s own output reports repositories skipped due to errors,
-  regardless of `plan`'s exit code.
+  `Issues: read`, `Metadata: read`, `Secrets: read`, and `Variables: read` — enough to read every
+  setting `gh-infra` manages, and structurally incapable of writing any of them. The last two are
+  required even though this manifest declares no `spec.secrets`/`spec.variables`: `gh infra plan`
+  was found, empirically, to unconditionally list a repository's secret and variable names while
+  building its full state view, regardless of what the manifest itself declares; both permissions
+  expose names and metadata only; GitHub never returns secret or variable values through this or
+  any API. It runs on same-repository pull requests (surfacing the diff for review, without `--ci`,
+  since a settings pull request is expected to show one), and with `--ci` on a monthly schedule and
+  on manual dispatch, where any diff means unreviewed drift. Verifying `gh infra plan --ci`'s actual
+  behavior found it exits `0` even when every API call failed to authenticate, so a stale or
+  misconfigured App credential could be silently reported as "no drift"; the `plan` job therefore
+  also runs a preflight API read with the same token before calling `plan`, and separately fails if
+  `plan`'s own output reports repositories skipped due to errors, regardless of `plan`'s exit code.
+  This preflight guard was itself confirmed live: the App's first token, granted only the first four
+  permissions, made `plan` fail to list secrets with an HTTP 403, and the job correctly failed
+  instead of reporting false "no drift".
 
 The full operating model, the token/permission table, and the settings `gh-infra` cannot manage at
 all (GitHub Pages, Environments, the CodeQL default setup, webhooks, and others) are documented in

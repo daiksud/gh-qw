@@ -75,7 +75,17 @@ jobs:
           # instead of silently issuing an under- or over-scoped token. This
           # is a second, executable check on top of the App's own
           # (read-only) installation permissions.
+          #
+          # secrets/variables are required even though gh-qw declares
+          # neither in spec: `gh infra plan` unconditionally lists a
+          # repository's secret and variable names while building its full
+          # state view, regardless of what the manifest declares (verified
+          # empirically - it fails fetching secrets with HTTP 403 otherwise).
+          # Both permissions expose names/metadata only; GitHub never
+          # returns secret or variable values through this or any API.
           permission-administration: read
+          permission-secrets: read
+          permission-variables: read
           permission-contents: read
           permission-issues: read
           permission-metadata: read

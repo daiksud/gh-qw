@@ -54,24 +54,28 @@ ADR-0012 for how this was verified against `gh-infra`'s source. Consequently:
 
 | Operation | Required permission | `GITHUB_TOKEN`? |
 | --- | --- | --- |
-| Read settings (`gh infra plan`) | `Administration: read`, `Contents: read`, `Issues: read`, `Metadata: read` | No — none of these reads are available to `GITHUB_TOKEN` for `Administration` |
+| Read settings (`gh infra plan`) | `Administration: read`, `Contents: read`, `Issues: read`, `Metadata: read`, `Secrets: read`, `Variables: read` | No — none of these reads are available to `GITHUB_TOKEN` for `Administration` |
 | Write labels / milestones | `Issues: write` | Yes |
 | Write description / features / merge strategy / topics / visibility / security / rulesets / Actions config | `Administration: write` | No |
 | Write secrets / variables | `Secrets: write` / `Variables: write` | No |
 
-`gh-qw` does not declare `spec.secrets` or `spec.variables` in its manifest, so those rows are shown
-for completeness only.
+`gh-qw` does not declare `spec.secrets` or `spec.variables` in its manifest, but `gh infra plan`
+still needs `Secrets: read` and `Variables: read` regardless: it was found, empirically, to
+unconditionally list a repository's secret and variable names while building its full state view,
+independent of what the manifest declares. Both permissions expose names and metadata only — GitHub
+never returns secret or variable values through this or any API.
 
 `.github/workflows/infra.yml` therefore uses two different credentials:
 
 - **`validate`** makes no GitHub API call at all and needs no credential. It runs unmodified on
   pull requests from forks, where secrets are never available.
 - **`plan`** authenticates with a GitHub App installation token scoped to **`Administration: read`,
-  `Contents: read`, `Issues: read`, `Metadata: read` only** — enough to detect drift in everything
-  the manifest manages, and structurally incapable of writing any of it. The App must be installed
-  on `daiksud/gh-qw` with exactly those four permissions as read-only, with its ID and private key
-  stored as the `GH_INFRA_APP_ID` and `GH_INFRA_APP_PRIVATE_KEY` repository secrets. The workflow
-  additionally requests the same four permissions explicitly on the minted token
+  `Contents: read`, `Issues: read`, `Metadata: read`, `Secrets: read`, `Variables: read` only** —
+  enough to detect drift in everything the manifest manages, and structurally incapable of writing
+  any of it. The App must be installed on `daiksud/gh-qw` with exactly those six permissions as
+  read-only, with its ID and private key stored as the `GH_INFRA_APP_ID` and
+  `GH_INFRA_APP_PRIVATE_KEY` repository secrets. The workflow
+  additionally requests the same six permissions explicitly on the minted token
   (`permission-administration: read`, etc.); requesting a permission the App installation lacks
   fails the token-minting step outright, so a misconfigured App is caught immediately rather than
   producing an under-scoped token silently.
