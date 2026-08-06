@@ -1,0 +1,38 @@
+changelog:
+  exclude:
+    labels:
+      - skip-release
+  categories:
+    - title: Breaking Changes
+      labels:
+        - breaking
+    - title: Features
+      labels:
+        - feat
+    - title: Bug Fixes
+      labels:
+        - fix
+    - title: Performance Improvements
+      labels:
+        - perf
+    - title: Documentation
+      labels:
+        - docs
+    - title: Code Quality
+      labels:
+        - refactor
+        - style
+        - test
+    - title: Build and CI
+      labels:
+        - build
+        - ci
+    - title: Maintenance
+      labels:
+        - chore
+    - title: Reverts
+      labels:
+        - revert
+    - title: Other Changes
+      labels:
+        - "*"

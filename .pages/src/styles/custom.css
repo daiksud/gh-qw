@@ -1,0 +1,95 @@
+@layer starlight, gh-qw;
+
+@layer gh-qw {
+  :root {
+    --sl-color-accent-low: #dafbe1;
+    --sl-color-accent: #1a7f37;
+    --sl-color-accent-high: #0f5323;
+  }
+
+  :root[data-theme='dark'] {
+    --sl-color-accent-low: #0f2d19;
+    --sl-color-accent: #3fb950;
+    --sl-color-accent-high: #aff5b4;
+  }
+
+  .site-title img {
+    width: 2rem;
+    height: 2rem;
+  }
+
+  .hero-html svg {
+    width: 100%;
+    height: auto;
+    filter: drop-shadow(0 1.2rem 2rem rgb(26 127 55 / 18%));
+  }
+
+  .docs-install {
+    margin-block: 1.5rem 2.5rem;
+  }
+
+  .docs-install pre {
+    margin: 0;
+    border: 1px solid color-mix(in srgb, var(--sl-color-accent) 30%, transparent);
+    box-shadow: 0 1rem 2.5rem rgb(31 35 40 / 8%);
+  }
+
+  .docs-card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+    gap: 1rem;
+    margin-block: 1.5rem 3rem;
+  }
+
+  .docs-card {
+    display: flex;
+    min-height: 9rem;
+    flex-direction: column;
+    gap: 0.65rem;
+    padding: 1.25rem;
+    color: var(--sl-color-text);
+    text-decoration: none;
+    background:
+      linear-gradient(145deg, color-mix(in srgb, var(--sl-color-accent-low) 72%, transparent), transparent 72%),
+      var(--sl-color-bg-nav);
+    border: 1px solid var(--sl-color-gray-5);
+    border-radius: 0.85rem;
+    transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+  }
+
+  .docs-card:hover {
+    color: var(--sl-color-text);
+    text-decoration: none;
+    border-color: var(--sl-color-accent);
+    box-shadow: 0 0.85rem 2rem rgb(31 35 40 / 10%);
+    transform: translateY(-2px);
+  }
+
+  .docs-card:focus-visible {
+    outline: 3px solid var(--sl-color-accent);
+    outline-offset: 3px;
+  }
+
+  .docs-card strong {
+    color: var(--sl-color-white);
+    font-size: var(--sl-text-lg);
+    line-height: 1.25;
+  }
+
+  .docs-card span {
+    color: var(--sl-color-gray-2);
+    line-height: 1.55;
+  }
+
+  .docs-card .docs-card-arrow {
+    margin-block-start: auto;
+    color: var(--sl-color-accent-high);
+    font-weight: 650;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .docs-card {
+      transition: none;
+    }
+  }
+}
