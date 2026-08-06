@@ -18,6 +18,7 @@ import (
 	"github.com/daiksud/gh-qw/internal/ghauth"
 	"github.com/daiksud/gh-qw/internal/ghcmd"
 	"github.com/daiksud/gh-qw/internal/gitcmd"
+	"github.com/daiksud/gh-qw/internal/herdr"
 	"github.com/daiksud/gh-qw/internal/local"
 	"github.com/daiksud/gh-qw/internal/repospec"
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
@@ -867,6 +868,145 @@ func TestNewWorktreeAddCommandPropagatesDiagnosticWriteFailure(t *testing.T) {
 	}
 }
 
+func TestNewWorktreeAddCommandHerdrIntegration(t *testing.T) {
+	t.Run("explicit flag inside session creates and focuses a workspace", func(t *testing.T) {
+		fixture := worktreeAddNewFixture(t, "feature/herdr")
+		fixture.git.localBranches[fixture.branch] = true
+		fixture.lookupEnv = alwaysInSession
+
+		if err := fixture.worktreeAddExecute("--herdr", fixture.branch); err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		if len(fixture.herdr.calls) != 1 {
+			t.Fatalf("CreateWorkspace() calls = %d, want 1", len(fixture.herdr.calls))
+		}
+		want := herdr.CreateOptions{
+			Cwd:   fixture.destination,
+			Label: "widget@feature/herdr",
+			Focus: true,
+		}
+		if got := fixture.herdr.calls[0]; got != want {
+			t.Fatalf("CreateWorkspace options = %#v, want %#v", got, want)
+		}
+		if got, want := fixture.stdout.String(), filepath.ToSlash(fixture.destination)+"\n"; got != want {
+			t.Fatalf("stdout = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("explicit flag outside session is a usage error before any mutation", func(t *testing.T) {
+		fixture := worktreeAddNewFixture(t, "feature/herdr-outside")
+		fixture.git.localBranches[fixture.branch] = true
+		fixture.lookupEnv = neverInSession
+
+		err := fixture.worktreeAddExecute("--herdr", fixture.branch)
+		if err == nil || !strings.Contains(err.Error(), "HERDR_ENV") {
+			t.Fatalf("Execute() error = %v, want it to mention HERDR_ENV", err)
+		}
+		if !errors.Is(err, repospec.ErrUsage) {
+			t.Fatalf("Execute() error = %v, want repospec.ErrUsage", err)
+		}
+		if len(fixture.git.adds) != 0 {
+			t.Fatalf("WorktreeAdd() calls = %d, want 0", len(fixture.git.adds))
+		}
+		if len(fixture.herdr.calls) != 0 {
+			t.Fatalf("CreateWorkspace() calls = %d, want 0", len(fixture.herdr.calls))
+		}
+	})
+
+	t.Run("configuration default inside session creates a workspace", func(t *testing.T) {
+		fixture := worktreeAddNewFixture(t, "feature/herdr-config")
+		fixture.git.localBranches[fixture.branch] = true
+		fixture.resolver.result.Herdr = true
+		fixture.lookupEnv = alwaysInSession
+
+		if err := fixture.worktreeAddExecute(fixture.branch); err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		if len(fixture.herdr.calls) != 1 {
+			t.Fatalf("CreateWorkspace() calls = %d, want 1", len(fixture.herdr.calls))
+		}
+	})
+
+	t.Run("configuration default outside session warns and skips", func(t *testing.T) {
+		fixture := worktreeAddNewFixture(t, "feature/herdr-config-outside")
+		fixture.git.localBranches[fixture.branch] = true
+		fixture.resolver.result.Herdr = true
+		fixture.lookupEnv = neverInSession
+
+		if err := fixture.worktreeAddExecute(fixture.branch); err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		if len(fixture.herdr.calls) != 0 {
+			t.Fatalf("CreateWorkspace() calls = %d, want 0", len(fixture.herdr.calls))
+		}
+		if len(fixture.git.adds) != 1 {
+			t.Fatalf("WorktreeAdd() calls = %d, want 1", len(fixture.git.adds))
+		}
+		if !strings.Contains(fixture.stderr.String(), "HERDR_ENV") {
+			t.Fatalf("stderr = %q, want it to mention HERDR_ENV", fixture.stderr.String())
+		}
+		if got, want := fixture.stdout.String(), filepath.ToSlash(fixture.destination)+"\n"; got != want {
+			t.Fatalf("stdout = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("no-herdr overrides the configuration default", func(t *testing.T) {
+		fixture := worktreeAddNewFixture(t, "feature/no-herdr")
+		fixture.git.localBranches[fixture.branch] = true
+		fixture.resolver.result.Herdr = true
+		fixture.lookupEnv = alwaysInSession
+
+		if err := fixture.worktreeAddExecute("--no-herdr", fixture.branch); err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		if len(fixture.herdr.calls) != 0 {
+			t.Fatalf("CreateWorkspace() calls = %d, want 0", len(fixture.herdr.calls))
+		}
+	})
+
+	t.Run("herdr and no-herdr together is a usage error", func(t *testing.T) {
+		fixture := worktreeAddNewFixture(t, "feature/both-flags")
+		fixture.git.localBranches[fixture.branch] = true
+		fixture.lookupEnv = alwaysInSession
+
+		err := fixture.worktreeAddExecute("--herdr", "--no-herdr", fixture.branch)
+		if err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
+			t.Fatalf("Execute() error = %v, want it to mention mutual exclusivity", err)
+		}
+		if !errors.Is(err, repospec.ErrUsage) {
+			t.Fatalf("Execute() error = %v, want repospec.ErrUsage", err)
+		}
+		if len(fixture.git.adds) != 0 {
+			t.Fatalf("WorktreeAdd() calls = %d, want 0", len(fixture.git.adds))
+		}
+	})
+
+	t.Run("workspace creation failure preserves the worktree and its path output", func(t *testing.T) {
+		fixture := worktreeAddNewFixture(t, "feature/herdr-fails")
+		fixture.git.localBranches[fixture.branch] = true
+		fixture.lookupEnv = alwaysInSession
+		wantErr := errors.New("workspace creation failed")
+		fixture.herdr.err = wantErr
+
+		err := fixture.worktreeAddExecute("--herdr", fixture.branch)
+		if !errors.Is(err, wantErr) {
+			t.Fatalf("Execute() error = %v, want %v", err, wantErr)
+		}
+		if errors.Is(err, repospec.ErrUsage) {
+			t.Fatalf("Execute() error = %v, want an ordinary error, not a usage error", err)
+		}
+		if len(fixture.git.adds) != 1 {
+			t.Fatalf("WorktreeAdd() calls = %d, want 1", len(fixture.git.adds))
+		}
+		if _, statErr := os.Stat(fixture.destination); statErr != nil {
+			t.Fatalf("worktree was removed after Herdr failure: %v", statErr)
+		}
+		if got, want := fixture.stdout.String(), filepath.ToSlash(fixture.destination)+"\n"; got != want {
+			t.Fatalf("stdout = %q, want %q", got, want)
+		}
+	})
+}
+
 func TestNewWorktreeAddCommandWritesDiscoveryWarningsToStderr(t *testing.T) {
 	fixture := worktreeAddNewFixture(t, "feature/warning")
 	fixture.git.localBranches[fixture.branch] = true
@@ -967,6 +1107,8 @@ type worktreeAddFixture struct {
 	gh              *worktreeAddGh
 	api             *worktreeAddAPI
 	accountResolver *worktreeAddAccountResolver
+	herdr           *worktreeAddHerdr
+	lookupEnv       func(string) (string, bool)
 
 	initialWorktrees []local.Worktree
 	enumerateCalls   int
@@ -1030,7 +1172,9 @@ func worktreeAddNewFixture(t *testing.T, branch string) *worktreeAddFixture {
 		accountResolver: &worktreeAddAccountResolver{
 			resolution: ghauth.Resolution{Source: ghauth.SourceExplicitEnv},
 		},
-		cwd: repository.Path,
+		herdr:     &worktreeAddHerdr{},
+		lookupEnv: func(string) (string, bool) { return "", false },
+		cwd:       repository.Path,
 	}
 	fixture.destination = worktreeAddDestination(worktreeRoot, repository, branch)
 	fixture.initialWorktrees = []local.Worktree{{
@@ -1150,6 +1294,8 @@ func (fixture *worktreeAddFixture) worktreeAddExecute(args ...string) error {
 		Gh:              fixture.gh,
 		API:             fixture.api,
 		AccountResolver: fixture.accountResolver,
+		Herdr:           fixture.herdr,
+		LookupEnv:       fixture.lookupEnv,
 		Getwd:           func() (string, error) { return fixture.cwd, nil },
 		Mkdir:           mkdir,
 		Remove:          remove,
@@ -1322,6 +1468,29 @@ func (api *worktreeAddAPI) DefaultBranch(
 	api.repo = repo
 	api.token = tokenOverride
 	return api.branch, api.err
+}
+
+// worktreeAddHerdr is a HerdrCreator test double that records every
+// CreateWorkspace call and answers with a fixed workspace or error.
+type worktreeAddHerdr struct {
+	workspaceID string
+	err         error
+	calls       []herdr.CreateOptions
+}
+
+func (fake *worktreeAddHerdr) CreateWorkspace(
+	_ context.Context,
+	options herdr.CreateOptions,
+) (herdr.Workspace, error) {
+	fake.calls = append(fake.calls, options)
+	if fake.err != nil {
+		return herdr.Workspace{}, fake.err
+	}
+	workspaceID := fake.workspaceID
+	if workspaceID == "" {
+		workspaceID = "w1"
+	}
+	return herdr.Workspace{ID: workspaceID}, nil
 }
 
 type worktreeAddFailingWriter struct {

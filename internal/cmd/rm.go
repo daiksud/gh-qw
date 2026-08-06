@@ -17,6 +17,7 @@ import (
 
 	"github.com/daiksud/gh-qw/internal/fsidentity"
 	"github.com/daiksud/gh-qw/internal/gitcmd"
+	"github.com/daiksud/gh-qw/internal/herdr"
 	"github.com/daiksud/gh-qw/internal/local"
 	"github.com/daiksud/gh-qw/internal/repospec"
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
@@ -73,8 +74,16 @@ type RemoveDependencies struct {
 	OpenTerminal func() (io.ReadCloser, error)
 	Remove       func(string) error
 	RemoveAll    func(string) error
-	Stdout       io.Writer
-	Stderr       io.Writer
+	// Herdr closes the workspace open for the linked worktree being
+	// removed when --herdr (or GHQW_HERDR/configuration outside a
+	// Herdr-managed pane) enables the integration. It is never consulted
+	// for a whole-repository removal. Nil uses herdr.NewRunner().
+	Herdr HerdrCloser
+	// LookupEnv resolves HERDR_ENV to decide whether this process is
+	// running inside a Herdr-managed pane. Nil uses os.LookupEnv.
+	LookupEnv func(string) (string, bool)
+	Stdout    io.Writer
+	Stderr    io.Writer
 }
 
 type removeRuntime struct {
@@ -108,6 +117,8 @@ type removeRuntime struct {
 	filesystem local.FilesystemOptions
 	fs         removeFilesystem
 	prompt     RemovePrompt
+	herdr      HerdrCloser
+	lookupEnv  func(string) (string, bool)
 	stdout     io.Writer
 	stderr     io.Writer
 }
@@ -195,9 +206,13 @@ func (err *removeUsageError) Is(target error) bool {
 func NewRemoveCommand(dependencies RemoveDependencies) *cobra.Command {
 	commandRuntime := removePrepareRuntime(dependencies)
 
-	var dryRun bool
+	var (
+		dryRun     bool
+		herdrFlags herdrFlagValues
+	)
 	command := &cobra.Command{
-		Use:           "rm [--dry-run] <repo>|<owner>/<repo>|<host>/<owner>/<repo>[@<branch>]",
+		Use: "rm [--dry-run] [--herdr|--no-herdr] " +
+			"<repo>|<owner>/<repo>|<host>/<owner>/<repo>[@<branch>]",
 		Short:         "Remove a managed repository or linked worktree",
 		SilenceErrors: true,
 		SilenceUsage:  true,
@@ -225,6 +240,25 @@ func NewRemoveCommand(dependencies RemoveDependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
+
+			// The Herdr integration only ever applies to a linked
+			// <branch> target, never to a whole-repository removal;
+			// --herdr/--no-herdr are accepted without error but have no
+			// effect there, matching how `list --fzf` already accepts
+			// --full-path/--unique without effect (see ADR-0009).
+			var herdrEnabled bool
+			if selection.linked {
+				herdrEnabled, err = resolveHerdrIntegration(
+					newHerdrIntent(command),
+					plan.roots.Herdr,
+					commandRuntime.lookupEnv,
+					commandRuntime.stderr,
+				)
+				if err != nil {
+					return removeNewUsageError(err)
+				}
+			}
+
 			if err := removeWritePlan(command.ErrOrStderr(), plan); err != nil {
 				return fmt.Errorf("write removal plan: %w", err)
 			}
@@ -260,7 +294,7 @@ func NewRemoveCommand(dependencies RemoveDependencies) *cobra.Command {
 			if revalidated.whole {
 				return removeExecuteWhole(command.Context(), commandRuntime, revalidated)
 			}
-			return removeExecuteLinked(command.Context(), commandRuntime, revalidated)
+			return removeExecuteLinked(command.Context(), commandRuntime, revalidated, herdrEnabled)
 		},
 	}
 	command.Flags().BoolVar(
@@ -269,6 +303,7 @@ func NewRemoveCommand(dependencies RemoveDependencies) *cobra.Command {
 		false,
 		"Print the complete removal plan without changing files",
 	)
+	registerHerdrFlags(command, &herdrFlags, "Close")
 	command.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
 		return removeNewUsageError(err)
 	})
@@ -348,6 +383,14 @@ func removePrepareRuntime(dependencies RemoveDependencies) removeRuntime {
 			return removeConfirm(ctx, writer, message, openTerminal)
 		}
 	}
+	herdrRunner := dependencies.Herdr
+	if herdrRunner == nil {
+		herdrRunner = herdr.NewRunner()
+	}
+	lookupEnv := dependencies.LookupEnv
+	if lookupEnv == nil {
+		lookupEnv = os.LookupEnv
+	}
 
 	return removeRuntime{
 		resolver:            resolver,
@@ -365,9 +408,11 @@ func removePrepareRuntime(dependencies RemoveDependencies) removeRuntime {
 			remove:       remove,
 			removeAll:    removeAll,
 		},
-		prompt: prompt,
-		stdout: stdout,
-		stderr: stderr,
+		prompt:    prompt,
+		herdr:     herdrRunner,
+		lookupEnv: lookupEnv,
+		stdout:    stdout,
+		stderr:    stderr,
 	}
 }
 
@@ -1475,9 +1520,34 @@ func removeExecuteLinked(
 	ctx context.Context,
 	commandRuntime removeRuntime,
 	plan removePlan,
+	herdrEnabled bool,
 ) error {
 	state := removeNewMutationState(plan)
 	target := plan.linked[0]
+
+	// The Herdr workspace open for this worktree, if any, must be
+	// resolved before removal: herdr's own worktree listing depends on
+	// Git's registration, which WorktreeRemove is about to erase. A find
+	// failure never blocks removal itself (see the join below) — it is
+	// surfaced only once the primary Git operation has already run to
+	// completion, exactly like a close failure.
+	var herdrWorkspaceID string
+	var herdrWorkspaceFound bool
+	var herdrFindErr error
+	if herdrEnabled {
+		herdrWorkspaceID, herdrWorkspaceFound, herdrFindErr = commandRuntime.herdr.FindWorkspaceForPath(
+			ctx,
+			plan.repository.Path,
+			target.directory.path,
+		)
+		if herdrFindErr != nil {
+			herdrFindErr = fmt.Errorf(
+				"find Herdr workspace for %q: %w",
+				removeOutputPath(target.directory.path),
+				herdrFindErr,
+			)
+		}
+	}
 
 	if err := commandRuntime.git.WorktreeRemove(
 		ctx,
@@ -1520,14 +1590,33 @@ func removeExecuteLinked(
 	); err != nil {
 		return state.failure("cleanup linked worktree parents", err)
 	}
+
+	// Close is attempted only when Find both ran and actually located an
+	// open workspace; a Find failure already has its own error and no
+	// reliable workspace ID to close.
+	var herdrCloseErr error
+	if herdrEnabled && herdrFindErr == nil && herdrWorkspaceFound {
+		if closeErr := commandRuntime.herdr.CloseWorkspace(ctx, herdrWorkspaceID); closeErr != nil {
+			herdrCloseErr = fmt.Errorf(
+				"close Herdr workspace for %q: %w",
+				removeOutputPath(target.directory.path),
+				closeErr,
+			)
+		}
+	}
+
 	if err := removeWriteProgress(
 		commandRuntime.stderr,
 		"removed linked worktree",
 		target.directory.path,
 	); err != nil {
-		return state.failure("write linked removal progress", err)
+		return errors.Join(
+			state.failure("write linked removal progress", err),
+			herdrFindErr,
+			herdrCloseErr,
+		)
 	}
-	return nil
+	return errors.Join(herdrFindErr, herdrCloseErr)
 }
 
 func removeExecuteWhole(

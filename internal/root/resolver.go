@@ -16,6 +16,7 @@ import (
 const (
 	repositoryRootEnvironment = "GHQW_ROOT"
 	worktreeRootEnvironment   = "GHQW_WORKTREE_ROOT"
+	herdrEnvironment          = "GHQW_HERDR"
 	defaultRepositoryRoot     = "~/ghqw"
 )
 
@@ -23,7 +24,7 @@ const (
 // Callers should treat this as a configuration or usage error.
 var ErrInvalidRoot = errors.New("invalid root configuration")
 
-// Kind identifies the root involved in a validation failure.
+// Kind identifies the resolved setting involved in a validation failure.
 type Kind string
 
 const (
@@ -31,6 +32,9 @@ const (
 	Repository Kind = "repository root"
 	// Worktree identifies the linked-worktree root.
 	Worktree Kind = "worktree root"
+	// Herdr identifies the Herdr integration default (see GHQW_HERDR and
+	// the configuration file's herdr key).
+	Herdr Kind = "herdr setting"
 )
 
 // InvalidError describes a root value that fails path or overlap validation.
@@ -98,10 +102,17 @@ type Options struct {
 	SameFile     func(fs.FileInfo, fs.FileInfo) bool
 }
 
-// Result is the normalized, physical root configuration.
+// Result is the normalized, physical root configuration, plus the resolved
+// Herdr integration default.
 type Result struct {
 	RepositoryRoots []string
 	WorktreeRoot    string
+	// Herdr is the resolved default for --herdr/--no-herdr on worktree
+	// add, worktree remove, and rm, used only when neither flag is given:
+	// GHQW_HERDR when it is set to a recognized value, otherwise the
+	// configuration file's herdr key, otherwise false. See internal/herdr
+	// for the integration itself.
+	Herdr bool
 }
 
 // Primary returns the first repository root, or an empty string when the
@@ -216,6 +227,10 @@ func (r *Resolver) resolve() (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
+	herdr, err := r.selectHerdr(fileConfig)
+	if err != nil {
+		return Result{}, err
+	}
 
 	repositoryRoots := make([]string, 0, len(rawRepositoryRoots))
 	for _, rawRoot := range rawRepositoryRoots {
@@ -255,6 +270,7 @@ func (r *Resolver) resolve() (Result, error) {
 	return Result{
 		RepositoryRoots: repositoryRoots,
 		WorktreeRoot:    worktreeRoot,
+		Herdr:           herdr,
 	}, nil
 }
 
@@ -313,6 +329,41 @@ func (r *Resolver) selectWorktreeRoot(fileConfig config.Config) (string, error) 
 		return "", fmt.Errorf("resolve default worktree root: %w", err)
 	}
 	return filepath.Join(base, "ghqw", "worktrees"), nil
+}
+
+// selectHerdr resolves the Herdr integration default: GHQW_HERDR when set
+// to a recognized boolean token, otherwise the configuration file's herdr
+// key, otherwise false. Recognized tokens are matched case-insensitively:
+// "1", "true", "yes", and "on" are true; "0", "false", "no", and "off" are
+// false. Any other non-empty GHQW_HERDR value is a configuration error,
+// discoverable as both ErrInvalidRoot and config.ErrInvalid so it maps to
+// the same usage-error exit status as a malformed GHQW_ROOT or
+// GHQW_WORKTREE_ROOT (see internal/cmd.ExitCode).
+func (r *Resolver) selectHerdr(fileConfig config.Config) (bool, error) {
+	lookupEnv := r.lookupEnv
+	if lookupEnv == nil {
+		lookupEnv = os.LookupEnv
+	}
+
+	if value, ok := lookupEnv(herdrEnvironment); ok && value != "" {
+		switch strings.ToLower(value) {
+		case "1", "true", "yes", "on":
+			return true, nil
+		case "0", "false", "no", "off":
+			return false, nil
+		default:
+			return false, newInvalidError(
+				Herdr,
+				"",
+				fmt.Sprintf(
+					"%s=%q is not a recognized boolean (use 1/true/yes/on or 0/false/no/off)",
+					herdrEnvironment,
+					value,
+				),
+			)
+		}
+	}
+	return fileConfig.Herdr, nil
 }
 
 func (r *Resolver) physicalizeConfiguredPath(kind Kind, rawPath string) (string, error) {

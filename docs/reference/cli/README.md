@@ -32,7 +32,7 @@ level supports `-h`/`--help`; help exits successfully without performing an oper
 | --- | --- |
 | `0` | The requested operation completed successfully. A documented skip, such as a bulk-migration collision, is non-fatal. |
 | `1` | A runtime operation failed or a safety check refused the operation. Examples include Git or API failure, an unreadable file, a destination collision, or a path-containment failure. |
-| `2` | Command syntax, a repository specification, configuration, or usage is invalid. Examples include an unknown flag, a missing argument, an invalid `--partial` value, an ambiguous selector, or incompatible flags. |
+| `2` | Command syntax, a repository specification, configuration, or usage is invalid. Examples include an unknown flag, a missing argument, an invalid `--partial` value, an ambiguous selector, incompatible flags, or an explicit `--herdr` outside a Herdr-managed pane. |
 | `130` | Canceling the external `fzf` picker (Esc or Ctrl-C) during `list --fzf`. This reuses `fzf`'s own documented cancellation status; see [`list`](#list). |
 
 For a batch `get`, all started items may finish before the process exits. Status `2` takes
@@ -89,6 +89,36 @@ never defers an unresolved choice to whichever account `gh` currently considers 
 
 A failure from `gh` after this resolution includes a hint naming the account gh-qw used, except
 when step 1 applied — an explicit token's account is never inspected or reported.
+
+### Herdr workspace integration
+
+`worktree add`, `worktree remove`, and `rm` (for an `@<branch>` linked-worktree target only)
+accept `--herdr` and `--no-herdr`, mutually exclusive flags that integrate with Herdr, a terminal-
+workspace manager for coding agents, through its own `herdr` executable resolved from `PATH`.
+`gh-qw` never launches a shell itself; it only runs `herdr` and reports the outcome, the same shape
+[`list --fzf`](#list) already uses for `fzf` (see
+[ADR-0009](../../development/adr/0009-interactive-selection-via-fzf/) and
+[ADR-0018](../../development/adr/0018-herdr-workspace-integration/)).
+
+Enablement resolves once per invocation, in this order: an explicit `--herdr`/`--no-herdr` flag;
+otherwise a set `GHQW_HERDR` environment variable; otherwise the configuration file's `herdr` key
+(see the [configuration reference](../configuration/#schema)); otherwise disabled. `GHQW_HERDR`
+accepts `1`/`true`/`yes`/`on` and `0`/`false`/`no`/`off`, case-insensitively; any other non-empty
+value is a configuration error (status `2`).
+
+An explicit `--herdr` outside of a Herdr-managed pane (`HERDR_ENV` unset or not `1`) is a usage
+error (status `2`) before anything else runs. Enablement through `GHQW_HERDR` or the configuration
+file outside Herdr instead only writes one warning line to `stderr` and skips the integration,
+leaving the command's own result and exit status unaffected — a shared configuration file does not
+break ordinary use outside Herdr.
+
+When enabled, `worktree add` opens and focuses a Herdr workspace at the new worktree's own
+directory after creating it, labeled `<repo>@<branch>`. `worktree remove` and `rm` resolve the
+workspace already open for that worktree, remove the worktree exactly as they otherwise would, and
+then close the resolved workspace; a worktree with no open workspace is left alone. A Herdr
+failure (herdr missing from `PATH`, or any operation it reports failing) is a status `1` error that
+never changes the underlying worktree add or removal, which has already completed; `worktree add`'s
+`stdout` still holds only the new absolute path.
 
 ## Repository specifications and canonical identities
 
@@ -325,7 +355,7 @@ configured repository root in precedence order, one per line. It does not create
 ## `rm`
 
 ```text
-gh qw rm [--dry-run]
+gh qw rm [--dry-run] [--herdr|--no-herdr]
          <repo>|<owner>/<repo>|<host>/<owner>/<repo>[@<branch>]
 ```
 
@@ -348,6 +378,10 @@ also diagnostic output on `stderr`; successful `rm` leaves `stdout` empty.
 There is no `--bare` or implicit force flag. If Git refuses a dirty or locked linked worktree,
 `rm` exits with status `1`; use the dedicated worktree command or Git directly when an explicit
 force operation is intended.
+
+`--herdr`/`--no-herdr` (see [Herdr workspace integration](#herdr-workspace-integration)) apply only
+to an `@<branch>` target; both are accepted without error but have no effect when removing a whole
+repository.
 
 ## `migrate`
 
@@ -444,7 +478,7 @@ versus `feat/x`. `-f` never bypasses path, containment, or prefix-collision chec
 
 ```text
 gh qw worktree add [-R|--repo <repo>] [-b|-B] [--detach] [--orphan]
-                    [-f] <branch> [<commit-ish>]
+                    [-f] [--herdr|--no-herdr] <branch> [<commit-ish>]
 ```
 
 With no explicit creation mode, `<branch>` is both the desired branch and the deterministic path
@@ -470,6 +504,11 @@ checkout target, or `<branch>` is resolved as the target when `<commit-ish>` is 
 `--orphan` creates an unborn orphan branch named `<branch>` and does not accept `<commit-ish>`.
 `-b`, `-B`, `--detach`, and `--orphan` are mutually exclusive except that `-f` may accompany any
 mode. `-f` has the same checkout-safety meaning as one Git `--force`.
+
+`--herdr` opens and focuses a Herdr workspace at the new worktree after it is created; `--no-herdr`
+disables that even when `GHQW_HERDR` or configuration would otherwise enable it. See
+[Herdr workspace integration](#herdr-workspace-integration) for enablement precedence and failure
+handling.
 
 On success, `add` writes exactly the new absolute worktree path to `stdout`.
 
@@ -545,7 +584,7 @@ with status `1` without emitting a partial record set.
 ### `worktree remove`
 
 ```text
-gh qw worktree remove [-R|--repo <repo>] [-f] <branch>
+gh qw worktree remove [-R|--repo <repo>] [-f] [--herdr|--no-herdr] <branch>
 ```
 
 `remove` resolves `<branch>` to the deterministic linked-worktree slot, verifies that Git
@@ -556,6 +595,11 @@ requires stronger intervention to remove remains an error.
 After successful removal, empty slot-parent directories are removed upward to, but never
 including, `<worktree-root>/<canonical>`. Result and progress text go to `stderr`; `stdout` is
 empty.
+
+`--herdr` closes the Herdr workspace open for the removed worktree, if any; `--no-herdr` disables
+that even when `GHQW_HERDR` or configuration would otherwise enable it. See
+[Herdr workspace integration](#herdr-workspace-integration) for enablement precedence and failure
+handling.
 
 ### `worktree prune`
 
