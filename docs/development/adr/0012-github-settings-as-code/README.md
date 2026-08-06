@@ -46,10 +46,11 @@ credential in this repository's CI.
 
 Repository settings are declared in `.github/settings.yml`, a single `gh-infra` `Repository`
 manifest covering the description, labels, merge strategy, security options, rulesets, and Actions
-configuration already in effect (`gh infra import` was used to seed it with the exact live state, so
-adopting it changes nothing on GitHub by itself). `reconcile.labels` and `reconcile.rulesets` are
-both `authoritative`: removing an entry from the manifest deletes it on GitHub, not just stops
-tracking it, so the manifest is a complete description rather than a partial overlay.
+configuration already in effect (`gh infra import` was used to seed it, so adopting it changes
+nothing on GitHub by itself — with one deliberate exception to that starting point, described
+below). `reconcile.labels` and `reconcile.rulesets` are both `authoritative`: removing an entry from
+the manifest deletes it on GitHub, not just stops tracking it, so the manifest is a complete
+description rather than a partial overlay.
 
 `.github/settings.yml` was chosen over `gh-infra`'s own documented convention of
 `.github/infra.yaml` because the filename `settings.yml` is independently recognized across GitHub
@@ -95,6 +96,23 @@ CI instead runs two checks, both defined in `.github/workflows/infra.yml`:
   to list variables the same way — both times the job correctly failed instead of reporting false
   "no drift".
 
+Once both permissions were correctly granted, `plan` ran end to end and surfaced a real, fifth
+finding: `allow_auto_merge`, `squash_merge_commit_title`, `squash_merge_commit_message`,
+`merge_commit_title`, and `merge_commit_message` all showed as changed even though a personal token
+confirmed live GitHub state matched the manifest exactly. A diagnostic step dumping the raw
+`GET /repos/{owner}/{repo}` response through the App token confirmed the cause: GitHub returns
+`null` for all five fields when the requester is a GitHub App installation token scoped to
+`Administration: read` rather than `write` — a permission-gated field-visibility behavior in
+GitHub's own API, not a `gh-infra` bug. Since `gh-infra`'s `MergeStrategy` fields are each an
+individually optional pointer (confirmed in `internal/repository/diff.go`: a field is compared only
+when the manifest sets it, otherwise skipped entirely, for both `plan` and `apply`), the fix was to
+stop declaring these five fields in `spec.merge_strategy` rather than trying to work around a
+comparison that can never succeed for a read-only token. They remain manually managed, alongside
+the other settings `gh-infra` cannot reach at all (see the reference). The alternative — granting
+the App `Administration: write` so it could see these fields — was rejected outright: it would
+recreate exactly the write-capable-CI-credential risk this whole design exists to avoid, to manage
+five comparatively low-stakes, cosmetic settings.
+
 The full operating model, the token/permission table, and the settings `gh-infra` cannot manage at
 all (GitHub Pages, Environments, the CodeQL default setup, webhooks, and others) are documented in
 the [repository settings reference](../../../reference/repository-settings/) rather than repeated
@@ -106,13 +124,15 @@ here.
 
 - A repository setting change now goes through the same pull request review as a code change,
   instead of an unrecorded UI click.
-- The CI credential is read-only by construction (both by the App's own installation permissions
-  and by the narrower `permission-*` grant requested for each token), so CI cannot mutate live
-  settings even if a workflow were compromised — there is no credential to escalate.
+- The CI credential is read-only by construction, entirely by the App's own installation
+  permissions (the workflow requests no narrower subset — see the Decision and the Negative
+  consequence below), so CI cannot mutate live settings even if a workflow were compromised — there
+  is no credential to escalate.
 - Drift between the manifest and live GitHub state is caught automatically at least monthly, and
   immediately on demand via manual dispatch, rather than only when someone happens to notice.
-- Adopting the manifest changed nothing on GitHub: `gh infra plan` reported no differences both
-  before and after adding the `authoritative` reconcile policy.
+- Adopting the manifest changed nothing on GitHub: `gh infra plan` reported no differences before
+  adding the `authoritative` reconcile policy, after adding it, and again after removing the five
+  `merge_strategy` fields a read-only token cannot verify.
 
 ### Negative
 
@@ -136,6 +156,11 @@ here.
   permission, or of write access on any of the six, would flow into the token unnoticed by anything
   in this repository, rather than being caught immediately the way an over-broad request would have
   been with explicit narrowing.
+- Five `merge_strategy` fields (`allow_auto_merge` and the four commit-message templates) are
+  entirely unmanaged by this manifest, in both `plan` and `apply`, because GitHub's API will not
+  reveal their true values to any `Administration: read`-only credential. Changing them still
+  requires a manual `gh repo edit` or a trip through the GitHub UI, exactly as before this change,
+  and nothing here will ever detect drift in them.
 
 ### Neutral
 

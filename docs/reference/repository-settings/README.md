@@ -119,6 +119,19 @@ GitHub UI or API exactly as before this manifest existed:
 - Webhooks, collaborators and team permissions, deploy keys, and the default branch name.
 - Artifact/log retention, cache limits, and OIDC subject claim customization.
 
+`gh-infra` *does* have manifest fields for the following, but this manifest deliberately omits them
+— not because `gh-infra` cannot manage them, but because the `plan` job's read-only token
+structurally cannot verify them (see [ADR-0012](../../development/adr/0012-github-settings-as-code/)):
+
+- **`merge_strategy.allow_auto_merge`, `.squash_merge_commit_title`, `.squash_merge_commit_message`,
+  `.merge_commit_title`, `.merge_commit_message`** — confirmed empirically: `GET
+  /repos/{owner}/{repo}` returns `null` for all five when authenticated as a GitHub App
+  installation token scoped to `Administration: read` (not write), so `gh infra plan` would report
+  permanent, unfixable false drift on every run if this manifest declared them. `gh-infra`'s
+  `MergeStrategy` fields are each individually optional — omitting one removes it from both `plan`
+  and `apply` rather than asserting a specific value — so these five are left unmanaged and
+  continue to be set manually.
+
 ## Related documents
 
 - [ADR-0012](../../development/adr/0012-github-settings-as-code/) — why settings are code, and why

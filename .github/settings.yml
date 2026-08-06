@@ -92,16 +92,24 @@ spec:
     discussions: false
     pull_requests: true
 
+  # allow_auto_merge and the four commit-message-template fields
+  # (squash_merge_commit_title/_message, merge_commit_title/_message) are
+  # deliberately NOT declared here. GitHub's REST API returns null for all
+  # five when read by a GitHub App installation token scoped to
+  # Administration: read (confirmed empirically - see ADR-0012), so a
+  # read-only CI token can never verify them and would report false drift
+  # every time. gh-infra's MergeStrategy fields are individually optional
+  # (each is a nil-able pointer; omitting one means "unmanaged", not
+  # "enforce the zero value" - see internal/repository/diff.go's
+  # appendChildChanged), so omitting them here removes them from both
+  # `plan` and `apply` entirely rather than fighting a permanently
+  # unreliable comparison. They remain part of the repository settings
+  # reference's list of settings managed manually, outside this manifest.
   merge_strategy:
     allow_merge_commit: false
     allow_squash_merge: true
     allow_rebase_merge: false
-    allow_auto_merge: true
     auto_delete_head_branches: true
-    squash_merge_commit_title: PR_TITLE
-    squash_merge_commit_message: COMMIT_MESSAGES
-    merge_commit_title: MERGE_MESSAGE
-    merge_commit_message: PR_TITLE
 
   release_immutability: true
 
