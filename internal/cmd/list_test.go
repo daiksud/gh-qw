@@ -7,11 +7,13 @@ import (
 	"io"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
 
 	"github.com/daiksud/gh-qw/internal/cmd"
+	"github.com/daiksud/gh-qw/internal/fzf"
 	"github.com/daiksud/gh-qw/internal/local"
 	"github.com/daiksud/gh-qw/internal/repospec"
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
@@ -634,6 +636,11 @@ func TestNewListCommandRejectsInvalidUsageBeforeResolving(t *testing.T) {
 		{name: "too many queries", args: []string{"one", "two"}},
 		{name: "path and unique", args: []string{"--full-path", "--unique"}, wantUsage: true},
 		{name: "short path and unique", args: []string{"-p", "--unique"}, wantUsage: true},
+		{
+			name:      "fzf does not exempt path and unique",
+			args:      []string{"--fzf", "--full-path", "--unique"},
+			wantUsage: true,
+		},
 	}
 	for _, test := range tests {
 		test := test
@@ -750,6 +757,340 @@ func TestNewListCommandHandlesWriterAndPathErrors(t *testing.T) {
 	})
 }
 
+func TestNewListCommandFzfSelectsAndPrintsAbsolutePath(t *testing.T) {
+	t.Parallel()
+
+	first := listRepository(
+		"github.com/acme/widget",
+		listAbsolutePath("roots", "github.com", "acme", "widget"),
+		0,
+	)
+	second := listRepository(
+		"github.com/acme/gadget",
+		listAbsolutePath("roots", "github.com", "acme", "gadget"),
+		0,
+	)
+	selector := &listSelectRecorder{result: second.Identity}
+
+	var stdout, stderr bytes.Buffer
+	command := cmd.NewListCommand(cmd.ListDependencies{
+		Resolver: &listRootResolver{result: rootpkg.Result{
+			RepositoryRoots: []string{listAbsolutePath("roots")},
+			WorktreeRoot:    listAbsolutePath("worktrees"),
+		}},
+		DiscoverRepositories: func(context.Context, []string) (local.DiscoveryResult, error) {
+			return local.DiscoveryResult{Repositories: []local.Repository{first, second}}, nil
+		},
+		Select: selector.listSelect,
+		Stdout: &stdout,
+		Stderr: &stderr,
+	})
+	command.SetArgs([]string{"--fzf"})
+
+	if err := command.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if got, want := stdout.String(), local.NormalizePathForOutput(second.Path)+"\n"; got != want {
+		t.Fatalf("stdout = %q, want %q", got, want)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want empty", stderr.String())
+	}
+	if selector.calls != 1 {
+		t.Fatalf("Select() calls = %d, want 1", selector.calls)
+	}
+	wantItems := []string{"github.com/acme/gadget", "github.com/acme/widget"}
+	if !slices.Equal(selector.items[0], wantItems) {
+		t.Fatalf("Select() items = %#v, want %#v", selector.items[0], wantItems)
+	}
+}
+
+func TestNewListCommandFzfWorktreeCandidatesUseSlots(t *testing.T) {
+	t.Parallel()
+
+	repository := listRepository(
+		"github.com/acme/widget",
+		listAbsolutePath("roots", "github.com", "acme", "widget"),
+		0,
+	)
+	featurePath := listAbsolutePath("worktrees", "github.com", "acme", "widget", "feature", "x")
+	worktrees := []local.Worktree{
+		{Main: true, Path: repository.Path},
+		{Slot: "feature/x", Path: featurePath},
+	}
+	enumeration := &listEnumerationRecorder{
+		byIdentity: map[string][]local.Worktree{repository.Identity: worktrees},
+	}
+	selector := &listSelectRecorder{result: "github.com/acme/widget@feature/x"}
+
+	var stdout bytes.Buffer
+	command := cmd.NewListCommand(cmd.ListDependencies{
+		Resolver: &listRootResolver{result: rootpkg.Result{
+			RepositoryRoots: []string{listAbsolutePath("roots")},
+			WorktreeRoot:    listAbsolutePath("worktrees"),
+		}},
+		DiscoverRepositories: func(context.Context, []string) (local.DiscoveryResult, error) {
+			return local.DiscoveryResult{Repositories: []local.Repository{repository}}, nil
+		},
+		EnumerateWorktrees: enumeration.listEnumerate,
+		Select:             selector.listSelect,
+		Stdout:             &stdout,
+		Stderr:             io.Discard,
+	})
+	command.SetArgs([]string{"--fzf", "--worktree"})
+
+	if err := command.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if got, want := stdout.String(), local.NormalizePathForOutput(featurePath)+"\n"; got != want {
+		t.Fatalf("stdout = %q, want %q", got, want)
+	}
+	wantItems := []string{"github.com/acme/widget", "github.com/acme/widget@feature/x"}
+	if !slices.Equal(selector.items[0], wantItems) {
+		t.Fatalf("Select() items = %#v, want %#v", selector.items[0], wantItems)
+	}
+}
+
+func TestNewListCommandFzfQueryNarrowsCandidatesBeforeSelection(t *testing.T) {
+	t.Parallel()
+
+	first := listRepository(
+		"github.com/acme/widget",
+		listAbsolutePath("roots", "github.com", "acme", "widget"),
+		0,
+	)
+	second := listRepository(
+		"github.com/acme/gadget",
+		listAbsolutePath("roots", "github.com", "acme", "gadget"),
+		0,
+	)
+	selector := &listSelectRecorder{result: first.Identity}
+
+	var stdout bytes.Buffer
+	command := cmd.NewListCommand(cmd.ListDependencies{
+		Resolver: &listRootResolver{result: rootpkg.Result{
+			RepositoryRoots: []string{listAbsolutePath("roots")},
+			WorktreeRoot:    listAbsolutePath("worktrees"),
+		}},
+		DiscoverRepositories: func(context.Context, []string) (local.DiscoveryResult, error) {
+			return local.DiscoveryResult{Repositories: []local.Repository{first, second}}, nil
+		},
+		Select: selector.listSelect,
+		Stdout: &stdout,
+		Stderr: io.Discard,
+	})
+	command.SetArgs([]string{"--fzf", "widget"})
+
+	if err := command.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	wantItems := []string{"github.com/acme/widget"}
+	if !slices.Equal(selector.items[0], wantItems) {
+		t.Fatalf("Select() items = %#v, want %#v", selector.items[0], wantItems)
+	}
+}
+
+func TestNewListCommandFzfNoCandidatesSkipsSelection(t *testing.T) {
+	t.Parallel()
+
+	selector := &listSelectRecorder{result: "should-not-be-used"}
+	var stdout bytes.Buffer
+	command := cmd.NewListCommand(cmd.ListDependencies{
+		Resolver: &listRootResolver{result: rootpkg.Result{
+			RepositoryRoots: []string{listAbsolutePath("roots")},
+			WorktreeRoot:    listAbsolutePath("worktrees"),
+		}},
+		DiscoverRepositories: func(context.Context, []string) (local.DiscoveryResult, error) {
+			return local.DiscoveryResult{}, nil
+		},
+		Select: selector.listSelect,
+		Stdout: &stdout,
+		Stderr: io.Discard,
+	})
+	command.SetArgs([]string{"--fzf"})
+
+	if err := command.Execute(); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty", stdout.String())
+	}
+	if selector.calls != 0 {
+		t.Fatalf("Select() calls = %d, want 0", selector.calls)
+	}
+}
+
+func TestNewListCommandFzfCancelAndNoMatchAreSilent(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		exitCode   int
+		wantStatus int
+	}{
+		{name: "canceled", exitCode: 130, wantStatus: 130},
+		{name: "no match", exitCode: 1, wantStatus: 1},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			repository := listRepository(
+				"github.com/acme/widget",
+				listAbsolutePath("roots", "github.com", "acme", "widget"),
+				0,
+			)
+			selector := &listSelectRecorder{err: &fzf.CommandError{ExitCode: test.exitCode}}
+
+			var stdout, stderr bytes.Buffer
+			command := cmd.NewListCommand(cmd.ListDependencies{
+				Resolver: &listRootResolver{result: rootpkg.Result{
+					RepositoryRoots: []string{listAbsolutePath("roots")},
+					WorktreeRoot:    listAbsolutePath("worktrees"),
+				}},
+				DiscoverRepositories: func(context.Context, []string) (local.DiscoveryResult, error) {
+					return local.DiscoveryResult{Repositories: []local.Repository{repository}}, nil
+				},
+				Select: selector.listSelect,
+				Stdout: &stdout,
+				Stderr: &stderr,
+			})
+			command.SetArgs([]string{"--fzf"})
+
+			err := command.Execute()
+			if err == nil {
+				t.Fatal("Execute() error = nil, want a failure")
+			}
+			if got := cmd.ExitCode(err); got != test.wantStatus {
+				t.Fatalf("ExitCode() = %d, want %d", got, test.wantStatus)
+			}
+			if stdout.Len() != 0 {
+				t.Fatalf("stdout = %q, want empty", stdout.String())
+			}
+			if stderr.Len() != 0 {
+				t.Fatalf("stderr = %q, want empty", stderr.String())
+			}
+		})
+	}
+}
+
+func TestNewListCommandFzfOtherFailureIsReported(t *testing.T) {
+	t.Parallel()
+
+	repository := listRepository(
+		"github.com/acme/widget",
+		listAbsolutePath("roots", "github.com", "acme", "widget"),
+		0,
+	)
+	selector := &listSelectRecorder{err: &fzf.CommandError{ExitCode: -1}}
+
+	var stdout bytes.Buffer
+	command := cmd.NewListCommand(cmd.ListDependencies{
+		Resolver: &listRootResolver{result: rootpkg.Result{
+			RepositoryRoots: []string{listAbsolutePath("roots")},
+			WorktreeRoot:    listAbsolutePath("worktrees"),
+		}},
+		DiscoverRepositories: func(context.Context, []string) (local.DiscoveryResult, error) {
+			return local.DiscoveryResult{Repositories: []local.Repository{repository}}, nil
+		},
+		Select: selector.listSelect,
+		Stdout: &stdout,
+		Stderr: io.Discard,
+	})
+	command.SetArgs([]string{"--fzf"})
+
+	err := command.Execute()
+	if err == nil {
+		t.Fatal("Execute() error = nil, want a failure")
+	}
+	if got := cmd.ExitCode(err); got != 1 {
+		t.Fatalf("ExitCode() = %d, want 1", got)
+	}
+	if !strings.Contains(err.Error(), "select entry with fzf") {
+		t.Fatalf("error = %q, want it to mention selecting with fzf", err.Error())
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty", stdout.String())
+	}
+}
+
+func TestNewListCommandFzfUnknownSelectionIsAnError(t *testing.T) {
+	t.Parallel()
+
+	repository := listRepository(
+		"github.com/acme/widget",
+		listAbsolutePath("roots", "github.com", "acme", "widget"),
+		0,
+	)
+	selector := &listSelectRecorder{result: "github.com/acme/does-not-exist"}
+
+	var stdout bytes.Buffer
+	command := cmd.NewListCommand(cmd.ListDependencies{
+		Resolver: &listRootResolver{result: rootpkg.Result{
+			RepositoryRoots: []string{listAbsolutePath("roots")},
+			WorktreeRoot:    listAbsolutePath("worktrees"),
+		}},
+		DiscoverRepositories: func(context.Context, []string) (local.DiscoveryResult, error) {
+			return local.DiscoveryResult{Repositories: []local.Repository{repository}}, nil
+		},
+		Select: selector.listSelect,
+		Stdout: &stdout,
+		Stderr: io.Discard,
+	})
+	command.SetArgs([]string{"--fzf"})
+
+	if err := command.Execute(); err == nil {
+		t.Fatal("Execute() error = nil, want a failure")
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("stdout = %q, want empty", stdout.String())
+	}
+}
+
+func TestNewListCommandFzfIgnoresFullPathAndUnique(t *testing.T) {
+	t.Parallel()
+
+	repository := listRepository(
+		"github.com/acme/widget",
+		listAbsolutePath("roots", "github.com", "acme", "widget"),
+		0,
+	)
+
+	for _, args := range [][]string{
+		{"--fzf", "--full-path"},
+		{"--fzf", "--unique"},
+	} {
+		args := args
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			t.Parallel()
+
+			selector := &listSelectRecorder{result: repository.Identity}
+			var stdout bytes.Buffer
+			command := cmd.NewListCommand(cmd.ListDependencies{
+				Resolver: &listRootResolver{result: rootpkg.Result{
+					RepositoryRoots: []string{listAbsolutePath("roots")},
+					WorktreeRoot:    listAbsolutePath("worktrees"),
+				}},
+				DiscoverRepositories: func(context.Context, []string) (local.DiscoveryResult, error) {
+					return local.DiscoveryResult{Repositories: []local.Repository{repository}}, nil
+				},
+				Select: selector.listSelect,
+				Stdout: &stdout,
+				Stderr: io.Discard,
+			})
+			command.SetArgs(args)
+
+			if err := command.Execute(); err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			}
+			if got, want := stdout.String(), local.NormalizePathForOutput(repository.Path)+"\n"; got != want {
+				t.Fatalf("stdout = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
 type listRootResolver struct {
 	result rootpkg.Result
 	err    error
@@ -805,6 +1146,21 @@ type listErrorWriter struct {
 
 func (writer listErrorWriter) Write([]byte) (int, error) {
 	return 0, writer.err
+}
+
+// listSelectRecorder is a test double for ListDependencies.Select. It
+// records every call's candidate items and returns a fixed result or error.
+type listSelectRecorder struct {
+	calls  int
+	items  [][]string
+	result string
+	err    error
+}
+
+func (recorder *listSelectRecorder) listSelect(_ context.Context, items []string) (string, error) {
+	recorder.calls++
+	recorder.items = append(recorder.items, append([]string(nil), items...))
+	return recorder.result, recorder.err
 }
 
 func listRepository(identity, path string, rootIndex int) local.Repository {

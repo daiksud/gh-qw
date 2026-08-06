@@ -51,12 +51,19 @@ github.com/cli/cli
 github.com/cli/cli@feature/docs
 ```
 
+Pick an entry interactively with the external `fzf` and jump to it by wiring a small shell
+function, since `gh-qw` itself only ever prints the selected path:
+
+```sh
+qwcd() { local dir; dir=$(gh qw list --fzf) || return; cd "$dir"; }
+```
+
 ## Commands
 
 | Command | Purpose |
 | --- | --- |
 | `gh qw get` / `gh qw clone` | Clone a missing repository or update an existing one. |
-| `gh qw list` | List repositories and, with `--worktree`, linked worktrees. |
+| `gh qw list` | List repositories and, with `--worktree`, linked worktrees; `--fzf` selects one interactively. |
 | `gh qw root` | Print configured repository roots. |
 | `gh qw rm` | Remove a repository or an `@branch` linked worktree safely. |
 | `gh qw migrate` | Migrate GitHub repositories from a ghq layout. |

@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/daiksud/gh-qw/internal/fzf"
 	"github.com/daiksud/gh-qw/internal/local"
 	"github.com/daiksud/gh-qw/internal/repospec"
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
@@ -22,14 +23,21 @@ var (
 	listAuthorityPattern = regexp.MustCompile(`[A-Za-z0-9]\.[A-Za-z]+(?::\d{1,5})?$`)
 )
 
+// listFzfPrompt is the fixed fzf prompt used by `list --fzf`. It is a
+// product default, not a user-configurable option.
+const listFzfPrompt = "gh qw> "
+
 // ListDependencies supplies the read-only seams used by the list command.
 // Nil fields use production implementations and process streams.
 type ListDependencies struct {
 	Resolver             RootResolver
 	DiscoverRepositories func(context.Context, []string) (local.DiscoveryResult, error)
 	EnumerateWorktrees   func(context.Context, local.Repository, string) ([]local.Worktree, error)
-	Stdout               io.Writer
-	Stderr               io.Writer
+	// Select picks one candidate identity from items for --fzf. Nil uses
+	// an fzf.Runner writing its diagnostics to Stderr.
+	Select func(ctx context.Context, items []string) (string, error)
+	Stdout io.Writer
+	Stderr io.Writer
 }
 
 type listEntry struct {
@@ -62,6 +70,7 @@ func NewListCommand(deps ListDependencies) *cobra.Command {
 	var fullPath bool
 	var unique bool
 	var includeWorktrees bool
+	var useFzf bool
 
 	command := &cobra.Command{
 		Use:           "list [query]",
@@ -112,6 +121,10 @@ func NewListCommand(deps ListDependencies) *cobra.Command {
 			}
 			entries = listFilterEntries(entries, query, exact, includeWorktrees)
 
+			if useFzf {
+				return listRunFzf(command, entries, deps.Select)
+			}
+
 			lines, err := listOutputLines(entries, fullPath, unique)
 			if err != nil {
 				return err
@@ -129,6 +142,12 @@ func NewListCommand(deps ListDependencies) *cobra.Command {
 	command.Flags().BoolVarP(&fullPath, "full-path", "p", false, "Print absolute paths")
 	command.Flags().BoolVar(&unique, "unique", false, "Print shortest unique identity suffixes")
 	command.Flags().BoolVar(&includeWorktrees, "worktree", false, "Include registered linked worktrees")
+	command.Flags().BoolVar(
+		&useFzf,
+		"fzf",
+		false,
+		"Select one entry interactively with fzf and print its absolute path",
+	)
 	command.SetOut(deps.Stdout)
 	command.SetErr(deps.Stderr)
 
@@ -161,6 +180,14 @@ func listDependenciesWithDefaults(deps ListDependencies) ListDependencies {
 	}
 	if deps.Stderr == nil {
 		deps.Stderr = os.Stderr
+	}
+	if deps.Select == nil {
+		stderr := deps.Stderr
+		deps.Select = func(ctx context.Context, items []string) (string, error) {
+			runner := fzf.NewRunner()
+			runner.Stderr = stderr
+			return runner.Select(ctx, items, fzf.Options{Prompt: listFzfPrompt})
+		}
 	}
 	return deps
 }
@@ -379,6 +406,68 @@ func listMatchesSubstring(entry listEntry, query string) bool {
 		return strings.Contains(strings.ToLower(nonHost), needle)
 	}
 	return strings.Contains(nonHost, needle)
+}
+
+// listRunFzf lets a person pick one entry from entries with fzf and writes
+// its absolute path to command's stdout. entries must already be filtered;
+// listRunFzf sorts a copy by identity so fzf's candidate order matches the
+// command's ordinary ascending output.
+//
+// No candidates writes nothing and succeeds (exit 0) without starting fzf.
+// Canceling fzf (Esc or Ctrl-C) or fzf finding no match for the typed query
+// both produce a silent, non-zero exit status (130 and 1 respectively; see
+// silentStatusError) with no output and no diagnostic line, since fzf's own
+// screen already communicated the outcome. Any other selection failure
+// (including fzf missing from PATH) is an ordinary error reported like any
+// other list failure.
+func listRunFzf(
+	command *cobra.Command,
+	entries []listEntry,
+	selectFn func(context.Context, []string) (string, error),
+) error {
+	if len(entries) == 0 {
+		return nil
+	}
+
+	sorted := append([]listEntry(nil), entries...)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].identity < sorted[j].identity
+	})
+
+	items := make([]string, len(sorted))
+	paths := make(map[string]string, len(sorted))
+	for index, entry := range sorted {
+		items[index] = entry.identity
+		paths[entry.identity] = entry.path
+	}
+
+	selected, err := selectFn(command.Context(), items)
+	if err != nil {
+		switch {
+		case fzf.IsCanceled(err):
+			return newSilentStatusError(130)
+		case fzf.IsNoMatch(err):
+			return newSilentStatusError(1)
+		default:
+			return fmt.Errorf("select entry with fzf: %w", err)
+		}
+	}
+	if selected == "" {
+		return nil
+	}
+
+	path, ok := paths[selected]
+	if !ok {
+		return fmt.Errorf("fzf selected unknown entry %q", selected)
+	}
+	if !filepath.IsAbs(path) {
+		return fmt.Errorf("list entry %q has non-absolute path %q", selected, path)
+	}
+
+	return listWriteAll(
+		command.OutOrStdout(),
+		listRenderLines([]string{local.NormalizePathForOutput(filepath.Clean(path))}),
+	)
 }
 
 func listOutputLines(entries []listEntry, fullPath, unique bool) ([]string, error) {
