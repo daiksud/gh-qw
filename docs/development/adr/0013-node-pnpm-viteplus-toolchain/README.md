@@ -45,7 +45,10 @@ The documentation site will:
 - configure `allowBuilds.esbuild: true` in `pnpm-workspace.yaml` so pnpm can run Astro's native
   build dependency.
 
-Vite+ is used through `vp run` tasks named `site:dev`, `site:build`, and `site:preview`. The
+Vite+ tasks are defined with bare names (`dev`, `build`, `preview`, `check`, `check:links`, `test`,
+`validate`, and `format`) in `vite.config.ts`. Contributors invoke them through `vpr`, the
+official shorthand for `vp run`. Vite+ built-in commands cannot be overridden: `vp dev` starts a
+bare Vite server and `vp build` runs a Vite build, so neither command builds this Astro site. The
 `vite` package override that aliases Astro's Vite to Vite+ is deliberately not used because the
 combination is not an officially supported Astro integration. The existing source tree is not
 automatically reformatted; Oxfmt is available through the explicit format command.
