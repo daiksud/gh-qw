@@ -49,3 +49,4 @@ it appear that the new choice was always in effect.
 | [0009](0009-interactive-selection-via-fzf/) | Add fzf-based interactive selection to list | Accepted |
 | [0010](0010-public-api-and-semantic-versioning/) | Declare a public API and follow Semantic Versioning | Accepted |
 | [0011](0011-type-named-release-labels/) | Name release labels after Conventional Commits types | Accepted |
+| [0012](0012-github-settings-as-code/) | Manage repository settings as code with local-only apply | Accepted |

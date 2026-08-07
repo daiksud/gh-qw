@@ -18,6 +18,7 @@ const adrPages = [
   '0009-interactive-selection-via-fzf',
   '0010-public-api-and-semantic-versioning',
   '0011-type-named-release-labels',
+  '0012-github-settings-as-code',
 ].map((name) => `development/adr/${name}/index`);
 
 export default defineConfig({
@@ -72,6 +73,11 @@ export default defineConfig({
               link: 'reference/configuration/index',
             },
             { label: 'Versioning', link: 'reference/versioning/index' },
+            {
+              label: 'Repository settings',
+              link: 'reference/repository-settings/index',
+            },
+            { label: 'Compatibility', link: 'reference/compatibility/index' },
           ],
         },
         {
