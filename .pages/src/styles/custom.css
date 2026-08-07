@@ -76,15 +76,17 @@
     line-height: 1.25;
   }
 
-  .docs-card span {
+  .docs-card p {
     color: var(--sl-color-gray-2);
     line-height: 1.55;
   }
 
-  .docs-card .docs-card-arrow {
-    margin-block-start: auto;
-    color: var(--sl-color-accent-high);
-    font-weight: 650;
+  .docs-card > :first-child {
+    margin-block-start: 0;
+  }
+
+  .docs-card > :last-child {
+    margin-block-end: 0;
   }
 
   @media (prefers-reduced-motion: reduce) {

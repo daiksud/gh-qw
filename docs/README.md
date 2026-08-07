@@ -22,6 +22,8 @@ hero:
       variant: minimal
 ---
 
+# gh-qw
+
 `gh-qw` combines ghq-compatible repository paths with a dedicated root for linked Git worktrees.
 
 <div class="docs-install">
@@ -33,24 +35,53 @@ $ gh extension install daiksud/gh-qw
 </div>
 
 <div class="docs-card-grid">
-  <a class="docs-card" href="/gh-qw/concept/">
-    <strong>Concept</strong>
-    <span>Understand the repository and worktree model behind gh-qw.</span>
-    <span class="docs-card-arrow">Explore the concept</span>
+  <a class="docs-card" href="concept/">
+
+**Concept**
+
+Understand the repository and worktree model behind gh-qw.
+
   </a>
-  <a class="docs-card" href="/gh-qw/reference/cli/">
-    <strong>CLI reference</strong>
-    <span>Find commands, flags, output contracts, and exit statuses.</span>
-    <span class="docs-card-arrow">Browse the commands</span>
+  <a class="docs-card" href="reference/cli/">
+
+**CLI reference**
+
+Find commands, flags, output contracts, and exit statuses.
+
   </a>
-  <a class="docs-card" href="/gh-qw/reference/configuration/">
-    <strong>Configuration</strong>
-    <span>Learn about roots, precedence, and the on-disk layout.</span>
-    <span class="docs-card-arrow">Configure gh-qw</span>
+  <a class="docs-card" href="reference/configuration/">
+
+**Configuration reference**
+
+Learn about roots, precedence, and the on-disk layout.
+
   </a>
-  <a class="docs-card" href="/gh-qw/development/">
-    <strong>Development</strong>
-    <span>Read contributor guidance and the Architecture Decision Records.</span>
-    <span class="docs-card-arrow">Start contributing</span>
+  <a class="docs-card" href="reference/versioning/">
+
+**Versioning reference**
+
+Understand compatibility guarantees, releases, and versioning policy.
+
+  </a>
+  <a class="docs-card" href="reference/repository-settings/">
+
+**Repository settings reference**
+
+Explore the repository configuration managed as code.
+
+  </a>
+  <a class="docs-card" href="reference/compatibility/">
+
+**Compatibility reference**
+
+Check supported platforms, shells, and GitHub CLI environments.
+
+  </a>
+  <a class="docs-card" href="development/">
+
+**Development**
+
+Read contributor guidance and the Architecture Decision Records.
+
   </a>
 </div>
