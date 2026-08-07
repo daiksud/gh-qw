@@ -86,12 +86,12 @@ Run the relevant Go checks from the repository root:
 $ go test ./...
 ```
 
-For documentation-site changes, use Bun:
+For documentation-site changes, use Node.js and pnpm:
 
 ```console
 $ cd .pages
-$ bun ci
-$ bun run validate
+$ pnpm install --frozen-lockfile
+$ pnpm run validate
 ```
 
 Do not commit generated `.pages/node_modules/`, `.pages/.astro/`, or `.pages/dist/` content.

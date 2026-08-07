@@ -139,7 +139,7 @@ function alertBody(node: Readonly<Blockquote>): {
     remainingInline.shift();
   }
 
-  const body = [...node.children.slice(1)];
+  const body = node.children.slice(1);
   if (remainingInline.length > 0) {
     body.unshift({ ...firstBlock, children: remainingInline });
   }

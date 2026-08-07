@@ -43,6 +43,15 @@ updates:
     schedule:
       interval: "weekly"
     labels: []
+    # The npm ecosystem value is also Dependabot's configuration key for
+    # pnpm. Bun's separate ecosystem can update bun.lock, but it does not
+    # support security updates. Keep pnpm at TypeScript 6.0.x until Astro's
+    # language tooling supports TypeScript 7's programmatic API
+    # (withastro/roadmap discussion 1321).
+    ignore:
+      - dependency-name: "typescript"
+        update-types:
+          - "version-update:semver-major"
     commit-message:
       prefix: "build"
       include: "scope"

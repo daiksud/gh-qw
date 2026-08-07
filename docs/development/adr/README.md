@@ -50,3 +50,4 @@ it appear that the new choice was always in effect.
 | [0010](0010-public-api-and-semantic-versioning/) | Declare a public API and follow Semantic Versioning | Accepted |
 | [0011](0011-type-named-release-labels/) | Name release labels after Conventional Commits types | Accepted |
 | [0012](0012-github-settings-as-code/) | Manage repository settings as code with local-only apply | Accepted |
+| [0013](0013-node-pnpm-viteplus-toolchain/) | Use Node, pnpm, and Vite+ for the documentation toolchain | Accepted |

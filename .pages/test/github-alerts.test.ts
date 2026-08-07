@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vite-plus/test";
 import { markdownToHtml } from "satteri";
 
 import { githubAlerts } from "../src/plugins/github-alerts";
