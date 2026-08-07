@@ -90,9 +90,12 @@ For documentation-site changes, use Node.js and pnpm:
 
 ```console
 $ cd .pages
-$ pnpm install --frozen-lockfile
-$ pnpm run validate
+$ vp install --frozen-lockfile
+$ vpr validate
 ```
+
+The package manager remains pnpm as Vite+'s backend. Use `vpr` for the site tasks; `vp dev` and
+`vp build` are Vite+'s built-in Vite commands and do not run Astro.
 
 Do not commit generated `.pages/node_modules/`, `.pages/.astro/`, or `.pages/dist/` content.
 Use relative documentation links and follow the
