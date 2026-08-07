@@ -93,7 +93,10 @@ own, fully-privileged local credential.
 GitHub UI or API exactly as before this manifest existed:
 
 - **GitHub Pages** — `gh-qw`'s Pages site (`build_type: workflow`) has no corresponding manifest
-  field.
+  field. The site is published at
+  [https://daiksud.github.io/gh-qw/](https://daiksud.github.io/gh-qw/) by
+  `.github/workflows/pages.yml` after changes to `docs/` or `.pages/` reach `main`; the workflow
+  can also be dispatched manually.
 - **Environments** — including the `github-pages` environment Pages deployment creates; `gh-infra`
   has no `Environment` kind and cannot manage environment protection rules, reviewers, or secrets.
 - **CodeQL default setup** — configured via the UI (`languages: [actions, go]`,

@@ -305,7 +305,11 @@ function outputCandidates(
   }
 
   if (relativePath.endsWith("/")) {
-    return [`${relativePath}index.html`, `${relativePath.slice(0, -1)}.html`];
+    // Directory URLs must resolve to <route>/index.html. Astro emits the 404
+    // page as a bare 404.html, so that single route keeps a flat fallback.
+    return relativePath === "404/"
+      ? ["404.html"]
+      : [`${relativePath}index.html`];
   }
 
   return [relativePath, `${relativePath}.html`, `${relativePath}/index.html`];
