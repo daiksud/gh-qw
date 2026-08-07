@@ -71,7 +71,7 @@
   }
 
   .docs-card strong {
-    color: var(--sl-color-white);
+    color: var(--sl-color-text);
     font-size: var(--sl-text-lg);
     line-height: 1.25;
   }
