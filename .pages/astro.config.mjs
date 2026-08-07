@@ -64,28 +64,28 @@ export default defineConfig({
       },
       sidebar: [
         { label: 'Home', link: '/' },
-        { label: 'Concept', link: 'concept/index' },
+        { label: 'Concept', slug: 'concept/index' },
         {
           label: 'References',
           items: [
-            { label: 'CLI', link: 'reference/cli/index' },
+            { label: 'CLI', slug: 'reference/cli/index' },
             {
               label: 'Configuration',
-              link: 'reference/configuration/index',
+              slug: 'reference/configuration/index',
             },
-            { label: 'Versioning', link: 'reference/versioning/index' },
+            { label: 'Versioning', slug: 'reference/versioning/index' },
             {
               label: 'Repository settings',
-              link: 'reference/repository-settings/index',
+              slug: 'reference/repository-settings/index',
             },
-            { label: 'Compatibility', link: 'reference/compatibility/index' },
+            { label: 'Compatibility', slug: 'reference/compatibility/index' },
           ],
         },
         {
           label: 'Development',
           collapsed: true,
           items: [
-            { label: 'Overview', link: 'development/index' },
+            { label: 'Overview', slug: 'development/index' },
             'development/contributing/index',
             {
               label: 'Architecture Decision Records',
