@@ -52,9 +52,10 @@ declaration, the `0.y.z` version-selection rule, and the exhaustive label table.
 options, and rulesets — as a `gh-infra` manifest. To change a setting:
 
 1. Edit `.github/settings.yml` and open a pull request.
-2. CI validates the manifest and, for same-repository pull requests, posts a `gh infra plan` diff
-   to the job summary. Review that diff like any other code change.
-3. After merge, a maintainer applies the change from a local machine:
+2. CI validates the manifest's syntax and schema. It does not check for drift against live GitHub
+   state — before or after merge, run `gh infra plan .github/settings.yml` locally to review the
+   diff like any other code change.
+3. A maintainer applies the change from a local machine:
 
    ```console
    $ gh extension install babarot/gh-infra --pin v0.13.0
@@ -64,7 +65,7 @@ options, and rulesets — as a `gh-infra` manifest. To change a setting:
 
 Always pass the file path, not the `.github/` directory, to `gh-infra` — a directory argument also
 scans non-manifest YAML such as `labeler.yml`, which `gh-infra` silently skips by default, but the
-file path avoids relying on that behavior. `apply` is never run in CI; see
+file path avoids relying on that behavior. Neither `plan` nor `apply` ever runs in CI; see
 [ADR-0012](../adr/0012-github-settings-as-code/) for why.
 
 `.github/settings.yml` reconciles labels and rulesets **authoritatively**: an entry removed from

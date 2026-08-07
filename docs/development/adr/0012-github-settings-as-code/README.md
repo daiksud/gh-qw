@@ -1,7 +1,7 @@
 ---
 type: adr
 title: "ADR-0012: Manage repository settings as code with local-only apply"
-description: "Declare gh-qw's GitHub repository settings in .github/settings.yml via gh-infra, applying only from a local machine while CI verifies with a read-only token."
+description: "Declare gh-qw's GitHub repository settings in .github/settings.yml via gh-infra, validating the manifest in CI while apply and drift review stay a local, manual step."
 resource: gh-qw
 tags: [gh-qw, adr, adr-0012, gh-infra, github-settings, ci]
 timestamp: 2026-08-06
@@ -42,15 +42,22 @@ these settings is a fine-grained personal access token or a GitHub App installat
 repository administration rights, and this project accepts no standing decision to place such a
 credential in this repository's CI.
 
+Automated drift detection (a scheduled `gh infra plan`) was prototyped and made to work end to end
+during this change's development, but it needed a dedicated GitHub App, a read-only installation
+token minted per run, a preflight check, and a two-layer guard against a silent-failure mode in
+`gh infra plan --ci` itself (see the Decision below for what that mode is). That standing
+credential, its permissions, and its private key are an ongoing operational cost this project is
+not willing to carry merely to catch drift automatically once a month, when a maintainer can run
+`gh infra plan` locally in seconds whenever they suspect it. The prototype is not adopted.
+
 ## Decision
 
 Repository settings are declared in `.github/settings.yml`, a single `gh-infra` `Repository`
 manifest covering the description, labels, merge strategy, security options, rulesets, and Actions
 configuration already in effect (`gh infra import` was used to seed it, so adopting it changes
-nothing on GitHub by itself — with one deliberate exception to that starting point, described
-below). `reconcile.labels` and `reconcile.rulesets` are both `authoritative`: removing an entry from
-the manifest deletes it on GitHub, not just stops tracking it, so the manifest is a complete
-description rather than a partial overlay.
+nothing on GitHub by itself). `reconcile.labels` and `reconcile.rulesets` are both `authoritative`:
+removing an entry from the manifest deletes it on GitHub, not just stops tracking it, so the
+manifest is a complete description rather than a partial overlay.
 
 `.github/settings.yml` was chosen over `gh-infra`'s own documented convention of
 `.github/infra.yaml` because the filename `settings.yml` is independently recognized across GitHub
@@ -65,58 +72,44 @@ maintainer — never CI.** This follows directly from the token finding above: s
 this manifest requires `Administration: write`, and this project will not place a credential with
 that scope in a public repository's CI, CI structurally cannot apply settings at all.
 
-CI instead runs two checks, both defined in `.github/workflows/infra.yml`:
+**CI runs exactly one check: `gh infra validate .github/settings.yml`**, a job in the existing
+`.github/workflows/ci.yml` alongside the Go and documentation checks. `validate` parses and
+schema-checks the manifest; it makes no GitHub API call, needs no credential at all, and therefore
+also runs unmodified on pull requests from forks. It catches a malformed manifest before merge. It
+does **not** detect drift between the manifest and live GitHub state — that comparison
+(`gh infra plan`) is left to a maintainer to run locally, typically while reviewing a settings pull
+request or investigating a suspected out-of-band change, immediately before `apply`.
 
-- **`validate`** parses and schema-checks the manifest. It makes no GitHub API call, needs no
-  credential, and therefore also runs unmodified on pull requests from forks.
-- **`plan`** reports drift between the manifest and live GitHub state, authenticating with a GitHub
-  App installation token. The App must be granted exactly `Administration: read`, `Contents: read`,
-  `Issues: read`, `Metadata: read`, `Secrets: read`, and `Variables: read` — enough to read every
-  setting `gh-infra` manages, and structurally incapable of writing any of them. The last two are
-  required even though this manifest declares no `spec.secrets`/`spec.variables`: `gh infra plan`
-  was found, empirically, to unconditionally list a repository's secret and variable names while
-  building its full state view, regardless of what the manifest itself declares; both permissions
-  expose names and metadata only; GitHub never returns secret or variable values through this or
-  any API. The workflow does not narrow the minted token to an explicit permission subset the way
-  it initially did: `actions/create-github-app-token@v3.2.0` has no input for the `Variables`
-  permission at all, and requesting any explicit subset excludes everything unlisted regardless of
-  what the installation actually grants, so a partial narrowing (five requested permissions plus
-  whatever Variables access the App happens to have) is not expressible with this action. The App's
-  own installation permissions are therefore the only boundary on this token, which is why they
-  must be exactly those six, read-only, with nothing else granted. It runs on same-repository pull
-  requests (surfacing the diff for review, without `--ci`, since a settings pull request is expected
-  to show one), and with `--ci` on a monthly schedule and on manual dispatch, where any diff means
-  unreviewed drift. Verifying `gh infra plan --ci`'s actual behavior found it exits `0` even when
-  every API call failed to authenticate, so a stale or misconfigured App credential could be
-  silently reported as "no drift"; the `plan` job therefore also runs a preflight API read with the
-  same token before calling `plan`, and separately fails if `plan`'s own output reports repositories
-  skipped due to errors, regardless of `plan`'s exit code. This preflight guard was itself confirmed
-  live, twice: an App granted only four of the six permissions made `plan` fail to list secrets with
-  an HTTP 403, and, after adding `Secrets: read`, an App still missing `Variables: read` made it fail
-  to list variables the same way — both times the job correctly failed instead of reporting false
-  "no drift".
+This is a deliberate reduction from an earlier design tried during this change's development, where
+CI additionally ran `gh infra plan` — on pull requests to surface the diff, and with `--ci` on a
+monthly schedule and manual dispatch to catch drift automatically. That design was fully built and
+verified working end to end against this repository's live state, but needed a GitHub App
+installation token granted `Administration: read`, `Contents: read`, `Issues: read`,
+`Metadata: read`, `Secrets: read`, and `Variables: read` — the last two only because `gh infra plan`
+was found, empirically, to unconditionally list a repository's secret and variable names while
+building its full state view, regardless of what the manifest itself declares. Standing up and
+maintaining that App — its permissions, its private key, its rotation — for a monthly drift check
+was judged not worth the
+operational cost relative to a maintainer simply running `gh infra plan` by hand when they want to
+know. Two findings from that abandoned design are worth preserving for whoever revisits automated
+drift detection later:
 
-Once both permissions were correctly granted, `plan` ran end to end and surfaced a real, fifth
-finding: `allow_auto_merge`, `squash_merge_commit_title`, `squash_merge_commit_message`,
-`merge_commit_title`, and `merge_commit_message` all showed as changed even though a personal token
-confirmed live GitHub state matched the manifest exactly. A diagnostic step dumping the raw
-`GET /repos/{owner}/{repo}` response through the App token confirmed the cause: GitHub returns
-`null` for all five fields when the requester is a GitHub App installation token scoped to
-`Administration: read` rather than `write` — a permission-gated field-visibility behavior in
-GitHub's own API, not a `gh-infra` bug. Since `gh-infra`'s `MergeStrategy` fields are each an
-individually optional pointer (confirmed in `internal/repository/diff.go`: a field is compared only
-when the manifest sets it, otherwise skipped entirely, for both `plan` and `apply`), the fix was to
-stop declaring these five fields in `spec.merge_strategy` rather than trying to work around a
-comparison that can never succeed for a read-only token. They remain manually managed, alongside
-the other settings `gh-infra` cannot reach at all (see the reference). The alternative — granting
-the App `Administration: write` so it could see these fields — was rejected outright: it would
-recreate exactly the write-capable-CI-credential risk this whole design exists to avoid, to manage
-five comparatively low-stakes, cosmetic settings.
+- **`gh infra plan --ci` exits `0` even when every API call failed to authenticate** — verified
+  empirically. A drift-detection job that trusts this exit code alone can silently report "no
+  drift" while actually unable to read anything; guard it by also checking `plan`'s own output for
+  repositories skipped due to errors.
+- **A read-only (`Administration: read`) credential cannot see five `merge_strategy` fields at
+  all** — `allow_auto_merge` and the four commit-message-template fields
+  (`squash_merge_commit_title`/`_message`, `merge_commit_title`/`_message`) come back `null` from
+  `GET /repos/{owner}/{repo}` for such a credential, a permission-gated field-visibility behavior in
+  GitHub's own API rather than a `gh-infra` bug. Declaring them in the manifest while reading with a
+  read-only token produces permanent, unfixable false drift. This is not a concern for the design
+  adopted here, since `apply`/`plan` both run locally with a maintainer's own, fully-privileged
+  credential — the five fields are declared in `spec.merge_strategy` normally.
 
-The full operating model, the token/permission table, and the settings `gh-infra` cannot manage at
-all (GitHub Pages, Environments, the CodeQL default setup, webhooks, and others) are documented in
-the [repository settings reference](../../../reference/repository-settings/) rather than repeated
-here.
+The full operating model and the settings `gh-infra` cannot manage at all (GitHub Pages,
+Environments, the CodeQL default setup, webhooks, and others) are documented in the
+[repository settings reference](../../../reference/repository-settings/) rather than repeated here.
 
 ## Consequences
 
@@ -124,22 +117,21 @@ here.
 
 - A repository setting change now goes through the same pull request review as a code change,
   instead of an unrecorded UI click.
-- The CI credential is read-only by construction, entirely by the App's own installation
-  permissions (the workflow requests no narrower subset — see the Decision and the Negative
-  consequence below), so CI cannot mutate live settings even if a workflow were compromised — there
-  is no credential to escalate.
-- Drift between the manifest and live GitHub state is caught automatically at least monthly, and
-  immediately on demand via manual dispatch, rather than only when someone happens to notice.
-- Adopting the manifest changed nothing on GitHub: `gh infra plan` reported no differences before
-  adding the `authoritative` reconcile policy, after adding it, and again after removing the five
-  `merge_strategy` fields a read-only token cannot verify.
+- CI never holds any GitHub credential capable of reading or writing repository settings —
+  `validate` makes no API call at all — so there is no standing credential in this repository to
+  misconfigure, rotate, or ever escalate from.
+- Adopting the manifest changed nothing on GitHub: `gh infra plan`, run locally, reported no
+  differences before adding the `authoritative` reconcile policy and after.
+- The manifest covers every field `gh-infra` supports, including the five `merge_strategy` fields
+  a CI-held read-only credential could never have verified — nothing is left unmanaged to work
+  around a credential this design does not have.
 
 ### Negative
 
-- A maintainer must create and maintain a GitHub App and rotate its private key outside of any
-  code in this repository; nothing here automates that prerequisite.
-- Detection lag is real: an out-of-band UI change is caught within a month by schedule, not
-  instantly — only a manual dispatch run or the next scheduled run reveals it.
+- There is no automated drift detection: an out-of-band change made through the GitHub UI is
+  invisible until a maintainer happens to run `gh infra plan` locally. This is an accepted,
+  deliberate trade-off against the operational cost of a standing CI credential — see Context and
+  Decision.
 - `.github/settings.yml` is deliberately not `gh-infra`'s own idiomatic filename; if a Probot
   Settings App were ever installed on this repository, its interpretation of the same file could
   conflict with `gh-infra`'s.
@@ -149,18 +141,6 @@ here.
 - `authoritative` reconcile makes deleting a manifest entry a real deletion: removing a label
   strips it from every issue and pull request currently carrying it. `gh infra plan` must be
   reviewed before every `apply`.
-- The `plan` job's token carries no App-side narrowing to an explicit permission subset, since
-  `actions/create-github-app-token@v3.2.0` cannot express the `Variables` permission and any
-  narrowing would otherwise silently exclude it. The App's own installation permissions are the
-  only thing keeping this token to exactly six read scopes; a future accidental grant of a seventh
-  permission, or of write access on any of the six, would flow into the token unnoticed by anything
-  in this repository, rather than being caught immediately the way an over-broad request would have
-  been with explicit narrowing.
-- Five `merge_strategy` fields (`allow_auto_merge` and the four commit-message templates) are
-  entirely unmanaged by this manifest, in both `plan` and `apply`, because GitHub's API will not
-  reveal their true values to any `Administration: read`-only credential. Changing them still
-  requires a manual `gh repo edit` or a trip through the GitHub UI, exactly as before this change,
-  and nothing here will ever detect drift in them.
 
 ### Neutral
 
@@ -168,7 +148,11 @@ here.
   webhooks, collaborators, and the default branch name among them — remain manually managed exactly
   as before. They are enumerated in the
   [repository settings reference](../../../reference/repository-settings/), not here.
-- The exhaustive token/permission table, the operating workflow (edit → PR → review the plan diff →
-  merge → local apply), and the label-color rationale now live in the
+- The operating workflow (edit → PR → review a locally-run `gh infra plan` diff → merge → local
+  apply) and the label-color rationale now live in the
   [repository settings reference](../../../reference/repository-settings/) and
   [versioning reference](../../../reference/versioning/) rather than being duplicated in this ADR.
+- A future maintainer who wants automated drift detection back has a working starting point: a
+  read-only GitHub App plus a `plan --ci` job, guarded against the two findings recorded in the
+  Decision above.
+
