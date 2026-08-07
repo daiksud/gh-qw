@@ -103,11 +103,11 @@ jobs:
 
       - name: Install documentation dependencies
         working-directory: .pages
-        run: pnpm install --frozen-lockfile
+        run: vp install --frozen-lockfile
 
       - name: Validate documentation
         working-directory: .pages
-        run: pnpm run validate
+        run: vp run validate
 
   settings:
     name: Validate repository settings
