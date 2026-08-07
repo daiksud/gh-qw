@@ -156,6 +156,16 @@ applied automatically from the paths a pull request changes, in addition to matc
 name. Path rules never touch the six branch-derived labels above, so a path match can never
 introduce ambiguity into the version computation.
 
+### Dependabot pull requests
+
+`.github/dependabot.yml` assigns no labels of its own (`labels: []` on every ecosystem); a
+dependency-update pull request is labeled exactly like any other, through `labeler.yml`. Its branch
+name and commit/PR title both start with a Conventional Commits type — `build` for the `gomod` and
+`npm` ecosystems, `ci` for `github-actions` — so the branch-name rule and the path rule agree on the
+same label, and the title itself (`build(deps): bump ...`, `ci(deps): bump ...`) is Conventional
+Commits-compliant. Since `build` and `ci` are both path-derived, never branch-derived-and-
+version-affecting, a dependency update can never affect the computed release version.
+
 ### Label colors
 
 Label color encodes both the SemVer tier and whether a label affects the version:

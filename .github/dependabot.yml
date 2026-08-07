@@ -1,0 +1,61 @@
+# Dependabot's default behavior creates its own `dependencies`/`javascript`-
+# style labels, which are not part of gh-qw's Conventional Commits label
+# vocabulary (see ADR-0011 and the versioning reference at
+# docs/reference/versioning/#labels). Those default labels would also collide
+# with `.github/settings.yml`'s `reconcile.labels: authoritative`, which
+# deletes any label on GitHub that the manifest does not declare.
+#
+# `labels: []` below disables Dependabot's own label assignment entirely,
+# delegating labelling to `.github/labeler.yml` exactly like every other pull
+# request. `commit-message.prefix` and `pull-request-branch-name.prefix` are
+# set to the same Conventional Commits type per ecosystem specifically so that
+# labeler's branch-name rule and path rule agree on the same label:
+# `build/...` (gomod, npm) and `ci/...` (github-actions) both land on `build`
+# and `ci` respectively — neither matches any of the six branch-derived,
+# version-affecting labels, so a dependency update can never affect the
+# computed release version. `commit-message.include: "scope"` adds `(deps)`/
+# `(deps-dev)` after the prefix so every generated title is fully Conventional
+# Commits-compliant (e.g. `build(deps): bump ...`).
+#
+# `prefix-development` (npm-only, lets development-dependency commits use a
+# different prefix such as `chore`) is deliberately NOT used: it only affects
+# the commit message, not `pull-request-branch-name.prefix` — Dependabot can
+# only ever request one branch prefix per ecosystem — so a `chore(deps-dev)`
+# title would still land on a `build/...` branch carrying the `build` label,
+# reintroducing the same type/label mismatch the per-ecosystem prefixes exist
+# to avoid. The production/development distinction is preserved through the
+# `(deps)`/`(deps-dev)` scope instead.
+version: 2
+updates:
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels: []
+    commit-message:
+      prefix: "build"
+      include: "scope"
+    pull-request-branch-name:
+      prefix: "build"
+
+  - package-ecosystem: "npm"
+    directory: "/.pages"
+    schedule:
+      interval: "weekly"
+    labels: []
+    commit-message:
+      prefix: "build"
+      include: "scope"
+    pull-request-branch-name:
+      prefix: "build"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels: []
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    pull-request-branch-name:
+      prefix: "ci"
