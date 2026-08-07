@@ -136,8 +136,28 @@ describe("generated site link checker", () => {
 
     expect(result.failures.map((failure) => failure.message)).toEqual([
       "fragment #phantom does not exist in index.html",
-      "no generated target found (tried missing/index.html, missing.html)",
+      "no generated target found (tried missing/index.html)",
     ]);
+  });
+
+  test("does not treat a flat HTML file as a directory URL", async () => {
+    const result = await validateRoot(
+      '<a href="/gh-qw/missing/">Missing directory</a>',
+      new Map([["missing.html", "<!doctype html><html></html>"]]),
+    );
+
+    expect(result.failures.map((failure) => failure.message)).toContain(
+      "no generated target found (tried missing/index.html)",
+    );
+  });
+
+  test("accepts Astro's flat 404 output for the 404 directory URL", async () => {
+    const result = await validateRoot(
+      '<a href="/gh-qw/404/">Not found</a>',
+      new Map([["404.html", "<!doctype html><html></html>"]]),
+    );
+
+    expect(result.failures).toEqual([]);
   });
 
   test("reports duplicate anchor identifiers", async () => {
@@ -156,7 +176,7 @@ describe("generated site link checker", () => {
     );
 
     expect(result.failures.map((failure) => failure.message)).toContain(
-      "no generated target found (tried missing/index.html, missing.html)",
+      "no generated target found (tried missing/index.html)",
     );
   });
 });
