@@ -77,9 +77,9 @@ job](#tag-version-enforcement) that computes versions under the current policy).
 
 ## Conventional Commits and branch naming
 
-Every commit uses a [Conventional Commits][conventional-commits] header, and every pull request
-branch starts with its commits' type as a prefix, so the type is visible before the branch is even
-opened. Types follow [`@commitlint/config-conventional`][commitlint-conventional]:
+Every commit uses a [Conventional Commits][conventional-commits] header, and every ordinary pull
+request branch starts with its commits' type as a prefix, so the type is visible before the branch
+is even opened. Types follow [`@commitlint/config-conventional`][commitlint-conventional]:
 
 | Type | Meaning | Branch prefix |
 | --- | --- | --- |
@@ -99,7 +99,8 @@ opened. Types follow [`@commitlint/config-conventional`][commitlint-conventional
 
 Angular's own commit convention, which `@commitlint/config-conventional` follows, has no dedicated
 type for a breaking change or a deprecation. Both are declared in a commit **footer** instead, on
-top of whichever type actually describes the change:
+top of whichever type actually describes the change. For the three supported composable types,
+put the matching exception prefix before the type:
 
 ```text
 feat(list): remove --old-flag
@@ -118,15 +119,17 @@ DEPRECATED: <what is deprecated>
 ```
 
 Label automation (below) only ever inspects branch names and changed file paths, never commit
-footers. So each of these footers gets one more branch-name exception, keeping its effect visible
-without parsing commit text:
+footers. So each of these footers gets a composable branch-name exception, keeping its effect
+visible without parsing commit text:
 
 | Footer | Branch prefix | Label |
 | --- | --- | --- |
-| `BREAKING CHANGE:` | `breaking-change/*` | `BREAKING CHANGE` |
-| `DEPRECATED:` | `deprecated/*` | `DEPRECATED` |
+| `BREAKING CHANGE:` | `breaking-change/{feat,perf,fix}/*` | `BREAKING CHANGE` + type |
+| `DEPRECATED:` | `deprecated/{feat,perf,fix}/*` | `DEPRECATED` + type |
 
 A pull request using either prefix must carry the matching footer in at least one of its commits.
+The type segment is mandatory, and the two exception prefixes cannot be combined. Bare exception
+prefixes and combinations with other types do not receive a version-affecting label.
 
 ## Labels
 
@@ -148,6 +151,11 @@ request's head branch name, never from changed file paths:
 | `perf` | PATCH |
 | `fix` | PATCH |
 | `revert` | PATCH |
+
+A `breaking-change/{feat,perf,fix}/*` branch receives both `BREAKING CHANGE` and its type label;
+`BREAKING CHANGE` wins when release notes choose a category and when the tag check computes the
+next version. A `deprecated/{feat,perf,fix}/*` branch likewise receives `DEPRECATED` and its type
+label, with the deprecation's PATCH impact taking effect.
 
 ### Path-derived labels
 

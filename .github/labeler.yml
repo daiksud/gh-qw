@@ -8,26 +8,27 @@
 # request's head branch name below, never against changed file paths, so a
 # path match can never introduce version ambiguity.
 #
-# The `breaking-change/*`/`deprecated/*` branch prefixes are exceptions:
-# Angular's commit convention has no dedicated type for a breaking change or a
-# deprecation, so both are declared in a commit footer instead of a type, and
-# get a matching branch-name prefix here so labeler — which cannot read commit
-# footers — can still see them.
+# The `breaking-change/` and `deprecated/` prefixes are exceptions layered on
+# top of the actual Conventional Commits type. They must be followed by one
+# of the version-affecting types (`feat`, `perf`, or `fix`), so labeler — which
+# cannot read commit footers — can apply both the footer label and the type
+# label. Bare exception prefixes and unsupported combinations intentionally
+# match nothing.
 
 "BREAKING CHANGE":
-  - head-branch: ["^breaking-change/"]
+  - head-branch: ["^breaking-change/(?:feat|perf|fix)/"]
 
 DEPRECATED:
-  - head-branch: ["^deprecated/"]
+  - head-branch: ["^deprecated/(?:feat|perf|fix)/"]
 
 feat:
-  - head-branch: ["^feat/"]
+  - head-branch: ["^(?:(?:breaking-change|deprecated)/)?feat/"]
 
 perf:
-  - head-branch: ["^perf/"]
+  - head-branch: ["^(?:(?:breaking-change|deprecated)/)?perf/"]
 
 fix:
-  - head-branch: ["^fix/"]
+  - head-branch: ["^(?:(?:breaking-change|deprecated)/)?fix/"]
 
 revert:
   - head-branch: ["^revert/"]

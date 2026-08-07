@@ -27,13 +27,18 @@ branch starts with that type as its prefix — `feat/short-description`, `fix/sh
 so on — so the type is visible before the branch is even opened.
 
 A breaking change or a deprecation has no dedicated type; declare it in a commit footer instead, on
-top of whichever type describes the actual change, and use the matching branch prefix so label
-automation can see it:
+top of whichever type describes the actual change. For `feat`, `perf`, and `fix`, put the matching
+exception prefix before the type so label automation can apply both labels:
 
-| Footer | Branch prefix |
+| Footer | Branch prefix | Labels |
 | --- | --- |
-| `BREAKING CHANGE: <summary>` | `breaking-change/short-description` |
-| `DEPRECATED: <what is deprecated>` | `deprecated/short-description` |
+| `BREAKING CHANGE: <summary>` | `breaking-change/{feat,perf,fix}/short-description` | `BREAKING CHANGE` + type |
+| `DEPRECATED: <what is deprecated>` | `deprecated/{feat,perf,fix}/short-description` | `DEPRECATED` + type |
+
+The type segment is required. Bare `breaking-change/` or `deprecated/` branches, combinations with
+other types, and stacked exception prefixes are invalid and receive no version-affecting label.
+When both labels are present, `BREAKING CHANGE` takes precedence for release notes and version
+calculation. The branch must still contain the matching footer in at least one commit.
 
 A GitHub Actions labeler applies labels automatically from the pull request's branch name and, for
 a few non-version-affecting types, from its changed file paths. Do not hand-edit a
