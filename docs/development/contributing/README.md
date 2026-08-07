@@ -97,6 +97,9 @@ $ vpr validate
 The package manager remains pnpm as Vite+'s backend. Use `vpr` for the site tasks; `vp dev` and
 `vp build` are Vite+'s built-in Vite commands and do not run Astro.
 
+Changes to `docs/` or `.pages/` merged into `main` trigger the GitHub Pages deployment workflow.
+The published site is [https://daiksud.github.io/gh-qw/](https://daiksud.github.io/gh-qw/).
+
 Do not commit generated `.pages/node_modules/`, `.pages/.astro/`, or `.pages/dist/` content.
 Use relative documentation links and follow the
 [versioning reference](../../reference/versioning/) and
