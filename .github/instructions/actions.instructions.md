@@ -16,3 +16,7 @@ applyTo: ".github/workflows/*.yml,.github/workflows/*.yaml"
 - `dtolnay/rust-toolchain` has no version tags — its ref selects the Rust toolchain itself
   (`@stable`, `@nightly`, `@1.89.0`, ...). Pin to the commit SHA at the tip of that ref, commented
   with the ref name instead of a version: `dtolnay/rust-toolchain@<sha> # stable`.
+- `.github/dependabot.yml`'s `github-actions` ecosystem raises pull requests to update SHA-pinned
+  actions automatically. Dependabot updates both the commit SHA and the trailing version comment
+  together, so the `owner/repo@<40-char-sha> # vX.Y.Z` format above is preserved without manual
+  re-resolution — accept its pull requests as-is rather than re-pinning by hand.
