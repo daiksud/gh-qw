@@ -1,6 +1,10 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vite-plus/test';
+import { readFile } from 'node:fs/promises';
 
-const css = await Bun.file(new URL('../src/styles/github-alerts.css', import.meta.url)).text();
+const css = await readFile(
+  new URL('../src/styles/github-alerts.css', import.meta.url),
+  'utf8',
+);
 
 const expectedColors = {
   light: {

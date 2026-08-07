@@ -92,18 +92,22 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - name: Set up Vite+
+        uses: voidzero-dev/setup-vp@313600b80b104eadebb9111787d37a2e83e014ca # v1.17.0
         with:
-          bun-version-file: .pages/package.json
+          version: "0.2.8"
+          node-version: "24.19.0"
+          working-directory: .pages
+          cache: true
+          run-install: false
 
       - name: Install documentation dependencies
         working-directory: .pages
-        run: bun ci
+        run: vp install --frozen-lockfile
 
       - name: Validate documentation
         working-directory: .pages
-        run: bun run validate
+        run: vp run validate
 
   settings:
     name: Validate repository settings

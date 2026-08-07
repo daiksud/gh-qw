@@ -19,6 +19,7 @@ const adrPages = [
   '0010-public-api-and-semantic-versioning',
   '0011-type-named-release-labels',
   '0012-github-settings-as-code',
+  '0013-node-pnpm-viteplus-toolchain',
 ].map((name) => `development/adr/${name}/index`);
 
 export default defineConfig({

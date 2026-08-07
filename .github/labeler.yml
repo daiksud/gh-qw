@@ -72,10 +72,11 @@ build:
               - "go.mod"
               - "go.sum"
               - ".pages/package.json"
-              - ".pages/bun.lock"
+              - ".pages/pnpm-lock.yaml"
               - ".pages/astro.config.mjs"
+              - ".pages/vite.config.ts"
               - ".pages/tsconfig.json"
-              - ".pages/bunfig.toml"
+              - ".pages/pnpm-workspace.yaml"
 
 ci:
   - any:

@@ -1,3 +1,5 @@
+import { glob, readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { parse, type DefaultTreeAdapterTypes } from "parse5";
 
 const SITE_ORIGIN = "https://daiksud.github.io";
@@ -7,8 +9,8 @@ const BASE_ROOT = BASE_PATH.slice(0, -1);
 const GITHUB_ORIGIN = "https://github.com";
 const REPOSITORY_EDIT_ROOT = "/daiksud/gh-qw/edit/";
 
-const DIST_DIRECTORY = `${import.meta.dir}/../dist`;
-const DOCS_DIRECTORY = `${import.meta.dir}/../../docs`;
+const DIST_DIRECTORY = join(import.meta.dirname, "../dist");
+const DOCS_DIRECTORY = join(import.meta.dirname, "../../docs");
 
 type AttributeName = "href" | "src";
 
@@ -108,14 +110,11 @@ async function scanFiles(
   directory: string,
   pattern: string,
 ): Promise<string[]> {
-  const glob = new Bun.Glob(pattern);
   const paths: string[] = [];
 
   try {
-    for await (const path of glob.scan({
+    for await (const path of glob(pattern, {
       cwd: directory,
-      dot: true,
-      onlyFiles: true,
     })) {
       paths.push(path.replaceAll("\\", "/"));
     }
@@ -533,7 +532,7 @@ async function main(): Promise<void> {
 
   if (htmlPaths.length === 0) {
     console.error(
-      `No generated HTML found in ${DIST_DIRECTORY}. Run bun run build first.`,
+      `No generated HTML found in ${DIST_DIRECTORY}. Run pnpm run build first.`,
     );
     process.exitCode = 1;
     return;
@@ -549,7 +548,7 @@ async function main(): Promise<void> {
   function readOutputFile(relativePath: string): Promise<string> {
     let contents = fileContents.get(relativePath);
     if (contents === undefined) {
-      contents = Bun.file(`${DIST_DIRECTORY}/${relativePath}`).text();
+      contents = readFile(join(DIST_DIRECTORY, relativePath), "utf8");
       fileContents.set(relativePath, contents);
     }
     return contents;
