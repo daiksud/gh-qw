@@ -31,7 +31,7 @@ spec:
     description: Backward-incompatible public API change (MAJOR; MINOR under 0.y.z)
     color: b60205
   - name: DEPRECATED
-    description: Public API marked for future removal (MINOR; PATCH under 0.y.z)
+    description: Public API marked for future removal (MINOR)
     color: fbca04
   - name: build
     description: Changes to the build system or external dependencies (no version bump)
@@ -49,7 +49,7 @@ spec:
     description: This issue or pull request already exists
     color: cfd3d7
   - name: feat
-    description: A new feature (MINOR; PATCH under 0.y.z)
+    description: A new feature (MINOR)
     color: 0e8a16
   - name: fix
     description: A bug fix (PATCH)
@@ -64,7 +64,7 @@ spec:
     description: This doesn't seem right
     color: e4e669
   - name: perf
-    description: A code change that improves performance (MINOR; PATCH under 0.y.z)
+    description: A code change that improves performance (MINOR)
     color: 7fd18a
   - name: question
     description: Further information is requested

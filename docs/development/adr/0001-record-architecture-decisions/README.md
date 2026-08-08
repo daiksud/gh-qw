@@ -4,7 +4,7 @@ title: "ADR-0001: Record architecture decisions"
 description: "Record durable architecture choices as lightweight ADRs."
 resource: gh-qw
 tags: [gh-qw, adr, adr-0001, architecture]
-timestamp: 2026-08-05
+timestamp: 2026-08-09
 ---
 
 # ADR-0001: Record architecture decisions
@@ -30,9 +30,10 @@ We will record durable architecture choices as lightweight ADRs in
 `docs/development/adr/NNNN-short-title/README.md`. Each ADR will focus on one decision and include
 its context, decision, consequences, status, date, and links to related records.
 
-An accepted ADR is immutable except for corrections that do not alter its meaning. A changed
-decision requires a new ADR; the earlier record is marked as superseded and links to its
-replacement.
+While `gh-qw` remains `0.y.z` and before `1.0.0` is deliberately declared, an accepted ADR may
+be revised in place as the project establishes its policies. From `1.0.0` onward, an accepted ADR
+is immutable except for corrections that do not alter its meaning. A changed decision then
+requires a new ADR; the earlier record is marked as superseded and links to its replacement.
 
 ## Consequences
 

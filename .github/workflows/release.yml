@@ -41,8 +41,9 @@ jobs:
           # the version this tag should be from the labels of every pull
           # request merged since the last release, and fails the workflow —
           # before any artifact is built or any release is created — if the
-          # pushed tag disagrees, or if nothing merged since the last
-          # release actually affects the version. There is no override.
+          # pushed tag disagrees, if a v0 release attempts to graduate to a
+          # nonzero major, or if nothing merged since the last release
+          # actually affects the version. There is no override.
           CURRENT_TAG="${GITHUB_REF_NAME}"
 
           if [[ ! "$CURRENT_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -75,15 +76,15 @@ jobs:
           PREV_SHA="$(git rev-list -n 1 "$PREV_TAG")"
 
           IFS='.' read -r PREV_MAJOR PREV_MINOR PREV_PATCH <<< "${PREV_TAG#v}"
+          CURRENT_MAJOR="${CURRENT_TAG#v}"
+          CURRENT_MAJOR="${CURRENT_MAJOR%%.*}"
 
-          # gh-qw only implements the documented 0.y.z policy (breaking
-          # change -> MINOR, every other version-affecting change -> PATCH;
-          # see docs/reference/versioning/#versioning-during-major-version-zero).
-          # Declaring 1.0.0 is a deliberate decision this job never makes on
-          # its own (see ADR-0010) — update this job first if that decision
-          # is ever made.
-          if [ "$PREV_MAJOR" != "0" ]; then
-            echo "::error::Previous release ${PREV_TAG} is already major version ${PREV_MAJOR}; this job only implements the 0.y.z policy documented in docs/reference/versioning/. Update it before tagging past 1.0.0." >&2
+          # A v1.0.0 graduation is a deliberate project decision, not an
+          # automatic consequence of a release. Keep this guard until that
+          # decision is made; the calculation below already contains the
+          # explicit v0 -> v1.0.0 transition for that future update.
+          if [ "$PREV_MAJOR" = "0" ] && [ "$CURRENT_MAJOR" != "0" ]; then
+            echo "::error::Tag ${CURRENT_TAG} attempts to graduate from ${PREV_TAG} to a nonzero major version. Declaring 1.0.0 is a deliberate decision; update this guard and the versioning policy before pushing a graduation tag." >&2
             exit 1
           fi
 
@@ -92,6 +93,8 @@ jobs:
           # associated pull request rather than parsed from squash-merge
           # subjects.
           HAS_BREAKING=false
+          HAS_MINOR=false
+          HAS_PATCH=false
           HAS_VERSION_LABEL=false
           declare -A SEEN_PRS
           while IFS= read -r sha; do
@@ -107,7 +110,12 @@ jobs:
                     HAS_BREAKING=true
                     HAS_VERSION_LABEL=true
                     ;;
-                  "DEPRECATED" | feat | perf | fix | revert)
+                  "DEPRECATED" | feat | perf)
+                    HAS_MINOR=true
+                    HAS_VERSION_LABEL=true
+                    ;;
+                  fix | revert)
+                    HAS_PATCH=true
                     HAS_VERSION_LABEL=true
                     ;;
                 esac
@@ -115,12 +123,35 @@ jobs:
             done
           done < <(git log --format=%H "${PREV_SHA}..${CURRENT_SHA}")
 
-          if $HAS_BREAKING; then
+          if ! $HAS_VERSION_LABEL; then
+            echo "::error::No pull request merged since ${PREV_TAG} carries a version-affecting label (BREAKING CHANGE, DEPRECATED, feat, perf, fix, revert). Refusing to release ${CURRENT_TAG}." >&2
+            exit 1
+          fi
+
+          if [ "$PREV_MAJOR" = "0" ] && [ "$CURRENT_TAG" = "v1.0.0" ]; then
+            # This branch is protected by the graduation guard above today.
+            # It makes the future, explicitly approved v0 -> v1 transition
+            # deterministic when that guard is removed.
+            EXPECTED_TAG="v1.0.0"
+          elif [ "$PREV_MAJOR" = "0" ]; then
+            # During 0.y.z, all minor-tier changes advance MINOR while
+            # breaking changes keep the major version at zero.
+            if $HAS_BREAKING || $HAS_MINOR; then
+              EXPECTED_TAG="v${PREV_MAJOR}.$((PREV_MINOR + 1)).0"
+            elif $HAS_PATCH; then
+              EXPECTED_TAG="v${PREV_MAJOR}.${PREV_MINOR}.$((PREV_PATCH + 1))"
+            else
+              echo "::error::The merged pull requests since ${PREV_TAG} have no recognized version tier. Refusing to release ${CURRENT_TAG}." >&2
+              exit 1
+            fi
+          elif $HAS_BREAKING; then
+            EXPECTED_TAG="v$((PREV_MAJOR + 1)).0.0"
+          elif $HAS_MINOR; then
             EXPECTED_TAG="v${PREV_MAJOR}.$((PREV_MINOR + 1)).0"
-          elif $HAS_VERSION_LABEL; then
+          elif $HAS_PATCH; then
             EXPECTED_TAG="v${PREV_MAJOR}.${PREV_MINOR}.$((PREV_PATCH + 1))"
           else
-            echo "::error::No pull request merged since ${PREV_TAG} carries a version-affecting label (BREAKING CHANGE, DEPRECATED, feat, perf, fix, revert). Refusing to release ${CURRENT_TAG}." >&2
+            echo "::error::The merged pull requests since ${PREV_TAG} have no recognized version tier. Refusing to release ${CURRENT_TAG}." >&2
             exit 1
           fi
 

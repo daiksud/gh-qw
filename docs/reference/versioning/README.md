@@ -4,7 +4,7 @@ title: "Versioning reference"
 description: "Normative public API declaration, SemVer policy, and Conventional Commits/label contract for gh-qw releases."
 resource: gh-qw
 tags: [gh-qw, reference, versioning, semver, conventional-commits, release]
-timestamp: 2026-08-06
+timestamp: 2026-08-09
 ---
 
 # Versioning reference
@@ -51,24 +51,25 @@ A version-affecting change is one that changes one of the above. The following a
 
 `gh-qw` is currently `0.y.z`. Per SemVer clause 4, "anything MAY change at any time" during initial
 development, and the public API declared above should not yet be considered stable in the SemVer
-1.0.0 sense. `gh-qw` nonetheless applies SemVer's ordinary clauses 6 through 8 during `0.y.z`, one
-tier down from where they would land after `1.0.0`:
+1.0.0 sense. `gh-qw` nonetheless applies the ordinary MINOR and PATCH rules during `0.y.z`. The
+only exception is that a change which would ordinarily increment MAJOR increments MINOR instead,
+so the major version remains zero:
 
-| Change kind | Ordinary SemVer (`x.y.z`, `x > 0`) | `gh-qw` today (`0.y.z`) |
+| Change kind | Ordinary SemVer (`x.y.z`, `x > 0`) | `gh-qw` (`0.y.z`) |
 | --- | --- | --- |
 | Backward-incompatible public API change | MAJOR | **MINOR** |
-| Backward-compatible public API deprecation | MINOR | **PATCH** |
-| Backward-compatible public API addition | MINOR | **PATCH** |
-| Substantial internal improvement, including performance ("speed is a feature") | MAY be MINOR | **PATCH** |
+| Backward-compatible public API deprecation | MINOR | **MINOR** |
+| Backward-compatible public API addition | MINOR | **MINOR** |
+| Substantial internal improvement, including performance ("speed is a feature") | MINOR | **MINOR** |
 | Backward-compatible bug fix | PATCH | **PATCH** |
 | No public API impact | no bump | no bump |
 
 `gh-qw` remains `0.y.z` under this policy even across a backward-incompatible change: that change
-still only bumps MINOR, exactly like every other version-affecting change during `0.y.z`. Declaring
-`1.0.0` — and with it, the point where the "ordinary SemVer" column starts applying without the
-one-tier shift — is a deliberate, separate decision that this automatic mechanism never makes by
-itself; it requires its own future decision (and an update to the [tag version enforcement
-job](#tag-version-enforcement) that computes versions under the current policy).
+bumps MINOR rather than MAJOR. Declaring `1.0.0` is a deliberate, separate decision that this
+automatic mechanism never makes by itself. The tag verification job currently rejects any tag with
+a nonzero major when the previous release is `0.y.z`; the graduation decision must update that
+guard before the first `1.0.0` tag. Once the project is past that transition, the job applies the
+ordinary MAJOR, MINOR, and PATCH rules.
 
 > [!IMPORTANT]
 > Once released, a version's contents are never modified (SemVer clause 3). A mistaken release is
@@ -143,19 +144,20 @@ below.
 Only six labels ever affect the computed version, and they are applied **only** from the pull
 request's head branch name, never from changed file paths:
 
-| Label | `0.y.z` impact |
-| --- | --- |
-| `BREAKING CHANGE` | MINOR |
-| `DEPRECATED` | PATCH |
-| `feat` | PATCH |
-| `perf` | PATCH |
-| `fix` | PATCH |
-| `revert` | PATCH |
+| Label | `0.y.z` impact | `x.y.z` (`x > 0`) impact |
+| --- | --- | --- |
+| `BREAKING CHANGE` | MINOR | MAJOR |
+| `DEPRECATED` | MINOR | MINOR |
+| `feat` | MINOR | MINOR |
+| `perf` | MINOR | MINOR |
+| `fix` | PATCH | PATCH |
+| `revert` | PATCH | PATCH |
 
 A `breaking-change/{feat,perf,fix}/*` branch receives both `BREAKING CHANGE` and its type label;
 `BREAKING CHANGE` wins when release notes choose a category and when the tag check computes the
-next version. A `deprecated/{feat,perf,fix}/*` branch likewise receives `DEPRECATED` and its type
-label, with the deprecation's PATCH impact taking effect.
+next version. It selects MINOR during `0.y.z` and MAJOR after `1.0.0`, regardless of the
+accompanying type. A `deprecated/{feat,perf,fix}/*` branch likewise receives `DEPRECATED` and its
+type label; the deprecation selects MINOR in both versioning ranges.
 
 ### Path-derived labels
 
@@ -182,12 +184,13 @@ themselves — their exact colors and descriptions — are defined once, in
 [repository settings reference](../repository-settings/)); this section explains the rationale
 behind that scheme, not the literal values:
 
-- **`BREAKING CHANGE`** uses solid red — the MAJOR tier (MINOR today, under `0.y.z`).
+- **`BREAKING CHANGE`** uses solid red — the MAJOR tier after `1.0.0`, held to MINOR while the
+  project is `0.y.z`.
 - **`DEPRECATED`** uses solid yellow, deliberately outside the red/green/blue tiers below: it is a
   footer-driven exception rather than a real Conventional Commits type, and yellow marks it as an
-  exception at a glance.
-- **`feat`** and **`perf`** use two shades of green (the MINOR tier; PATCH today under `0.y.z`),
-  with `feat` the darker of the two.
+  exception at a glance. Its version impact is MINOR in both ranges.
+- **`feat`** and **`perf`** use two shades of green (the MINOR tier in both ranges), with `feat` the
+  darker of the two.
 - **`fix`** and **`revert`** use two shades of blue (the PATCH tier), with `fix` the darker of the
   two.
 - The seven [path-derived labels](#path-derived-labels) use purple, teal, and gray tones outside
@@ -220,14 +223,18 @@ built:
 2. it resolves every pull request merged since that tag through its squash-merge commit, and
    collects their [branch-derived labels](#branch-derived-labels);
 3. it computes the expected next version from those labels using the
-   [`0.y.z` policy](#versioning-during-major-version-zero) above; and
+   [`0.y.z` policy](#versioning-during-major-version-zero) above when the previous release is
+   `0.y.z`, or ordinary SemVer rules after `1.0.0`; and
 4. it compares that expected version against the pushed tag.
 
 The job fails the workflow, and no release is created, when:
 
 - the pushed tag does not equal the computed version; or
+- the previous release is `0.y.z` and the pushed tag has a nonzero major version, including
+  `v1.0.0`; or
 - no pull request merged since the last release carries a branch-derived label.
 
-There is no override. A release that should not have happened is never edited or re-tagged (see
-[the immutability rule above](#versioning-during-major-version-zero)); the next correct tag is
-pushed instead.
+There is no override. A `1.0.0` graduation must be decided separately and the guard must be
+updated before its tag is pushed. A release that should not have happened is never edited or
+re-tagged (see [the immutability rule above](#versioning-during-major-version-zero)); the next
+correct tag is pushed instead.

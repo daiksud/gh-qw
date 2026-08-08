@@ -15,7 +15,8 @@ Keep changes focused and preserve the contracts in the [concept](../../concept/)
 [compatibility reference](../../reference/compatibility/),
 [repository settings reference](../../reference/repository-settings/), and
 [Architecture Decision Records](../adr/). Record a future durable choice by copying the
-[ADR template](../adr/template/) and follow ADR-0001's immutability policy after acceptance.
+[ADR template](../adr/template/). While the project is `0.y.z`, revise accepted ADRs in place when
+their decisions change; after `1.0.0`, follow ADR-0001's superseding policy.
 
 ## Branch names, commits, and labels
 
