@@ -50,9 +50,9 @@ jobs:
   deploy:
     name: Deploy documentation
     needs: build
-    # Pages deployment may wait for the action's ten-minute deployment timeout.
+    # Leave one minute for setup and API overhead around deploy-pages' ten-minute wait.
     runs-on: ubuntu-slim
-    timeout-minutes: 10
+    timeout-minutes: 14
     permissions:
       pages: write
       id-token: write

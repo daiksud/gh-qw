@@ -46,10 +46,10 @@ darwin, linux, and windows targets, including the linux arm64 artifact. No privi
 host-native build is required.
 
 Each slim job declares a timeout below the platform's 15-minute limit. API- and action-oriented
-jobs use five minutes, except Pages deployment, which uses ten minutes so the job does not
-terminate before the deploy-pages action's own deployment timeout. Jobs that install toolchains
-or build and test also use ten minutes. The `test` matrix declares its timeout at job scope, so
-the same ten-minute limit applies to its Linux, arm64, macOS, and Windows entries.
+jobs use five minutes, except Pages deployment, which uses fourteen minutes to leave one minute
+for setup and API overhead around the deploy-pages action's ten-minute deployment timeout. Jobs
+that install toolchains or build and test use ten minutes. The `test` matrix declares its timeout
+at job scope, so the same ten-minute limit applies to its Linux, arm64, macOS, and Windows entries.
 
 The workflow files retain SHA-pinned actions and document the slim-image rationale inline. If a
 job's resource needs grow beyond these limits, it must be moved to a suitable full runner rather
@@ -71,6 +71,8 @@ than weakening the timeout without a new decision.
   builds; the current measurements provide margin but must be revisited as the repository grows.
 - The race detector is the tightest resource fit because instrumentation increases memory use
   within the slim container's 5 GB limit.
+- Pages deployment has only one minute of headroom below ubuntu-slim's 15-minute platform limit;
+  changes to the deploy-pages action's timeout must trigger a reconsideration of this value.
 - Release workflows cannot be exercised end to end before a tag push, so the first release after
   this change must confirm that the ten-minute budget remains sufficient.
 - `ubuntu-slim` remains unsuitable for arm64-native jobs and privileged operations.
