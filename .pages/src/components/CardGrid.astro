@@ -7,3 +7,35 @@ const { stagger = false } = Astro.props;
 ---
 
 <div class:list={['docs-card-grid', { stagger }]}><slot /></div>
+
+<style>
+  @layer gh-qw {
+    .docs-card-grid {
+      display: grid;
+      grid-template-columns: 100%;
+      gap: 1rem;
+    }
+
+    .docs-card-grid > :global(*) {
+      margin-top: 0 !important;
+    }
+  }
+
+  @media (min-width: 50rem) {
+    @layer gh-qw {
+      .docs-card-grid {
+        grid-template-columns: 1fr 1fr;
+        gap: 1.5rem;
+      }
+
+      .docs-card-grid.stagger {
+        --stagger-height: 5rem;
+        padding-bottom: var(--stagger-height);
+      }
+
+      .docs-card-grid.stagger > :global(*):nth-child(2n) {
+        transform: translateY(var(--stagger-height));
+      }
+    }
+  }
+</style>
