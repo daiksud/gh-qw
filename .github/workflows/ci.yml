@@ -15,7 +15,9 @@ concurrency:
 jobs:
   lint:
     name: Format and vet
-    runs-on: ubuntu-latest
+    # Formatting and vetting are lightweight Go checks that fit ubuntu-slim.
+    runs-on: ubuntu-slim
+    timeout-minutes: 10
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -41,11 +43,13 @@ jobs:
   test:
     name: Build and test (${{ matrix.os }}, ${{ matrix.arch }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          # ubuntu-slim is x64-only; retain the dedicated arm64 runner below.
+          - os: ubuntu-slim
             arch: amd64
           - os: ubuntu-24.04-arm
             arch: arm64
@@ -71,7 +75,9 @@ jobs:
 
   race:
     name: Race detector (Ubuntu amd64)
-    runs-on: ubuntu-latest
+    # Current race runs fit within ubuntu-slim's 5 GB container.
+    runs-on: ubuntu-slim
+    timeout-minutes: 10
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -87,7 +93,9 @@ jobs:
 
   docs:
     name: Validate documentation
-    runs-on: ubuntu-latest
+    # Documentation validation uses Node tooling without a browser or privileged access.
+    runs-on: ubuntu-slim
+    timeout-minutes: 10
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -111,7 +119,9 @@ jobs:
 
   settings:
     name: Validate repository settings
-    runs-on: ubuntu-latest
+    # Offline manifest validation is a lightweight ubuntu-slim workload.
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
     steps:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

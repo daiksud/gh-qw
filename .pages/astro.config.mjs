@@ -24,6 +24,7 @@ const adrPages = [
   '0013-node-pnpm-viteplus-toolchain',
   '0014-mdx-documentation-components',
   '0015-mdx-presentation-props',
+  '0016-ubuntu-slim-runners',
 ].map((name) => `development/adr/${name}/index`);
 
 export default defineConfig({

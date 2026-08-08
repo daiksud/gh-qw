@@ -16,7 +16,9 @@ concurrency:
 jobs:
   build:
     name: Build documentation
-    runs-on: ubuntu-latest
+    # Astro build and artifact packaging fit slim; tar and zstd are preinstalled.
+    runs-on: ubuntu-slim
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
@@ -48,7 +50,10 @@ jobs:
   deploy:
     name: Deploy documentation
     needs: build
-    runs-on: ubuntu-latest
+    # Leave four minutes beyond deploy-pages' ten-minute wait while staying one minute below
+    # ubuntu-slim's 15-minute platform cap.
+    runs-on: ubuntu-slim
+    timeout-minutes: 14
     permissions:
       pages: write
       id-token: write

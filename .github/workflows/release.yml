@@ -20,7 +20,9 @@ concurrency:
 jobs:
   version-check:
     name: Verify tag version
-    runs-on: ubuntu-latest
+    # Bash and GitHub CLI API validation are lightweight ubuntu-slim work.
+    runs-on: ubuntu-slim
+    timeout-minutes: 10
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -132,7 +134,9 @@ jobs:
   build:
     name: Build ${{ matrix.asset }}
     needs: version-check
-    runs-on: ubuntu-latest
+    # CGO-free cross-compilation needs no host architecture beyond x64.
+    runs-on: ubuntu-slim
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -181,7 +185,9 @@ jobs:
   release:
     name: Create GitHub Release
     needs: build
-    runs-on: ubuntu-latest
+    # Artifact download and release creation are lightweight API operations.
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
     steps:
       - name: Download assets
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
