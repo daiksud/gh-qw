@@ -6,9 +6,11 @@ import { z } from 'astro/zod';
 const docs = defineCollection({
   loader: glob({
     base: '../docs',
-    pattern: '**/README.md',
+    pattern: '**/README.{md,mdx}',
     generateId: ({ entry }) =>
-      entry === 'README.md' ? 'index' : entry.replace(/\/README\.md$/i, '/index'),
+      /^README\.mdx?$/i.test(entry)
+        ? 'index'
+        : entry.replace(/\/README\.mdx?$/i, '/index'),
   }),
   schema: docsSchema({
     extend: z.object({

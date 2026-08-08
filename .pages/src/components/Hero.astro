@@ -1,0 +1,22 @@
+---
+import { Image } from 'astro:assets';
+
+import logo from '../assets/logo.svg';
+
+const { title } = Astro.locals.starlightRoute.entry.data;
+---
+
+<div class="docs-hero">
+  <Image
+    src={logo}
+    alt="gh-qw logo"
+    width={400}
+    height={400}
+    class="docs-hero-image"
+    loading="eager"
+  />
+  <div class="docs-hero-copy">
+    <h1 id="_top" data-page-title>{title}</h1>
+    <slot />
+  </div>
+</div>

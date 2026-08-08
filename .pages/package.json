@@ -6,6 +6,7 @@
   "packageManager": "pnpm@11.20.0",
   "scripts": {},
   "dependencies": {
+    "@astrojs/mdx": "7.0.5",
     "@astrojs/markdown-satteri": "0.3.4",
     "@astrojs/starlight": "0.41.6",
     "astro": "7.1.6",
