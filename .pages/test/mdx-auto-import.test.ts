@@ -10,13 +10,13 @@ const HOMEPAGE = `
 
 </Hero>
 
-<Cards>
+<CardGrid stagger>
 <Card>
 
-Card content.
+<CardTitle><CardIcon>🧭</CardIcon> **[Concept](concept/)**</CardTitle>
 
 </Card>
-</Cards>
+</CardGrid>
 `;
 
 function compileHomepage(): string {
@@ -34,25 +34,32 @@ function compileHomepage(): string {
 describe('mdxAutoImport', () => {
   test('injects every homepage component import once', () => {
     const code = compileHomepage();
+    const componentNames = [
+      'Card',
+      'CardGrid',
+      'CardIcon',
+      'CardTitle',
+      'Hero',
+      'Install',
+    ];
 
-    expect(code).toContain('import Card from');
-    expect(code).toContain('import Cards from');
-    expect(code).toContain('import Hero from');
-    expect(code).toContain('import Install from');
-    expect(code.match(/import (?:Card|Cards|Hero|Install) from/g)).toHaveLength(
-      4,
-    );
+    for (const name of componentNames) {
+      expect(code).toContain(`import ${name} from`);
+    }
+
+    expect(
+      code.match(/import (?:Card|CardGrid|CardIcon|CardTitle|Hero|Install) from/g),
+    ).toHaveLength(componentNames.length);
   });
 
   test('creates a fresh injection state for every MDX document', () => {
     const first = compileHomepage();
     const second = compileHomepage();
 
-    expect(first.match(/import (?:Card|Cards|Hero|Install) from/g)).toHaveLength(
-      4,
-    );
-    expect(second.match(/import (?:Card|Cards|Hero|Install) from/g)).toHaveLength(
-      4,
-    );
+    const imports =
+      /import (?:Card|CardGrid|CardIcon|CardTitle|Hero|Install) from/g;
+
+    expect(first.match(imports)).toHaveLength(6);
+    expect(second.match(imports)).toHaveLength(6);
   });
 });

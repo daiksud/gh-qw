@@ -9,7 +9,7 @@ timestamp: 2026-08-08
 
 # ADR-0014: Use MDX components for the documentation homepage
 
-- **Status:** Accepted
+- **Status:** Superseded by [ADR-0015](../0015-mdx-presentation-props/)
 - **Date:** 2026-08-08
 - **Deciders:** gh-qw maintainers
 - **Related:** [ADR-0013](../0013-node-pnpm-viteplus-toolchain/)

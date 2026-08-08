@@ -29,10 +29,16 @@ Vite+'s built-in Vite commands, not the Astro tasks. `vp dev` starts a bare Vite
 tree.
 
 The homepage is authored in `../docs/README.mdx` with the Astro components `Hero`, `Install`,
-`Cards`, and `Card`. These components accept Markdown children only: do not pass props and do not
-add import statements to the MDX file. GitHub renders the source directly, strips component tags,
-and displays import statements as ordinary text. The build injects the component imports through
+`CardGrid`, `Card`, `CardTitle`, and `CardIcon`. Presentation-only props such as `CardGrid`'s
+boolean `stagger` are allowed, but reader-facing values such as titles, descriptions, icons, and
+links must remain Markdown children. Do not add import statements to the MDX file. GitHub renders
+the source directly, strips component tags and their attributes, and displays import statements as
+ordinary text. The build injects the component imports through
 `.pages/src/plugins/mdx-auto-import.ts`, so the source remains readable on GitHub.
+
+When a component contains block Markdown, leave a blank line after its opening tag. This is
+required for GitHub's Markdown parser to treat the following content as Markdown instead of literal
+text inside an HTML block.
 
 The published site is [https://daiksud.github.io/gh-qw/](https://daiksud.github.io/gh-qw/).
 `.github/workflows/pages.yml` deploys it after changes to `docs/` or `.pages/` reach `main`; a
