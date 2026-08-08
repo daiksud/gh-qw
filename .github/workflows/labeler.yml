@@ -15,7 +15,9 @@ concurrency:
 jobs:
   labeler:
     name: Apply labels
-    runs-on: ubuntu-latest
+    # This API-only action job is a lightweight fit for ubuntu-slim.
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
     steps:
       # No checkout: actions/labeler reads .github/labeler.yml from the base
       # repository through the GitHub API, so a fork pull request's code is

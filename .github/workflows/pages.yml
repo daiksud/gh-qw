@@ -16,7 +16,9 @@ concurrency:
 jobs:
   build:
     name: Build documentation
-    runs-on: ubuntu-latest
+    # Astro build and artifact packaging fit slim; tar and zstd are preinstalled.
+    runs-on: ubuntu-slim
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
@@ -48,7 +50,9 @@ jobs:
   deploy:
     name: Deploy documentation
     needs: build
-    runs-on: ubuntu-latest
+    # Deployment only invokes the Pages action and is a lightweight slim workload.
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
     permissions:
       pages: write
       id-token: write
