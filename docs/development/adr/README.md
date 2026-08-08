@@ -4,7 +4,7 @@ title: "Architecture Decision Records"
 description: "Index of Architecture Decision Records for gh-qw."
 resource: gh-qw
 tags: [gh-qw, adr, index]
-timestamp: 2026-08-05
+timestamp: 2026-08-09
 ---
 
 # Architecture Decision Records
@@ -13,8 +13,10 @@ This directory records significant architecture decisions for `gh-qw` as lightwe
 Architecture Decision Records (ADRs). Each record captures the context, the decision, and its
 consequences without duplicating implementation details or command reference material.
 
-Accepted ADRs are immutable except for corrections that do not change the decision, such as typo,
-link, or metadata fixes. When a decision changes, add a new ADR, mark the old record as
+While `gh-qw` remains `0.y.z` and before `1.0.0` is deliberately declared, accepted ADRs may be
+revised in place as the project establishes its policies. From `1.0.0` onward, accepted ADRs are
+immutable except for corrections that do not change the decision, such as typo, link, or metadata
+fixes. When a decision changes under that rule, add a new ADR, mark the old record as
 `Superseded by` the new ADR, and link the two records. Do not rewrite an accepted decision to make
 it appear that the new choice was always in effect.
 
@@ -23,7 +25,8 @@ it appear that the new choice was always in effect.
 1. Copy the [`template/`](template/) directory to `NNNN-short-title/` using the next number.
 2. Keep the record focused on one decision and use relative links for related ADRs.
 3. Add its exact title and status to the index below.
-4. After acceptance, supersede the record rather than changing its decision.
+4. While `gh-qw` is `0.y.z`, revise an accepted record in place when its decision changes. After
+   `1.0.0`, supersede the record instead.
 
 ## Statuses
 

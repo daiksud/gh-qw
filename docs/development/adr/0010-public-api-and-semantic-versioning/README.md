@@ -1,16 +1,16 @@
 ---
 type: adr
 title: "ADR-0010: Declare a public API and follow Semantic Versioning"
-description: "Declare gh-qw's public API and adopt SemVer 2.0.0, with a documented 0.y.z convention and mechanically enforced tags."
+description: "Declare gh-qw's public API and adopt SemVer 2.0.0, with a 0.y.z policy that preserves ordinary MINOR/PATCH bumps and holds MAJOR at zero, enforced by tags."
 resource: gh-qw
 tags: [gh-qw, adr, adr-0010, semver, release, public-api]
-timestamp: 2026-08-06
+timestamp: 2026-08-09
 ---
 
 # ADR-0010: Declare a public API and follow Semantic Versioning
 
 - **Status:** Accepted
-- **Date:** 2026-08-06
+- **Date:** 2026-08-09
 - **Deciders:** gh-qw maintainers
 - **Related:** [ADR-0008](../0008-conventional-commits-and-release-notes/), [ADR-0011](../0011-type-named-release-labels/)
 
@@ -38,14 +38,14 @@ exhaustive declaration lives in the
 [versioning reference](../../../reference/versioning/#public-api), which this ADR does not
 duplicate.
 
-`gh-qw` follows SemVer 2.0.0. While the project remains `0.y.z` (clause 4), its ordinary clauses 6
-through 8 still apply, but one tier down: a backward-incompatible public API change is MINOR
-instead of MAJOR; a backward-compatible addition, a deprecation, or a substantial internal
-improvement (including performance) is PATCH instead of MINOR; a backward-compatible bug fix
-remains PATCH. `gh-qw` stays `0.y.z` under this policy even across a backward-incompatible change —
-it still only bumps MINOR. Declaring `1.0.0`, and with it the point where the ordinary SemVer
-clauses apply without the one-tier shift, is a deliberate, separate decision this automatic
-mechanism never makes by itself.
+`gh-qw` follows SemVer 2.0.0. While the project remains `0.y.z` (clause 4), its ordinary MINOR and
+PATCH rules apply: a backward-compatible addition, a deprecation, or a substantial internal
+improvement (including performance) is MINOR, and a backward-compatible bug fix remains PATCH.
+The sole `0.y.z` exception is that a backward-incompatible public API change is MINOR instead of
+MAJOR, keeping the major version at zero. The tag verification job implements both this `0.y.z`
+policy and the ordinary rules for releases after `1.0.0`, but rejects any nonzero-major tag while
+the previous release is `0.y.z`. Declaring `1.0.0` is a deliberate, separate decision that
+requires this graduation guard to be updated first.
 
 Every tag push is verified mechanically before a release is built: a CI job computes the expected
 next version from the labels of pull requests merged since the last release and fails the workflow
@@ -62,17 +62,18 @@ rebuilding its assets, or rewriting its notes.
   judgment call made at tag time.
 - Contributors have one place (the versioning reference) that says exactly what counts as a
   version-affecting change, so internal refactors, tests, and documentation never force a release.
-- The `0.y.z` shift lets `gh-qw` keep tagging small, real releases (like this one) without
-  prematurely declaring `1.0.0` stability the project cannot yet back.
+- The `0.y.z` policy lets `gh-qw` keep its major version at zero across breaking changes while
+  allowing features, deprecations, and performance improvements to advance MINOR as they would
+  after `1.0.0`.
 
 ### Negative
 
 - Any CLI-observable change requires the correct branch prefix (see
   [ADR-0011](../0011-type-named-release-labels/)) or the release tag is rejected outright, with no
   manual escape hatch.
-- The one-tier `0.y.z` shift is nonstandard SemVer and must be understood by anyone tagging a
-  `gh-qw` release; it requires a deliberate decision (and likely a superseding ADR) at `1.0.0` to
-  retire.
+- Holding MAJOR at zero for breaking changes is a nonstandard SemVer rule that must be understood
+  by anyone tagging a `gh-qw` release. The tag check also rejects a `v1.0.0` graduation until the
+  project deliberately approves it and the guard is updated.
 
 ### Neutral
 
