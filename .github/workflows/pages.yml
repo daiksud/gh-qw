@@ -50,9 +50,9 @@ jobs:
   deploy:
     name: Deploy documentation
     needs: build
-    # Deployment only invokes the Pages action and is a lightweight slim workload.
+    # Pages deployment may wait for the action's ten-minute deployment timeout.
     runs-on: ubuntu-slim
-    timeout-minutes: 5
+    timeout-minutes: 10
     permissions:
       pages: write
       id-token: write

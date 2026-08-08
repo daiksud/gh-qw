@@ -46,9 +46,10 @@ darwin, linux, and windows targets, including the linux arm64 artifact. No privi
 host-native build is required.
 
 Each slim job declares a timeout below the platform's 15-minute limit. API- and action-oriented
-jobs use five minutes. Jobs that install toolchains or build and test use ten minutes. The
-`test` matrix declares its timeout at job scope, so the same ten-minute limit applies to its
-Linux, arm64, macOS, and Windows entries.
+jobs use five minutes, except Pages deployment, which uses ten minutes so the job does not
+terminate before the deploy-pages action's own deployment timeout. Jobs that install toolchains
+or build and test also use ten minutes. The `test` matrix declares its timeout at job scope, so
+the same ten-minute limit applies to its Linux, arm64, macOS, and Windows entries.
 
 The workflow files retain SHA-pinned actions and document the slim-image rationale inline. If a
 job's resource needs grow beyond these limits, it must be moved to a suitable full runner rather
