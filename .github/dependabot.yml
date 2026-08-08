@@ -1,21 +1,22 @@
-# Dependabot's default behavior creates its own `dependencies`/`javascript`-
-# style labels, which are not part of gh-qw's Conventional Commits label
-# vocabulary (see ADR-0011 and the versioning reference at
-# docs/reference/versioning/#labels). Those default labels would also collide
-# with `.github/settings.yml`'s `reconcile.labels: authoritative`, which
-# deletes any label on GitHub that the manifest does not declare.
+# Dependabot's default `dependencies`/`javascript` labels are not part of
+# gh-qw's Conventional Commits label vocabulary (see ADR-0011 and the
+# versioning reference at docs/reference/versioning/#labels). The documented
+# `labels: []` opt-out is currently ignored by GitHub's hosted Dependabot
+# service (dependabot/dependabot-core#11783), which recreates those labels.
+# Use the same explicit labels that `.github/labeler.yml` derives from each
+# branch prefix as a workaround. They are declared in `.github/settings.yml`,
+# so Dependabot and labeler converge on the same final label set. Return to
+# `labels: []` when the upstream regression is fixed.
 #
-# `labels: []` below disables Dependabot's own label assignment entirely,
-# delegating labelling to `.github/labeler.yml` exactly like every other pull
-# request. `commit-message.prefix` and `pull-request-branch-name.prefix` are
-# set to the same Conventional Commits type per ecosystem specifically so that
-# labeler's branch-name rule and path rule agree on the same label:
-# `build/...` (gomod, npm) and `ci/...` (github-actions) both land on `build`
-# and `ci` respectively — neither matches any of the six branch-derived,
-# version-affecting labels, so a dependency update can never affect the
-# computed release version. `commit-message.include: "scope"` adds `(deps)`/
-# `(deps-dev)` after the prefix so every generated title is fully Conventional
-# Commits-compliant (e.g. `build(deps): bump ...`).
+# `commit-message.prefix` and `pull-request-branch-name.prefix` are set to
+# the same Conventional Commits type per ecosystem so that labeler's
+# branch-name rule and path rule agree on the same label: `build/...` (gomod,
+# npm) and `ci/...` (github-actions) land on `build` and `ci` respectively —
+# neither matches any of the six branch-derived, version-affecting labels, so
+# a dependency update cannot affect the computed release version.
+# `commit-message.include: "scope"` adds `(deps)`/`(deps-dev)` after the
+# prefix so every generated title is fully Conventional Commits-compliant
+# (for example, `build(deps): bump ...`).
 #
 # `prefix-development` (npm-only, lets development-dependency commits use a
 # different prefix such as `chore`) is deliberately NOT used: it only affects
@@ -31,7 +32,7 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-    labels: []
+    labels: ["build"]
     commit-message:
       prefix: "build"
       include: "scope"
@@ -42,7 +43,7 @@ updates:
     directory: "/.pages"
     schedule:
       interval: "weekly"
-    labels: []
+    labels: ["build"]
     # The npm ecosystem value is also Dependabot's configuration key for
     # pnpm. Bun's separate ecosystem can update bun.lock, but it does not
     # support security updates. Keep pnpm at TypeScript 6.0.x until Astro's
@@ -62,7 +63,7 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-    labels: []
+    labels: ["ci"]
     commit-message:
       prefix: "ci"
       include: "scope"
