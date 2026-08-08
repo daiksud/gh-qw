@@ -139,3 +139,37 @@ jobs:
         # change is a deliberate, local, manual step — see
         # docs/reference/repository-settings/ and ADR-0012 for why.
         run: gh infra validate .github/settings.yml
+
+  gate:
+    name: CI success
+    if: always()
+    needs:
+      - lint
+      - test
+      - race
+      - docs
+      - settings
+    # The aggregate gate is a lightweight status-only job.
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    steps:
+      - name: Require every CI job to pass
+        if: >-
+          ${{
+            needs.lint.result != 'success' ||
+            needs.test.result != 'success' ||
+            needs.race.result != 'success' ||
+            needs.docs.result != 'success' ||
+            needs.settings.result != 'success'
+          }}
+        run: |
+          echo "One or more required CI jobs did not succeed."
+          echo "lint=${{ needs.lint.result }}"
+          echo "test=${{ needs.test.result }}"
+          echo "race=${{ needs.race.result }}"
+          echo "docs=${{ needs.docs.result }}"
+          echo "settings=${{ needs.settings.result }}"
+          exit 1
+
+      - name: Report successful CI gate
+        run: echo "All required CI jobs passed."

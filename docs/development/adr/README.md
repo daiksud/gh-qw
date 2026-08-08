@@ -54,3 +54,4 @@ it appear that the new choice was always in effect.
 | [0014](0014-mdx-documentation-components/) | Use MDX components for the documentation homepage | Superseded by [0015](0015-mdx-presentation-props/) |
 | [0015](0015-mdx-presentation-props/) | Separate presentation-only props from reader-facing content | Accepted |
 | [0016](0016-ubuntu-slim-runners/) | Use ubuntu-slim for lightweight GitHub Actions jobs | Accepted |
+| [0017](0017-dependabot-ci-gate-and-auto-merge/) | Gate Dependabot merges on site validation | Accepted |
