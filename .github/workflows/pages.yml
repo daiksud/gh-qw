@@ -50,7 +50,8 @@ jobs:
   deploy:
     name: Deploy documentation
     needs: build
-    # Leave one minute for setup and API overhead around deploy-pages' ten-minute wait.
+    # Leave four minutes beyond deploy-pages' ten-minute wait while staying one minute below
+    # ubuntu-slim's 15-minute platform cap.
     runs-on: ubuntu-slim
     timeout-minutes: 14
     permissions:
