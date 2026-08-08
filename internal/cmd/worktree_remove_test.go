@@ -531,6 +531,167 @@ func TestNewWorktreeRemoveCommandJoinsPostMutationFailures(t *testing.T) {
 	}
 }
 
+func TestNewWorktreeRemoveCommandHerdrIntegration(t *testing.T) {
+	t.Run("explicit flag inside session closes the found workspace", func(t *testing.T) {
+		fixture := worktreeRemoveNewFixture(t, "feature/herdr")
+		fixture.lookupEnv = alwaysInSession
+		fixture.herdr.findID = "w2"
+		fixture.herdr.findFound = true
+
+		if err := fixture.worktreeRemoveExecute("--herdr", fixture.branch); err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		if len(fixture.git.removals) != 1 {
+			t.Fatalf("WorktreeRemove() calls = %d, want 1", len(fixture.git.removals))
+		}
+		if len(fixture.herdr.findCalls) != 1 {
+			t.Fatalf("FindWorkspaceForPath() calls = %d, want 1", len(fixture.herdr.findCalls))
+		}
+		wantFind := worktreeRemoveHerdrFind{repoPath: fixture.repository.Path, worktreePath: fixture.target}
+		if got := fixture.herdr.findCalls[0]; got != wantFind {
+			t.Fatalf("FindWorkspaceForPath() call = %#v, want %#v", got, wantFind)
+		}
+		if got := fixture.herdr.closeCalls; !reflect.DeepEqual(got, []string{"w2"}) {
+			t.Fatalf("CloseWorkspace() calls = %#v, want [w2]", got)
+		}
+	})
+
+	t.Run("explicit flag outside session is a usage error before any mutation", func(t *testing.T) {
+		fixture := worktreeRemoveNewFixture(t, "feature/herdr-outside")
+		fixture.lookupEnv = neverInSession
+
+		err := fixture.worktreeRemoveExecute("--herdr", fixture.branch)
+		if err == nil || !strings.Contains(err.Error(), "HERDR_ENV") {
+			t.Fatalf("Execute() error = %v, want it to mention HERDR_ENV", err)
+		}
+		if !errors.Is(err, repospec.ErrUsage) {
+			t.Fatalf("Execute() error = %v, want repospec.ErrUsage", err)
+		}
+		if len(fixture.git.removals) != 0 {
+			t.Fatalf("WorktreeRemove() calls = %d, want 0", len(fixture.git.removals))
+		}
+		if len(fixture.herdr.findCalls) != 0 || len(fixture.herdr.closeCalls) != 0 {
+			t.Fatalf("Herdr calls = find %d, close %d, want 0 and 0",
+				len(fixture.herdr.findCalls), len(fixture.herdr.closeCalls))
+		}
+	})
+
+	t.Run("no workspace found skips close without error", func(t *testing.T) {
+		fixture := worktreeRemoveNewFixture(t, "feature/herdr-no-workspace")
+		fixture.lookupEnv = alwaysInSession
+		fixture.herdr.findFound = false
+
+		if err := fixture.worktreeRemoveExecute("--herdr", fixture.branch); err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		if len(fixture.herdr.findCalls) != 1 {
+			t.Fatalf("FindWorkspaceForPath() calls = %d, want 1", len(fixture.herdr.findCalls))
+		}
+		if len(fixture.herdr.closeCalls) != 0 {
+			t.Fatalf("CloseWorkspace() calls = %d, want 0", len(fixture.herdr.closeCalls))
+		}
+		if len(fixture.git.removals) != 1 {
+			t.Fatalf("WorktreeRemove() calls = %d, want 1", len(fixture.git.removals))
+		}
+	})
+
+	t.Run("configuration default outside session warns and skips", func(t *testing.T) {
+		fixture := worktreeRemoveNewFixture(t, "feature/herdr-config-outside")
+		fixture.herdrConfigDefault = true
+		fixture.lookupEnv = neverInSession
+
+		if err := fixture.worktreeRemoveExecute(fixture.branch); err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		if len(fixture.herdr.findCalls) != 0 || len(fixture.herdr.closeCalls) != 0 {
+			t.Fatalf("Herdr calls = find %d, close %d, want 0 and 0",
+				len(fixture.herdr.findCalls), len(fixture.herdr.closeCalls))
+		}
+		if len(fixture.git.removals) != 1 {
+			t.Fatalf("WorktreeRemove() calls = %d, want 1", len(fixture.git.removals))
+		}
+		if !strings.Contains(fixture.stderr.String(), "HERDR_ENV") {
+			t.Fatalf("stderr = %q, want it to mention HERDR_ENV", fixture.stderr.String())
+		}
+	})
+
+	t.Run("no-herdr overrides the configuration default", func(t *testing.T) {
+		fixture := worktreeRemoveNewFixture(t, "feature/no-herdr")
+		fixture.herdrConfigDefault = true
+		fixture.lookupEnv = alwaysInSession
+
+		if err := fixture.worktreeRemoveExecute("--no-herdr", fixture.branch); err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		if len(fixture.herdr.findCalls) != 0 || len(fixture.herdr.closeCalls) != 0 {
+			t.Fatalf("Herdr calls = find %d, close %d, want 0 and 0",
+				len(fixture.herdr.findCalls), len(fixture.herdr.closeCalls))
+		}
+	})
+
+	t.Run("herdr and no-herdr together is a usage error", func(t *testing.T) {
+		fixture := worktreeRemoveNewFixture(t, "feature/both-flags")
+		fixture.lookupEnv = alwaysInSession
+
+		err := fixture.worktreeRemoveExecute("--herdr", "--no-herdr", fixture.branch)
+		if err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
+			t.Fatalf("Execute() error = %v, want it to mention mutual exclusivity", err)
+		}
+		if !errors.Is(err, repospec.ErrUsage) {
+			t.Fatalf("Execute() error = %v, want repospec.ErrUsage", err)
+		}
+		if len(fixture.git.removals) != 0 {
+			t.Fatalf("WorktreeRemove() calls = %d, want 0", len(fixture.git.removals))
+		}
+	})
+
+	t.Run("close failure surfaces after the worktree is already removed", func(t *testing.T) {
+		fixture := worktreeRemoveNewFixture(t, "feature/herdr-close-fails")
+		fixture.lookupEnv = alwaysInSession
+		fixture.herdr.findID = "w3"
+		fixture.herdr.findFound = true
+		wantErr := errors.New("close failed")
+		fixture.herdr.closeErr = wantErr
+
+		err := fixture.worktreeRemoveExecute("--herdr", fixture.branch)
+		if !errors.Is(err, wantErr) {
+			t.Fatalf("Execute() error = %v, want %v", err, wantErr)
+		}
+		if errors.Is(err, repospec.ErrUsage) {
+			t.Fatalf("Execute() error = %v, want an ordinary error, not a usage error", err)
+		}
+		if len(fixture.git.removals) != 1 {
+			t.Fatalf("WorktreeRemove() calls = %d, want 1", len(fixture.git.removals))
+		}
+		if _, statErr := os.Lstat(fixture.target); !errors.Is(statErr, fs.ErrNotExist) {
+			t.Fatalf("target remains after Git removal: %v", statErr)
+		}
+	})
+
+	t.Run("find failure surfaces without blocking removal or attempting close", func(t *testing.T) {
+		fixture := worktreeRemoveNewFixture(t, "feature/herdr-find-fails")
+		fixture.lookupEnv = alwaysInSession
+		wantErr := errors.New("find failed")
+		fixture.herdr.findErr = wantErr
+		fixture.herdr.findFound = true
+		fixture.herdr.findID = "w4"
+
+		err := fixture.worktreeRemoveExecute("--herdr", fixture.branch)
+		if !errors.Is(err, wantErr) {
+			t.Fatalf("Execute() error = %v, want %v", err, wantErr)
+		}
+		if len(fixture.git.removals) != 1 {
+			t.Fatalf("WorktreeRemove() calls = %d, want 1", len(fixture.git.removals))
+		}
+		if len(fixture.herdr.closeCalls) != 0 {
+			t.Fatalf("CloseWorkspace() calls = %d, want 0 (find already failed)", len(fixture.herdr.closeCalls))
+		}
+		if _, statErr := os.Lstat(fixture.target); !errors.Is(statErr, fs.ErrNotExist) {
+			t.Fatalf("target remains after Git removal: %v", statErr)
+		}
+	})
+}
+
 func TestNewWorktreeRemoveCommandRealGitLifecycle(t *testing.T) {
 	root := worktreeRemovePhysicalPath(t, t.TempDir())
 	repositoryRoot := filepath.Join(root, "repositories")
@@ -653,6 +814,42 @@ func (git *worktreeRemoveFakeGit) WorktreeRemove(
 	return os.Remove(options.Path)
 }
 
+// worktreeRemoveHerdrFind records one FindWorkspaceForPath call.
+type worktreeRemoveHerdrFind struct {
+	repoPath     string
+	worktreePath string
+}
+
+// worktreeRemoveHerdr is a HerdrCloser test double that records every
+// FindWorkspaceForPath and CloseWorkspace call and answers with fixed
+// results or errors.
+type worktreeRemoveHerdr struct {
+	findCalls []worktreeRemoveHerdrFind
+	findID    string
+	findFound bool
+	findErr   error
+
+	closeCalls []string
+	closeErr   error
+}
+
+func (fake *worktreeRemoveHerdr) FindWorkspaceForPath(
+	_ context.Context,
+	repoPath string,
+	worktreePath string,
+) (string, bool, error) {
+	fake.findCalls = append(fake.findCalls, worktreeRemoveHerdrFind{
+		repoPath:     repoPath,
+		worktreePath: worktreePath,
+	})
+	return fake.findID, fake.findFound, fake.findErr
+}
+
+func (fake *worktreeRemoveHerdr) CloseWorkspace(_ context.Context, workspaceID string) error {
+	fake.closeCalls = append(fake.closeCalls, workspaceID)
+	return fake.closeErr
+}
+
 type worktreeRemoveFixture struct {
 	root               string
 	repositoryRoot     string
@@ -676,12 +873,15 @@ type worktreeRemoveFixture struct {
 		[]local.Repository,
 		...local.CurrentOptions,
 	) (local.Current, error)
-	git             *worktreeRemoveFakeGit
-	cleanupRemovals []string
-	removeErr       error
-	stdout          bytes.Buffer
-	stderr          bytes.Buffer
-	stderrWriter    io.Writer
+	git                *worktreeRemoveFakeGit
+	cleanupRemovals    []string
+	removeErr          error
+	herdr              *worktreeRemoveHerdr
+	herdrConfigDefault bool
+	lookupEnv          func(string) (string, bool)
+	stdout             bytes.Buffer
+	stderr             bytes.Buffer
+	stderrWriter       io.Writer
 }
 
 func worktreeRemoveNewFixture(t *testing.T, branch string) *worktreeRemoveFixture {
@@ -727,6 +927,8 @@ func worktreeRemoveNewFixture(t *testing.T, branch string) *worktreeRemoveFixtur
 		currentWorktree: local.Worktree{Repository: repository, Main: true},
 		managed:         managed,
 		git:             &worktreeRemoveFakeGit{},
+		herdr:           &worktreeRemoveHerdr{},
+		lookupEnv:       func(string) (string, bool) { return "", false },
 	}
 }
 
@@ -755,6 +957,7 @@ func (fixture *worktreeRemoveFixture) worktreeRemoveDependencies() WorktreeRemov
 		Resolver: worktreeRemoveStaticResolver{result: rootpkg.Result{
 			RepositoryRoots: []string{fixture.repositoryRoot},
 			WorktreeRoot:    fixture.worktreeRoot,
+			Herdr:           fixture.herdrConfigDefault,
 		}},
 		Discover: func(
 			context.Context,
@@ -777,10 +980,12 @@ func (fixture *worktreeRemoveFixture) worktreeRemoveDependencies() WorktreeRemov
 			fixture.resolvedRepository = repository
 			return fixture.managed, fixture.resolveManagedErr
 		},
-		Git:    fixture.git,
-		Getwd:  func() (string, error) { return fixture.repository.Path, nil },
-		Stdout: &fixture.stdout,
-		Stderr: stderr,
+		Git:       fixture.git,
+		Herdr:     fixture.herdr,
+		LookupEnv: fixture.lookupEnv,
+		Getwd:     func() (string, error) { return fixture.repository.Path, nil },
+		Stdout:    &fixture.stdout,
+		Stderr:    stderr,
 		Remove: func(path string) error {
 			fixture.cleanupRemovals = append(fixture.cleanupRemovals, path)
 			if fixture.removeErr != nil {

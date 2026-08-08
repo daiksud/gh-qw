@@ -538,6 +538,187 @@ func TestNewRemoveCommandLinkedOnlyRemovesGitTargetAndNestedParents(t *testing.T
 	fixture.assertStdoutEmpty(t)
 }
 
+func TestNewRemoveCommandHerdrIntegration(t *testing.T) {
+	t.Run("explicit flag inside session closes the found workspace", func(t *testing.T) {
+		branch := "feature/herdr"
+		fixture := newRemoveTestFixture(t, branch)
+		fixture.lookupEnv = alwaysInSession
+		fixture.herdr.findID = "w2"
+		fixture.herdr.findFound = true
+		target := fixture.linkedPath(branch)
+
+		if err := fixture.execute("--herdr", "acme/widget@"+branch); err != nil {
+			t.Fatalf("Execute() error = %v; stderr = %q", err, fixture.stderr.String())
+		}
+		if len(fixture.git.removals) != 1 {
+			t.Fatalf("Git removals = %#v, want 1", fixture.git.removals)
+		}
+		if len(fixture.herdr.findCalls) != 1 {
+			t.Fatalf("FindWorkspaceForPath() calls = %d, want 1", len(fixture.herdr.findCalls))
+		}
+		wantFind := worktreeRemoveHerdrFind{repoPath: fixture.repository.Path, worktreePath: target}
+		if got := fixture.herdr.findCalls[0]; got != wantFind {
+			t.Fatalf("FindWorkspaceForPath() call = %#v, want %#v", got, wantFind)
+		}
+		if got := fixture.herdr.closeCalls; !reflect.DeepEqual(got, []string{"w2"}) {
+			t.Fatalf("CloseWorkspace() calls = %#v, want [w2]", got)
+		}
+	})
+
+	t.Run("explicit flag outside session is a usage error before any mutation", func(t *testing.T) {
+		branch := "feature/herdr-outside"
+		fixture := newRemoveTestFixture(t, branch)
+		fixture.lookupEnv = neverInSession
+
+		err := fixture.execute("--herdr", "acme/widget@"+branch)
+		if err == nil || !strings.Contains(err.Error(), "HERDR_ENV") {
+			t.Fatalf("Execute() error = %v, want it to mention HERDR_ENV", err)
+		}
+		if !errors.Is(err, repospec.ErrUsage) {
+			t.Fatalf("Execute() error = %v, want repospec.ErrUsage", err)
+		}
+		fixture.assertNoMutation(t)
+		if len(fixture.herdr.findCalls) != 0 || len(fixture.herdr.closeCalls) != 0 {
+			t.Fatalf("Herdr calls = find %d, close %d, want 0 and 0",
+				len(fixture.herdr.findCalls), len(fixture.herdr.closeCalls))
+		}
+	})
+
+	t.Run("no workspace found skips close without error", func(t *testing.T) {
+		branch := "feature/herdr-no-workspace"
+		fixture := newRemoveTestFixture(t, branch)
+		fixture.lookupEnv = alwaysInSession
+		fixture.herdr.findFound = false
+
+		if err := fixture.execute("--herdr", "acme/widget@"+branch); err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		if len(fixture.herdr.findCalls) != 1 {
+			t.Fatalf("FindWorkspaceForPath() calls = %d, want 1", len(fixture.herdr.findCalls))
+		}
+		if len(fixture.herdr.closeCalls) != 0 {
+			t.Fatalf("CloseWorkspace() calls = %d, want 0", len(fixture.herdr.closeCalls))
+		}
+		if len(fixture.git.removals) != 1 {
+			t.Fatalf("Git removals = %d, want 1", len(fixture.git.removals))
+		}
+	})
+
+	t.Run("configuration default outside session warns and skips", func(t *testing.T) {
+		branch := "feature/herdr-config-outside"
+		fixture := newRemoveTestFixture(t, branch)
+		fixture.resolver.result.Herdr = true
+		fixture.lookupEnv = neverInSession
+
+		if err := fixture.execute("acme/widget@" + branch); err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		if len(fixture.herdr.findCalls) != 0 || len(fixture.herdr.closeCalls) != 0 {
+			t.Fatalf("Herdr calls = find %d, close %d, want 0 and 0",
+				len(fixture.herdr.findCalls), len(fixture.herdr.closeCalls))
+		}
+		if len(fixture.git.removals) != 1 {
+			t.Fatalf("Git removals = %d, want 1", len(fixture.git.removals))
+		}
+		if !strings.Contains(fixture.stderr.String(), "HERDR_ENV") {
+			t.Fatalf("stderr = %q, want it to mention HERDR_ENV", fixture.stderr.String())
+		}
+	})
+
+	t.Run("no-herdr overrides the configuration default", func(t *testing.T) {
+		branch := "feature/no-herdr"
+		fixture := newRemoveTestFixture(t, branch)
+		fixture.resolver.result.Herdr = true
+		fixture.lookupEnv = alwaysInSession
+
+		if err := fixture.execute("--no-herdr", "acme/widget@"+branch); err != nil {
+			t.Fatalf("Execute() error = %v", err)
+		}
+		if len(fixture.herdr.findCalls) != 0 || len(fixture.herdr.closeCalls) != 0 {
+			t.Fatalf("Herdr calls = find %d, close %d, want 0 and 0",
+				len(fixture.herdr.findCalls), len(fixture.herdr.closeCalls))
+		}
+	})
+
+	t.Run("herdr and no-herdr together is a usage error", func(t *testing.T) {
+		branch := "feature/both-flags"
+		fixture := newRemoveTestFixture(t, branch)
+		fixture.lookupEnv = alwaysInSession
+
+		err := fixture.execute("--herdr", "--no-herdr", "acme/widget@"+branch)
+		if err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
+			t.Fatalf("Execute() error = %v, want it to mention mutual exclusivity", err)
+		}
+		if !errors.Is(err, repospec.ErrUsage) {
+			t.Fatalf("Execute() error = %v, want repospec.ErrUsage", err)
+		}
+		fixture.assertNoMutation(t)
+	})
+
+	t.Run("close failure surfaces after the worktree is already removed", func(t *testing.T) {
+		branch := "feature/herdr-close-fails"
+		fixture := newRemoveTestFixture(t, branch)
+		fixture.lookupEnv = alwaysInSession
+		fixture.herdr.findID = "w3"
+		fixture.herdr.findFound = true
+		wantErr := errors.New("close failed")
+		fixture.herdr.closeErr = wantErr
+		target := fixture.linkedPath(branch)
+
+		err := fixture.execute("--herdr", "acme/widget@"+branch)
+		if !errors.Is(err, wantErr) {
+			t.Fatalf("Execute() error = %v, want %v", err, wantErr)
+		}
+		if errors.Is(err, repospec.ErrUsage) {
+			t.Fatalf("Execute() error = %v, want an ordinary error, not a usage error", err)
+		}
+		if len(fixture.git.removals) != 1 {
+			t.Fatalf("Git removals = %d, want 1", len(fixture.git.removals))
+		}
+		if _, statErr := os.Lstat(target); !errors.Is(statErr, fs.ErrNotExist) {
+			t.Fatalf("target remains after Git removal: %v", statErr)
+		}
+	})
+
+	t.Run("find failure surfaces without blocking removal or attempting close", func(t *testing.T) {
+		branch := "feature/herdr-find-fails"
+		fixture := newRemoveTestFixture(t, branch)
+		fixture.lookupEnv = alwaysInSession
+		wantErr := errors.New("find failed")
+		fixture.herdr.findErr = wantErr
+		fixture.herdr.findFound = true
+		fixture.herdr.findID = "w4"
+		target := fixture.linkedPath(branch)
+
+		err := fixture.execute("--herdr", "acme/widget@"+branch)
+		if !errors.Is(err, wantErr) {
+			t.Fatalf("Execute() error = %v, want %v", err, wantErr)
+		}
+		if len(fixture.git.removals) != 1 {
+			t.Fatalf("Git removals = %d, want 1", len(fixture.git.removals))
+		}
+		if len(fixture.herdr.closeCalls) != 0 {
+			t.Fatalf("CloseWorkspace() calls = %d, want 0 (find already failed)", len(fixture.herdr.closeCalls))
+		}
+		if _, statErr := os.Lstat(target); !errors.Is(statErr, fs.ErrNotExist) {
+			t.Fatalf("target remains after Git removal: %v", statErr)
+		}
+	})
+
+	t.Run("whole-repository removal ignores herdr flags without effect", func(t *testing.T) {
+		fixture := newRemoveTestFixture(t, "feature/alpha")
+		fixture.lookupEnv = neverInSession
+
+		if err := fixture.execute("--herdr", "github.com/acme/widget"); err != nil {
+			t.Fatalf("Execute() error = %v; stderr = %q", err, fixture.stderr.String())
+		}
+		if len(fixture.herdr.findCalls) != 0 || len(fixture.herdr.closeCalls) != 0 {
+			t.Fatalf("Herdr calls = find %d, close %d, want 0 and 0 for a whole-repository removal",
+				len(fixture.herdr.findCalls), len(fixture.herdr.closeCalls))
+		}
+	})
+}
+
 func TestNewRemoveCommandWholeRepositoryStableOrderExactBoundaryAndCleanup(t *testing.T) {
 	t.Parallel()
 
@@ -940,6 +1121,8 @@ type removeTestFixture struct {
 	promptCalls    int
 	removeAllCalls []string
 	parentRemovals []string
+	herdr          *worktreeRemoveHerdr
+	lookupEnv      func(string) (string, bool)
 	stdout         bytes.Buffer
 	stderr         bytes.Buffer
 	stderrWriter   io.Writer
@@ -988,6 +1171,8 @@ func newRemoveTestFixture(t *testing.T, slots ...string) *removeTestFixture {
 		repository:     repository,
 		repositories:   []local.Repository{repository},
 		worktrees:      []*local.Worktree{main},
+		herdr:          &worktreeRemoveHerdr{},
+		lookupEnv:      func(string) (string, bool) { return "", false },
 	}
 	fixture.resolver = &removeTestResolver{result: rootpkg.Result{
 		RepositoryRoots: []string{repositoryRoot},
@@ -1133,8 +1318,10 @@ func (fixture *removeTestFixture) dependencies() RemoveDependencies {
 			fixture.removeAllCalls = append(fixture.removeAllCalls, path)
 			return os.RemoveAll(path)
 		},
-		Stdout: &fixture.stdout,
-		Stderr: stderr,
+		Herdr:     fixture.herdr,
+		LookupEnv: fixture.lookupEnv,
+		Stdout:    &fixture.stdout,
+		Stderr:    stderr,
 	}
 }
 

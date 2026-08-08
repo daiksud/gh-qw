@@ -18,6 +18,7 @@ import (
 	"github.com/daiksud/gh-qw/internal/ghauth"
 	"github.com/daiksud/gh-qw/internal/ghcmd"
 	"github.com/daiksud/gh-qw/internal/gitcmd"
+	"github.com/daiksud/gh-qw/internal/herdr"
 	"github.com/daiksud/gh-qw/internal/local"
 	"github.com/daiksud/gh-qw/internal/repospec"
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
@@ -90,8 +91,16 @@ type WorktreeAddDependencies struct {
 	Getwd           func() (string, error)
 	Mkdir           func(string, fs.FileMode) error
 	Remove          func(string) error
-	Stdout          io.Writer
-	Stderr          io.Writer
+	// Herdr opens and focuses a Herdr workspace for the new linked
+	// worktree when --herdr (or GHQW_HERDR/configuration outside a
+	// Herdr-managed pane) enables the integration. Nil uses
+	// herdr.NewRunner().
+	Herdr HerdrCreator
+	// LookupEnv resolves HERDR_ENV to decide whether this process is
+	// running inside a Herdr-managed pane. Nil uses os.LookupEnv.
+	LookupEnv func(string) (string, bool)
+	Stdout    io.Writer
+	Stderr    io.Writer
 }
 
 type worktreeAddMode uint8
@@ -146,6 +155,8 @@ type worktreeAddRuntime struct {
 	getwd           func() (string, error)
 	mkdir           func(string, fs.FileMode) error
 	remove          func(string) error
+	herdr           HerdrCreator
+	lookupEnv       func(string) (string, bool)
 	stdout          io.Writer
 	stderr          io.Writer
 }
@@ -157,6 +168,7 @@ type worktreeAddRequest struct {
 	commitish   string
 	mode        worktreeAddMode
 	force       bool
+	herdr       herdrIntent
 }
 
 type worktreeAddPlanner struct {
@@ -205,10 +217,12 @@ func NewWorktreeAddCommand(dependencies WorktreeAddDependencies) *cobra.Command 
 		detachMode bool
 		orphanMode bool
 		force      bool
+		herdrFlags herdrFlagValues
 	)
 
 	command := &cobra.Command{
-		Use:           "add [-R|--repo selector] [-b] [-B] [--detach] [--orphan] [-f] <branch> [commit-ish]",
+		Use: "add [-R|--repo selector] [-b] [-B] [--detach] [--orphan] [-f] " +
+			"[--herdr|--no-herdr] <branch> [commit-ish]",
 		Short:         "Add a linked worktree",
 		SilenceErrors: true,
 		SilenceUsage:  true,
@@ -256,6 +270,7 @@ func NewWorktreeAddCommand(dependencies WorktreeAddDependencies) *cobra.Command 
 				branch:      args[0],
 				mode:        mode,
 				force:       force,
+				herdr:       newHerdrIntent(command),
 			}
 			if len(args) == 2 {
 				request.commitish = args[1]
@@ -271,6 +286,7 @@ func NewWorktreeAddCommand(dependencies WorktreeAddDependencies) *cobra.Command 
 	flags.BoolVar(&detachMode, "detach", false, "Create a detached worktree")
 	flags.BoolVar(&orphanMode, "orphan", false, "Create an unborn orphan branch")
 	flags.BoolVarP(&force, "force", "f", false, "Override Git checkout safety")
+	registerHerdrFlags(command, &herdrFlags, "Open")
 	command.SetOut(runtime.stdout)
 	command.SetErr(runtime.stderr)
 
@@ -348,6 +364,14 @@ func worktreeAddPrepareRuntime(dependencies WorktreeAddDependencies) worktreeAdd
 	if remove == nil {
 		remove = os.Remove
 	}
+	herdrRunner := dependencies.Herdr
+	if herdrRunner == nil {
+		herdrRunner = herdr.NewRunner()
+	}
+	lookupEnv := dependencies.LookupEnv
+	if lookupEnv == nil {
+		lookupEnv = os.LookupEnv
+	}
 
 	return worktreeAddRuntime{
 		resolver:            resolver,
@@ -362,6 +386,8 @@ func worktreeAddPrepareRuntime(dependencies WorktreeAddDependencies) worktreeAdd
 		getwd:               getwd,
 		mkdir:               mkdir,
 		remove:              remove,
+		herdr:               herdrRunner,
+		lookupEnv:           lookupEnv,
 		stdout:              stdout,
 		stderr:              stderr,
 		validateDestination: dependencies.ValidateDestination,
@@ -377,6 +403,11 @@ func worktreeAddRun(
 	roots, err := runtime.resolver.Resolve()
 	if err != nil {
 		return fmt.Errorf("resolve roots: %w", err)
+	}
+
+	herdrEnabled, err := resolveHerdrIntegration(request.herdr, roots.Herdr, runtime.lookupEnv, runtime.stderr)
+	if err != nil {
+		return worktreeAddNewUsageError(err)
 	}
 
 	discovery, err := runtime.discover(
@@ -572,6 +603,20 @@ func worktreeAddRun(
 
 	if _, err := fmt.Fprintln(runtime.stdout, local.NormalizePathForOutput(destination)); err != nil {
 		return worktreeAddFailure(fmt.Errorf("write worktree path: %w", err))
+	}
+
+	if herdrEnabled {
+		if _, err := runtime.herdr.CreateWorkspace(ctx, herdr.CreateOptions{
+			Cwd:   destination,
+			Label: herdrWorkspaceLabel(repository.Repo, request.branch),
+			Focus: true,
+		}); err != nil {
+			// The worktree itself and its stdout path are already
+			// committed and correct; only the additional Herdr workspace
+			// failed, so this is reported as an ordinary error rather
+			// than unwound through worktreeAddFailure.
+			return fmt.Errorf("open Herdr workspace for %q: %w", destination, err)
+		}
 	}
 	return nil
 }

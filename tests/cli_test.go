@@ -488,6 +488,77 @@ func TestCLIListFzfSelectionAndExitStatuses(t *testing.T) {
 	})
 }
 
+// TestCLIWorktreeAddHerdrIntegration exercises `worktree add --herdr`
+// end-to-end against a fake herdr (see buildFakeHerdr) standing in for the
+// real, running Herdr server: a successful integration still writes only
+// the new worktree's absolute path to stdout (herdr's own JSON response
+// never leaks there); a failed Herdr workspace creation is a status-1
+// error that still keeps the worktree and its path output (see
+// worktree_add.go); and an explicit --herdr outside of a Herdr-managed
+// pane (HERDR_ENV unset) is a status-2 usage error before any mutation.
+func TestCLIWorktreeAddHerdrIntegration(t *testing.T) {
+	fixture := newCLIFixture(t)
+	remoteURL := fixture.createBareRemote(t, "acme", "widget")
+	fixture.seedRemote(t, remoteURL)
+
+	mainPath := filepath.Join(fixture.repository, "github.com", "acme", "widget")
+	fixture.cloneMain(t, remoteURL, mainPath)
+	assertPathExists(t, mainPath)
+
+	fakeHerdrDir := fixture.buildFakeHerdr(t)
+	baseEnv := append(fixture.envWithPathPrepended(fakeHerdrDir), "HERDR_ENV=1")
+
+	t.Run("successful integration keeps stdout as the path alone", func(t *testing.T) {
+		branch := "feature/herdr-success"
+		featurePath := filepath.Join(
+			fixture.worktreeRoot, "github.com", "acme", "widget", filepath.FromSlash(branch),
+		)
+		env := append(append([]string(nil), baseEnv...), "FAKE_HERDR_WORKSPACE_ID=w9")
+
+		result := fixture.runCLIWithEnv(
+			t, env, "worktree", "add", "-R", testIdentity, "--herdr", "-b", branch, "main",
+		)
+		assertStatus(t, result, 0)
+		assertStdout(t, result, filepath.ToSlash(featurePath)+"\n")
+		if strings.Contains(result.stdout, "workspace_id") || strings.Contains(result.stdout, "cli:workspace") {
+			t.Fatalf("stdout leaked herdr's own JSON response: %q", result.stdout)
+		}
+		assertPathExists(t, featurePath)
+	})
+
+	t.Run("Herdr failure is a status-1 error that keeps the worktree and its path", func(t *testing.T) {
+		branch := "feature/herdr-failure"
+		featurePath := filepath.Join(
+			fixture.worktreeRoot, "github.com", "acme", "widget", filepath.FromSlash(branch),
+		)
+		env := append(append([]string(nil), baseEnv...), "FAKE_HERDR_CREATE_EXIT_CODE=1")
+
+		result := fixture.runCLIWithEnv(
+			t, env, "worktree", "add", "-R", testIdentity, "--herdr", "-b", branch, "main",
+		)
+		assertStatus(t, result, 1)
+		assertStdout(t, result, filepath.ToSlash(featurePath)+"\n")
+		assertContains(t, result.stderr, "gh-qw:")
+		assertPathExists(t, featurePath)
+	})
+
+	t.Run("explicit flag outside a Herdr session is a status-2 usage error", func(t *testing.T) {
+		branch := "feature/herdr-outside"
+		featurePath := filepath.Join(
+			fixture.worktreeRoot, "github.com", "acme", "widget", filepath.FromSlash(branch),
+		)
+		env := fixture.envWithPathPrepended(fakeHerdrDir) // deliberately without HERDR_ENV=1
+
+		result := fixture.runCLIWithEnv(
+			t, env, "worktree", "add", "-R", testIdentity, "--herdr", "-b", branch, "main",
+		)
+		assertStatus(t, result, 2)
+		assertStdout(t, result, "")
+		assertContains(t, result.stderr, "HERDR_ENV")
+		assertPathMissing(t, featurePath)
+	})
+}
+
 func newCLIFixture(t *testing.T) *cliFixture {
 	t.Helper()
 
@@ -551,6 +622,7 @@ func isolatedEnvironment(fixture *cliFixture) []string {
 		"GH_CONFIG_DIR":       {},
 		"GH_TOKEN":            {},
 		"GHQ_ROOT":            {},
+		"GHQW_HERDR":          {},
 		"GHQW_ROOT":           {},
 		"GHQW_WORKTREE_ROOT":  {},
 		"GITHUB_TOKEN":        {},
@@ -564,6 +636,7 @@ func isolatedEnvironment(fixture *cliFixture) []string {
 		"GIT_CONFIG_NOSYSTEM": {},
 		"GIT_CONFIG_SYSTEM":   {},
 		"GIT_DIR":             {},
+		"HERDR_ENV":           {},
 		"GIT_TERMINAL_PROMPT": {},
 		"GIT_WORK_TREE":       {},
 		"HOME":                {},
@@ -893,6 +966,150 @@ func (fixture *cliFixture) buildFakeFzf(t *testing.T) string {
 		t.Fatalf("build fake fzf: %v\n%s", err, buildOutput.String())
 	}
 	return fakeFzfDir
+}
+
+// fakeHerdrSource is a minimal stand-in for the real herdr executable,
+// built by buildFakeHerdr. It answers `workspace create`, `workspace
+// close`, and `worktree list` with the same JSON envelope shapes the real
+// herdr uses (see internal/herdr), so CLI tests can exercise gh-qw's real
+// `worktree add --herdr`/`worktree remove --herdr` pipeline end to end
+// without depending on a real, running Herdr server.
+//
+// FAKE_HERDR_CREATE_EXIT_CODE and FAKE_HERDR_CLOSE_EXIT_CODE, when set,
+// make the matching subcommand fail with that exit status and herdr's own
+// documented JSON error envelope on stderr, instead of succeeding.
+// FAKE_HERDR_WORKSPACE_ID overrides the workspace ID a successful
+// `workspace create` reports (default "w1"). FAKE_HERDR_FIND_PATH and
+// FAKE_HERDR_FIND_ID make `worktree list` report one worktree already open
+// under that workspace ID (default "w1"); leaving FAKE_HERDR_FIND_PATH
+// unset reports no worktrees at all.
+const fakeHerdrSource = `package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"strconv"
+)
+
+func writeJSON(id string, result any) {
+	data, err := json.Marshal(struct {
+		ID     string ` + "`json:\"id\"`" + `
+		Result any    ` + "`json:\"result\"`" + `
+	}{ID: id, Result: result})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "fake herdr: marshal response: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println(string(data))
+}
+
+func writeError(id string, exitCode int) {
+	data, err := json.Marshal(struct {
+		ID    string ` + "`json:\"id\"`" + `
+		Error struct {
+			Code    string ` + "`json:\"code\"`" + `
+			Message string ` + "`json:\"message\"`" + `
+		} ` + "`json:\"error\"`" + `
+	}{
+		ID: id,
+		Error: struct {
+			Code    string ` + "`json:\"code\"`" + `
+			Message string ` + "`json:\"message\"`" + `
+		}{Code: "fake_error", Message: "fake herdr failure"},
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "fake herdr: marshal error response: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Fprintln(os.Stderr, string(data))
+	os.Exit(exitCode)
+}
+
+func exitCodeFromEnv(name string) (int, bool) {
+	raw := os.Getenv(name)
+	if raw == "" {
+		return 0, false
+	}
+	code, err := strconv.Atoi(raw)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "fake herdr: invalid %s %q\n", name, raw)
+		os.Exit(1)
+	}
+	return code, true
+}
+
+func main() {
+	args := os.Args[1:]
+	switch {
+	case len(args) >= 2 && args[0] == "workspace" && args[1] == "create":
+		if code, failing := exitCodeFromEnv("FAKE_HERDR_CREATE_EXIT_CODE"); failing {
+			writeError("cli:workspace:create", code)
+			return
+		}
+		id := os.Getenv("FAKE_HERDR_WORKSPACE_ID")
+		if id == "" {
+			id = "w1"
+		}
+		writeJSON("cli:workspace:create", map[string]any{
+			"type":      "workspace_created",
+			"workspace": map[string]string{"workspace_id": id},
+		})
+	case len(args) >= 2 && args[0] == "workspace" && args[1] == "close":
+		if code, failing := exitCodeFromEnv("FAKE_HERDR_CLOSE_EXIT_CODE"); failing {
+			writeError("cli:workspace:close", code)
+			return
+		}
+		writeJSON("cli:workspace:close", map[string]string{"type": "ok"})
+	case len(args) >= 2 && args[0] == "worktree" && args[1] == "list":
+		worktrees := []map[string]string{}
+		if path := os.Getenv("FAKE_HERDR_FIND_PATH"); path != "" {
+			id := os.Getenv("FAKE_HERDR_FIND_ID")
+			if id == "" {
+				id = "w1"
+			}
+			worktrees = append(worktrees, map[string]string{"path": path, "open_workspace_id": id})
+		}
+		writeJSON("cli:worktree:list", map[string]any{
+			"type":      "worktree_list",
+			"worktrees": worktrees,
+		})
+	default:
+		fmt.Fprintf(os.Stderr, "fake herdr: unsupported invocation %v\n", args)
+		os.Exit(2)
+	}
+}
+`
+
+// buildFakeHerdr compiles fakeHerdrSource into an executable named herdr
+// (herdr.exe on Windows) and returns the directory containing it, ready to
+// be prepended onto PATH (see envWithPathPrepended) so gh-qw's own
+// `worktree add --herdr`/`worktree remove --herdr` resolves it instead of
+// any real herdr installed on the host running this test.
+func (fixture *cliFixture) buildFakeHerdr(t *testing.T) string {
+	t.Helper()
+
+	sourcePath := filepath.Join(t.TempDir(), "fakeherdr.go")
+	if err := os.WriteFile(sourcePath, []byte(fakeHerdrSource), 0o644); err != nil {
+		t.Fatalf("write fake herdr source: %v", err)
+	}
+
+	fakeHerdrDir := filepath.Join(fixture.base, "fakebin-herdr")
+	if err := os.MkdirAll(fakeHerdrDir, 0o755); err != nil {
+		t.Fatalf("create fake herdr directory: %v", err)
+	}
+	fakeHerdrPath := filepath.Join(fakeHerdrDir, "herdr")
+	if runtime.GOOS == "windows" {
+		fakeHerdrPath += ".exe"
+	}
+	build := exec.Command("go", "build", "-o", fakeHerdrPath, sourcePath)
+	var buildOutput bytes.Buffer
+	build.Stdout = &buildOutput
+	build.Stderr = &buildOutput
+	if err := build.Run(); err != nil {
+		t.Fatalf("build fake herdr: %v\n%s", err, buildOutput.String())
+	}
+	return fakeHerdrDir
 }
 
 // envWithPathPrepended returns a copy of fixture.env with directory

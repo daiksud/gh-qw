@@ -177,6 +177,108 @@ func TestResolverPrecedence(t *testing.T) {
 	})
 }
 
+func TestResolverHerdrPrecedence(t *testing.T) {
+	t.Run("defaults to false", func(t *testing.T) {
+		_, home := newLayout(t)
+		resolver, _ := newTestResolver(home, config.Config{}, nil)
+
+		got, err := resolver.Resolve()
+		if err != nil {
+			t.Fatalf("Resolve() error = %v", err)
+		}
+		if got.Herdr {
+			t.Fatal("Herdr = true, want false")
+		}
+	})
+
+	t.Run("configuration file enables it", func(t *testing.T) {
+		_, home := newLayout(t)
+		resolver, _ := newTestResolver(home, config.Config{Herdr: true}, nil)
+
+		got, err := resolver.Resolve()
+		if err != nil {
+			t.Fatalf("Resolve() error = %v", err)
+		}
+		if !got.Herdr {
+			t.Fatal("Herdr = false, want true")
+		}
+	})
+
+	t.Run("environment overrides configuration file", func(t *testing.T) {
+		_, home := newLayout(t)
+		resolver, _ := newTestResolver(home, config.Config{Herdr: true}, map[string]string{
+			herdrEnvironment: "0",
+		})
+
+		got, err := resolver.Resolve()
+		if err != nil {
+			t.Fatalf("Resolve() error = %v", err)
+		}
+		if got.Herdr {
+			t.Fatal("Herdr = true, want false from GHQW_HERDR=0 overriding configuration")
+		}
+	})
+
+	t.Run("empty environment value is ignored", func(t *testing.T) {
+		_, home := newLayout(t)
+		resolver, _ := newTestResolver(home, config.Config{Herdr: true}, map[string]string{
+			herdrEnvironment: "",
+		})
+
+		got, err := resolver.Resolve()
+		if err != nil {
+			t.Fatalf("Resolve() error = %v", err)
+		}
+		if !got.Herdr {
+			t.Fatal("Herdr = false, want true (empty GHQW_HERDR falls back to configuration)")
+		}
+	})
+
+	for _, value := range []string{"1", "true", "TRUE", "Yes", "on"} {
+		t.Run("environment truthy "+value, func(t *testing.T) {
+			_, home := newLayout(t)
+			resolver, _ := newTestResolver(home, config.Config{}, map[string]string{
+				herdrEnvironment: value,
+			})
+
+			got, err := resolver.Resolve()
+			if err != nil {
+				t.Fatalf("Resolve() error = %v", err)
+			}
+			if !got.Herdr {
+				t.Fatalf("Herdr = false for GHQW_HERDR=%q, want true", value)
+			}
+		})
+	}
+
+	for _, value := range []string{"0", "false", "FALSE", "No", "off"} {
+		t.Run("environment falsy "+value, func(t *testing.T) {
+			_, home := newLayout(t)
+			resolver, _ := newTestResolver(home, config.Config{Herdr: true}, map[string]string{
+				herdrEnvironment: value,
+			})
+
+			got, err := resolver.Resolve()
+			if err != nil {
+				t.Fatalf("Resolve() error = %v", err)
+			}
+			if got.Herdr {
+				t.Fatalf("Herdr = true for GHQW_HERDR=%q, want false", value)
+			}
+		})
+	}
+
+	t.Run("unrecognized environment value is a configuration error", func(t *testing.T) {
+		_, home := newLayout(t)
+		resolver, _ := newTestResolver(home, config.Config{}, map[string]string{
+			herdrEnvironment: "maybe",
+		})
+
+		_, err := resolver.Resolve()
+		assertInvalidRoot(t, err, Herdr)
+	})
+}
+
 func TestResolverDefaultWorktreeRootHonorsXDGDataHome(t *testing.T) {
 	t.Run("absolute XDG_DATA_HOME is adopted", func(t *testing.T) {
 		base, home := newLayout(t)
@@ -994,8 +1096,8 @@ func TestResolverCachesConcurrentResolutionAndReturnsDefensiveCopies(t *testing.
 	if loadCalls.Load() != 1 {
 		t.Fatalf("loader calls = %d, want 1", loadCalls.Load())
 	}
-	if lookupCalls.Load() != 2 {
-		t.Fatalf("environment lookups = %d, want 2", lookupCalls.Load())
+	if lookupCalls.Load() != 3 {
+		t.Fatalf("environment lookups = %d, want 3", lookupCalls.Load())
 	}
 	if homeCalls.Load() != 1 {
 		t.Fatalf("home lookups = %d, want 1", homeCalls.Load())

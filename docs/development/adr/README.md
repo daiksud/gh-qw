@@ -55,3 +55,4 @@ it appear that the new choice was always in effect.
 | [0015](0015-mdx-presentation-props/) | Separate presentation-only props from reader-facing content | Accepted |
 | [0016](0016-ubuntu-slim-runners/) | Use ubuntu-slim for lightweight GitHub Actions jobs | Accepted |
 | [0017](0017-dependabot-ci-gate-and-auto-merge/) | Gate Dependabot merges on site validation | Accepted |
+| [0018](0018-herdr-workspace-integration/) | Integrate worktree add/remove and rm with Herdr workspaces | Accepted |

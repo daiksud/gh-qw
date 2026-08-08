@@ -24,6 +24,12 @@ var ErrInvalid = errors.New("invalid configuration")
 type Config struct {
 	Roots        []string
 	WorktreeRoot string
+	// Herdr enables Herdr workspace integration (see internal/herdr) for
+	// `worktree add`, `worktree remove`, and `rm` by default, without
+	// requiring --herdr on every invocation. A command-line --herdr or
+	// --no-herdr flag, or a set GHQW_HERDR environment variable, both take
+	// precedence over this value.
+	Herdr bool
 }
 
 // InvalidError describes invalid TOML syntax or a schema violation.
@@ -198,7 +204,7 @@ func decode(path string, data []byte) (Config, error) {
 			continue
 		}
 		switch key[0] {
-		case "root", "worktree_root":
+		case "root", "worktree_root", "herdr":
 		default:
 			return Config{}, newInvalidError(
 				path,
@@ -226,6 +232,14 @@ func decode(path string, data []byte) (Config, error) {
 			return Config{}, newInvalidError(path, reason, nil)
 		}
 		result.WorktreeRoot = worktreeRoot
+	}
+
+	if value, ok := document["herdr"]; ok {
+		herdr, ok := value.(bool)
+		if !ok {
+			return Config{}, newInvalidError(path, "herdr must be a boolean", nil)
+		}
+		result.Herdr = herdr
 	}
 
 	return result, nil

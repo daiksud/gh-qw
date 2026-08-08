@@ -68,6 +68,24 @@ worktree_root = "~/.ghqw/\u0077orktrees"
 			data: `root = ["relative/repo", " /path with boundary spaces ", "relative/repo"]`,
 			want: Config{Roots: []string{"relative/repo", " /path with boundary spaces ", "relative/repo"}},
 		},
+		{
+			name: "herdr enabled",
+			data: `herdr = true`,
+			want: Config{Herdr: true},
+		},
+		{
+			name: "herdr explicitly disabled",
+			data: `herdr = false`,
+			want: Config{Herdr: false},
+		},
+		{
+			name: "herdr alongside roots",
+			data: `
+root = "~/ghqw"
+herdr = true
+`,
+			want: Config{Roots: []string{"~/ghqw"}, Herdr: true},
+		},
 	}
 
 	for _, test := range tests {
@@ -273,6 +291,28 @@ path = "/one"
 			data: `
 [worktree_root]
 path = "/worktrees"
+`,
+		},
+		{
+			name:           "herdr string",
+			data:           `herdr = "true"`,
+			reasonContains: "herdr must be a boolean",
+		},
+		{
+			name:           "herdr integer",
+			data:           `herdr = 1`,
+			reasonContains: "herdr must be a boolean",
+		},
+		{
+			name:           "herdr array",
+			data:           `herdr = [true]`,
+			reasonContains: "herdr must be a boolean",
+		},
+		{
+			name: "herdr table",
+			data: `
+[herdr]
+enabled = true
 `,
 		},
 	}
