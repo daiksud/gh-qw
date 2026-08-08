@@ -1,8 +1,10 @@
 // @ts-check
 import { defineConfig } from 'astro/config';
+import mdx from '@astrojs/mdx';
 import { satteri } from '@astrojs/markdown-satteri';
 import starlight from '@astrojs/starlight';
 import mermaid from 'astro-mermaid';
+import { mdxAutoImport } from './src/plugins/mdx-auto-import.ts';
 import { docsCleanup } from './src/plugins/docs-cleanup.ts';
 import { githubAlerts } from './src/plugins/github-alerts.ts';
 
@@ -20,6 +22,7 @@ const adrPages = [
   '0011-type-named-release-labels',
   '0012-github-settings-as-code',
   '0013-node-pnpm-viteplus-toolchain',
+  '0014-mdx-documentation-components',
 ].map((name) => `development/adr/${name}/index`);
 
 export default defineConfig({
@@ -55,6 +58,9 @@ export default defineConfig({
         baseUrl: 'https://github.com/daiksud/gh-qw/edit/main/.pages/',
       },
       customCss: ['./src/styles/custom.css', './src/styles/github-alerts.css'],
+      components: {
+        PageTitle: './src/components/PageTitle.astro',
+      },
       markdown: {
         processedDirs: ['../docs/'],
       },
@@ -100,10 +106,11 @@ export default defineConfig({
         },
       ],
     }),
+    mdx(),
   ],
   markdown: {
     processor: satteri({
-      mdastPlugins: [docsCleanup, githubAlerts()],
+      mdastPlugins: [docsCleanup, githubAlerts(), mdxAutoImport],
     }),
   },
 });

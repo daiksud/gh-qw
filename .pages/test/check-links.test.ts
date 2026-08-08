@@ -7,6 +7,7 @@ import {
 } from "../scripts/check-links";
 
 const EDIT_LINK = "https://github.com/daiksud/gh-qw/edit/main/docs/README.md";
+const EDIT_MDX_LINK = "https://github.com/daiksud/gh-qw/edit/main/docs/README.mdx";
 
 function page(...body: string[]): string {
   return `<!doctype html><html><body>${body.join("")}</body></html>`;
@@ -15,8 +16,10 @@ function page(...body: string[]): string {
 async function validateRoot(
   body: string,
   extraOutputs: ReadonlyMap<string, string> = new Map(),
+  sourceDocs: ReadonlySet<string> = new Set(["docs/README.md"]),
+  editLink: string = EDIT_LINK,
 ): Promise<ValidationResult> {
-  const index = page(`<a href="${EDIT_LINK}">Edit</a>`, body);
+  const index = page(`<a href="${editLink}">Edit</a>`, body);
   const outputContents = new Map<string, string>([
     ["index.html", index],
     ...extraOutputs,
@@ -25,7 +28,7 @@ async function validateRoot(
   return validateGeneratedSite({
     htmlFiles: new Map([["index.html", index]]),
     outputFiles: new Set(outputContents.keys()),
-    sourceDocs: new Set(["docs/README.md"]),
+    sourceDocs,
     async readOutputFile(relativePath) {
       const contents = outputContents.get(relativePath);
       if (contents === undefined)
@@ -158,6 +161,18 @@ describe("generated site link checker", () => {
     );
 
     expect(result.failures).toEqual([]);
+  });
+
+  test("accepts an MDX edit URL for an MDX source document", async () => {
+    const result = await validateRoot(
+      "",
+      new Map(),
+      new Set(["docs/README.mdx"]),
+      EDIT_MDX_LINK,
+    );
+
+    expect(result.failures).toEqual([]);
+    expect(result.editLinkCount).toBe(1);
   });
 
   test("reports duplicate anchor identifiers", async () => {

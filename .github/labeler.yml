@@ -47,6 +47,7 @@ docs:
           - any-glob-to-all-files:
               - "docs/**"
               - "**/*.md"
+              - "**/*.mdx"
               - ".pages/src/**"
               - ".pages/public/**"
 

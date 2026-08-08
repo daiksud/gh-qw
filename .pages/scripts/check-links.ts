@@ -8,6 +8,7 @@ const BASE_PATH = "/gh-qw/";
 const BASE_ROOT = BASE_PATH.slice(0, -1);
 const GITHUB_ORIGIN = "https://github.com";
 const REPOSITORY_EDIT_ROOT = "/daiksud/gh-qw/edit/";
+const README_EXTENSIONS = ["md", "mdx"] as const;
 
 const DIST_DIRECTORY = join(import.meta.dirname, "../dist");
 const DOCS_DIRECTORY = join(import.meta.dirname, "../../docs");
@@ -145,16 +146,18 @@ function expectedEditTarget(
   relativeHtmlPath: string,
   sourceDocs: ReadonlySet<string>,
 ): string | undefined {
-  let target: string;
+  let directory: string;
   if (relativeHtmlPath === "index.html") {
-    target = "docs/README.md";
+    directory = "docs/";
   } else if (relativeHtmlPath.endsWith("/index.html")) {
-    target = `docs/${relativeHtmlPath.slice(0, -"index.html".length)}README.md`;
+    directory = `docs/${relativeHtmlPath.slice(0, -"index.html".length)}`;
   } else {
     return undefined;
   }
 
-  return sourceDocs.has(target) ? target : undefined;
+  return README_EXTENSIONS.map((extension) => `${directory}README.${extension}`).find(
+    (candidate) => sourceDocs.has(candidate),
+  );
 }
 
 function hasCredentials(url: URL): boolean {
@@ -245,13 +248,13 @@ function parseEditTarget(
   if (pathname === undefined) return "";
 
   const match =
-    /^\/daiksud\/gh-qw\/edit\/main\/(docs\/(?:[^/]+\/)*README\.md)$/.exec(
+    /^\/daiksud\/gh-qw\/edit\/main\/(docs\/(?:[^/]+\/)*README\.mdx?)$/.exec(
       pathname,
     );
   if (match === null || url.search !== "" || url.hash !== "") {
     addFailure(
       source,
-      "edit URL must match https://github.com/daiksud/gh-qw/edit/main/docs/**/README.md",
+      "edit URL must match https://github.com/daiksud/gh-qw/edit/main/docs/**/README.md or README.mdx",
       reference,
     );
     return "";
@@ -531,7 +534,7 @@ async function main(): Promise<void> {
   const [htmlPaths, allOutputPaths, sourceReadmePaths] = await Promise.all([
     scanFiles(DIST_DIRECTORY, "**/*.html"),
     scanFiles(DIST_DIRECTORY, "**/*"),
-    scanFiles(DOCS_DIRECTORY, "**/README.md"),
+    scanFiles(DOCS_DIRECTORY, `**/README.{${README_EXTENSIONS.join(",")}}`),
   ]);
 
   if (htmlPaths.length === 0) {

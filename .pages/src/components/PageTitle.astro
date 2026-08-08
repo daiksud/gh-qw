@@ -1,0 +1,7 @@
+---
+import DefaultPageTitle from '@astrojs/starlight/components/PageTitle.astro';
+
+const { entry } = Astro.locals.starlightRoute;
+---
+
+{entry.data.template === 'splash' ? null : <DefaultPageTitle />}
