@@ -20,3 +20,119 @@ const { title } = Astro.locals.starlightRoute.entry.data;
     <slot />
   </div>
 </div>
+
+<style>
+  @layer gh-qw {
+    .docs-hero {
+      display: grid;
+      grid-template-columns: 100%;
+      align-items: center;
+      gap: 1rem;
+      padding-bottom: 1rem;
+    }
+
+    .docs-hero-image {
+      object-fit: contain;
+      width: min(70%, 20rem);
+      height: auto;
+      margin-inline: auto;
+      filter: drop-shadow(0 1.2rem 2rem rgb(26 127 55 / 18%));
+    }
+
+    .docs-hero-copy {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      align-items: center;
+      text-align: center;
+    }
+
+    .docs-hero-copy > :global(*) {
+      max-width: 50ch;
+    }
+
+    .docs-hero-copy h1 {
+      margin: 0;
+      font-size: clamp(var(--sl-text-3xl), calc(0.25rem + 5vw), var(--sl-text-6xl));
+      line-height: var(--sl-line-height-headings);
+      font-weight: 600;
+      color: var(--sl-color-white);
+    }
+
+    .docs-hero-copy :global(.sl-anchor-link) {
+      display: none;
+    }
+
+    .docs-hero-copy > :global(p:first-of-type) {
+      margin: 0;
+      font-size: clamp(var(--sl-text-base), calc(0.0625rem + 2vw), var(--sl-text-xl));
+      color: var(--sl-color-gray-2);
+    }
+
+    .docs-hero-copy > :global(p:last-of-type) {
+      display: flex;
+      gap: 1rem 2rem;
+      flex-wrap: wrap;
+      justify-content: center;
+      margin: 0;
+    }
+
+    .docs-hero-copy > :global(p:last-of-type) :global(a) {
+      display: inline-flex;
+      align-items: center;
+      border: 1px solid transparent;
+      border-radius: 999rem;
+      padding: 0.4375rem 1.125rem;
+      font-size: var(--sl-text-sm);
+      line-height: 1.1875;
+      text-decoration: none;
+    }
+
+    .docs-hero-copy > :global(p:last-of-type) :global(a:first-child) {
+      background: var(--sl-color-text-accent);
+      border-color: var(--sl-color-text-accent);
+      color: var(--sl-color-black);
+    }
+
+    .docs-hero-copy > :global(p:last-of-type) :global(a:last-child) {
+      color: var(--sl-color-white);
+    }
+
+    :global(main > .content-panel:has(+ .content-panel .docs-hero)) {
+      display: none;
+    }
+
+    :global(main > .content-panel:has(.docs-hero)) {
+      border-top: 0;
+    }
+  }
+
+  @media (min-width: 50rem) {
+    @layer gh-qw {
+      .docs-hero {
+        grid-template-columns: 7fr 4fr;
+        gap: 3%;
+        padding-block: clamp(2.5rem, calc(1rem + 10vmin), 10rem);
+      }
+
+      .docs-hero-image {
+        order: 2;
+        width: min(100%, 25rem);
+      }
+
+      .docs-hero-copy {
+        align-items: flex-start;
+        text-align: start;
+      }
+
+      .docs-hero-copy > :global(p:last-of-type) {
+        justify-content: flex-start;
+      }
+
+      .docs-hero-copy > :global(p:last-of-type) :global(a) {
+        font-size: var(--sl-text-base);
+        padding: 0.9375rem 1.25rem;
+      }
+    }
+  }
+</style>

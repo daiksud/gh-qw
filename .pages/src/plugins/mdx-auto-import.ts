@@ -6,7 +6,9 @@ const componentsDirectory = new URL('../components/', import.meta.url);
 
 const componentImports = {
   Card: 'Card.astro',
-  Cards: 'Cards.astro',
+  CardGrid: 'CardGrid.astro',
+  CardIcon: 'CardIcon.astro',
+  CardTitle: 'CardTitle.astro',
   Hero: 'Hero.astro',
   Install: 'Install.astro',
 } as const;

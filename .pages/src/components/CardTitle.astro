@@ -1,0 +1,31 @@
+<p class="docs-card-title"><slot /></p>
+
+<style>
+  @layer gh-qw {
+    .docs-card-title {
+      display: flex;
+      margin: 0;
+      gap: 1rem;
+      align-items: center;
+      font-weight: 600;
+      font-size: var(--sl-text-h4);
+      line-height: var(--sl-line-height-headings);
+      color: var(--sl-color-white);
+    }
+
+    .docs-card-title :global(a) {
+      color: inherit;
+      text-decoration: none;
+    }
+
+    .docs-card-title :global(a)::after {
+      position: absolute;
+      inset: 0;
+      content: '';
+    }
+
+    .docs-card-title :global(a:focus-visible) {
+      outline: none;
+    }
+  }
+</style>

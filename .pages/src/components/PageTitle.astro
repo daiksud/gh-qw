@@ -5,3 +5,26 @@ const { entry } = Astro.locals.starlightRoute;
 ---
 
 {entry.data.template === 'splash' ? null : <DefaultPageTitle />}
+
+<style>
+  @layer starlight, gh-qw;
+
+  @layer gh-qw {
+    :global(:root) {
+      --sl-color-accent-low: #dafbe1;
+      --sl-color-accent: #1a7f37;
+      --sl-color-accent-high: #0f5323;
+    }
+
+    :global(:root[data-theme='dark']) {
+      --sl-color-accent-low: #0f2d19;
+      --sl-color-accent: #3fb950;
+      --sl-color-accent-high: #aff5b4;
+    }
+
+    :global(.site-title img) {
+      width: 2rem;
+      height: 2rem;
+    }
+  }
+</style>

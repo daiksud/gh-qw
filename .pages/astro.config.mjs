@@ -23,6 +23,7 @@ const adrPages = [
   '0012-github-settings-as-code',
   '0013-node-pnpm-viteplus-toolchain',
   '0014-mdx-documentation-components',
+  '0015-mdx-presentation-props',
 ].map((name) => `development/adr/${name}/index`);
 
 export default defineConfig({
@@ -57,7 +58,7 @@ export default defineConfig({
         // `.pages/` in the base makes URL normalization resolve to `main/docs/...`.
         baseUrl: 'https://github.com/daiksud/gh-qw/edit/main/.pages/',
       },
-      customCss: ['./src/styles/custom.css', './src/styles/github-alerts.css'],
+      customCss: ['./src/styles/github-alerts.css'],
       components: {
         PageTitle: './src/components/PageTitle.astro',
       },
