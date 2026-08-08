@@ -17,7 +17,7 @@
   },
   "devDependencies": {
     "@astrojs/check": "0.9.9",
-    "@types/node": "24.13.3",
+    "@types/node": "26.1.2",
     "parse5": "8.0.1",
     "typescript": "6.0.3",
     "vite-plus": "0.2.8"
