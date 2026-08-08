@@ -25,6 +25,7 @@ const adrPages = [
   '0014-mdx-documentation-components',
   '0015-mdx-presentation-props',
   '0016-ubuntu-slim-runners',
+  '0017-dependabot-ci-gate-and-auto-merge',
 ].map((name) => `development/adr/${name}/index`);
 
 export default defineConfig({

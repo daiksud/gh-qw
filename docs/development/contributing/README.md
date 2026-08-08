@@ -78,6 +78,17 @@ the manifest is deleted on GitHub, not merely left untracked. Always review `gh 
 output before running `apply`. See the
 [repository settings reference](../../reference/repository-settings/) for the full contract.
 
+Dependabot pull requests are enabled for squash auto-merge by
+`.github/workflows/dependabot-auto-merge.yml`. The `CI success` status check is required by the
+default branch ruleset, so a dependency update cannot merge when the Go checks, Astro validation,
+runtime smoke test, or settings validation fails. The auto-merge workflow is deliberately
+separate from the validation workflow and does not check out pull request code.
+
+When changing the required workflow context, merge the workflow change before applying the
+corresponding settings manifest. After the new context exists on `main`, run `gh infra plan` and
+`gh infra apply` locally. Existing Dependabot pull requests may need a rebase to report the new
+context.
+
 ## Validate changes
 
 Run the relevant Go checks from the repository root:
@@ -93,6 +104,10 @@ $ cd .pages
 $ vp install --frozen-lockfile
 $ vpr validate
 ```
+
+`vpr validate` includes the Astro runtime smoke test. It serves the generated site locally and
+checks the HTML routes, homepage assets, Pagefind, and not-found behavior in addition to the
+static build and link checks.
 
 The package manager remains pnpm as Vite+'s backend. Use `vpr` for the site tasks; `vp dev` and
 `vp build` are Vite+'s built-in Vite commands and do not run Astro.

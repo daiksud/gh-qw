@@ -23,11 +23,16 @@ export default defineConfig({
         command: 'node ./scripts/check-links.ts',
         dependsOn: ['build'],
       },
+      'check:smoke': {
+        command: 'node ./scripts/smoke.ts',
+        dependsOn: ['build'],
+      },
       test: {
         command: 'vp test',
       },
       validate: {
-        command: 'vp run test && vp run check && vp run check:links',
+        command:
+          'vp run test && vp run check && vp run check:links && vp run check:smoke',
         cache: false,
       },
       format: {

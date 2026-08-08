@@ -1,0 +1,38 @@
+name: Dependabot auto-merge
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  enable:
+    name: Enable auto-merge
+    if: >-
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      github.repository == 'daiksud/gh-qw'
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      # This privileged workflow never checks out or executes pull request code.
+      - name: Enable squash auto-merge
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          auto_merge="$(gh pr view "$PR_URL" --json autoMergeRequest --jq 'if .autoMergeRequest == null then "disabled" else "enabled" end')"
+          if [ "$auto_merge" = "enabled" ]; then
+            echo "Auto-merge is already enabled for $PR_URL."
+            exit 0
+          fi
+          gh pr merge --auto --squash "$PR_URL"

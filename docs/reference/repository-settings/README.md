@@ -37,6 +37,31 @@ defines which labels affect release version computation; this page defines the m
 
 Neither `plan` nor `apply` ever runs in CI. See [Token permissions](#token-permissions) for why.
 
+## Required checks and Dependabot auto-merge
+
+The `docs` job in [`.github/workflows/ci.yml`](https://github.com/daiksud/gh-qw/blob/main/.github/workflows/ci.yml)
+validates the documentation source, builds the Astro site, checks generated links, and runs the
+runtime smoke test. The `CI success` job aggregates that result with the Go and settings jobs so
+the ruleset does not depend on matrix runner names.
+
+The default branch ruleset requires the `CI success` status from the `github-actions` app. The
+required check uses `strict_required_status_checks_policy: false` intentionally: GitHub auto-merge
+does not update a pull request head branch, and Dependabot does not rebase solely because the base
+branch advanced. Requiring an up-to-date branch would therefore leave queued Dependabot pull
+requests behind after another update merged.
+
+`.github/workflows/dependabot-auto-merge.yml` enables squash auto-merge for every Dependabot pull
+request after it is opened or updated. It uses `pull_request_target` without checking out the
+head branch, and the required `CI success` check still prevents a failing update from merging.
+
+When introducing or renaming a required status context, merge the workflow change first. Then
+review and apply the manifest locally:
+
+```console
+$ gh infra plan .github/settings.yml
+$ gh infra apply .github/settings.yml
+```
+
 ## Authoritative reconcile
 
 `.github/settings.yml` sets `reconcile.labels: authoritative` and `reconcile.rulesets:
@@ -101,6 +126,8 @@ GitHub UI or API exactly as before this manifest existed:
   has no `Environment` kind and cannot manage environment protection rules, reviewers, or secrets.
 - **CodeQL default setup** — configured via the UI (`languages: [actions, go]`,
   `query_suite: extended`), with no corresponding workflow file and no manifest field.
+- **Pull request branch update suggestions** — the `allow_update_branch` repository setting is not
+  represented by gh-infra v0.13.0 and remains manually managed through the GitHub UI or API.
 - Webhooks, collaborators and team permissions, deploy keys, and the default branch name.
 - Artifact/log retention, cache limits, and OIDC subject claim customization.
 
@@ -108,6 +135,8 @@ GitHub UI or API exactly as before this manifest existed:
 
 - [ADR-0012](../../development/adr/0012-github-settings-as-code/) — why settings are code, and why
   apply stays local.
+- [ADR-0017](../../development/adr/0017-dependabot-ci-gate-and-auto-merge/) — how Dependabot
+  merges are gated and automated.
 - [ADR-0011](../../development/adr/0011-type-named-release-labels/) — the label vocabulary this
   manifest's `spec.labels` implements.
 - [Versioning reference](../versioning/#labels) — which labels affect the computed release version.
