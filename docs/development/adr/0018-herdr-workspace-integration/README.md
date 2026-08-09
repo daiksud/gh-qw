@@ -36,19 +36,19 @@ integration should follow that same shape rather than inventing a new one.
 
 ## Decision
 
-`worktree add`, `worktree remove`, and `rm` (for an `@branch` linked-worktree target only) gain a
-`--herdr`/`--no-herdr` flag pair. A new `herdr` boolean key in `config.toml` and a `GHQW_HERDR`
-environment variable let a person enable the integration by default instead of passing the flag on
-every invocation. These resolve with one fixed precedence: an explicit flag, then `GHQW_HERDR`,
-then the configuration key, then disabled.
+`worktree add`, `worktree remove` (including the later `--gone` bulk mode), and `rm` (for an
+`@branch` linked-worktree target only) gain a `--herdr`/`--no-herdr` flag pair. A new `herdr`
+boolean key in `config.toml` and a `GHQW_HERDR` environment variable let a person enable the
+integration by default instead of passing the flag on every invocation. These resolve with one
+fixed precedence: an explicit flag, then `GHQW_HERDR`, then the configuration key, then disabled.
 
 When enabled, `worktree add` runs `herdr workspace create --cwd <new-worktree-path>
 --label <repo>@<branch> --focus` through the `herdr` executable resolved from `PATH`, after the
 worktree itself is created and validated and after gh-qw's own `stdout` contract — the new absolute
-path — is already satisfied. `worktree remove` and `rm` resolve the workspace `herdr` already has
-open for that worktree path with `herdr worktree list` **before** removing anything (Herdr's own
-worktree listing depends on Git's own registration, which the removal itself would erase), remove
-the worktree exactly as they do today, and only then close the resolved workspace with
+path — is already satisfied. `worktree remove` and `rm` resolve each workspace `herdr` already has
+open for a target worktree path with `herdr worktree list` **before** unregistering that target
+(Herdr's own worktree listing depends on Git's own registration, which the removal itself would
+erase), remove the worktree, and only then close the resolved workspace with
 `herdr workspace close`. A worktree with no open workspace is left alone: that is an ordinary,
 expected outcome, not a failure.
 

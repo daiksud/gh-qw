@@ -95,6 +95,16 @@ func TestGitCommandHelperProcess(t *testing.T) {
 	case "worktree-list-malformed":
 		_, _ = os.Stdout.Write([]byte("HEAD abc\x00"))
 		os.Exit(0)
+	case "branch-upstreams":
+		_, _ = os.Stdout.Write([]byte(
+			"refs/heads/local\x00refs/heads/main\x00\n" +
+				"refs/heads/main\x00\x00\n" +
+				"refs/heads/topic\x00refs/remotes/custom/review/topic\x00\n",
+		))
+		os.Exit(0)
+	case "branch-upstreams-malformed":
+		_, _ = os.Stdout.Write([]byte("refs/heads/topic\x00refs/remotes/origin/topic\n"))
+		os.Exit(0)
 	default:
 		os.Exit(92)
 	}

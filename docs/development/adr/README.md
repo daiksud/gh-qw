@@ -59,3 +59,4 @@ it appear that the new choice was always in effect.
 | [0016](0016-ubuntu-slim-runners/) | Use ubuntu-slim for lightweight GitHub Actions jobs | Accepted |
 | [0017](0017-dependabot-ci-gate-and-auto-merge/) | Gate Dependabot merges on site validation | Accepted |
 | [0018](0018-herdr-workspace-integration/) | Integrate worktree add/remove and rm with Herdr workspaces | Accepted |
+| [0019](0019-remove-gone-worktrees/) | Add planned bulk removal for gone-upstream worktrees | Accepted |

@@ -838,6 +838,22 @@ func removePrepareLinkedTarget(
 	plan removePlan,
 	worktree local.Worktree,
 ) (removeLinkedTarget, removeNode, error) {
+	return removePrepareLinkedTargetWithCleanliness(
+		ctx,
+		commandRuntime,
+		plan,
+		worktree,
+		true,
+	)
+}
+
+func removePrepareLinkedTargetWithCleanliness(
+	ctx context.Context,
+	commandRuntime removeRuntime,
+	plan removePlan,
+	worktree local.Worktree,
+	requireClean bool,
+) (removeLinkedTarget, removeNode, error) {
 	if err := removeValidateLinkedRecord(plan.repository, worktree); err != nil {
 		return removeLinkedTarget{}, removeNode{}, err
 	}
@@ -942,13 +958,15 @@ func removePrepareLinkedTarget(
 			err,
 		)
 	}
-	if err := removeRequireClean(
-		ctx,
-		commandRuntime.git,
-		directory.path,
-		"linked worktree "+worktree.Slot,
-	); err != nil {
-		return removeLinkedTarget{}, removeNode{}, err
+	if requireClean {
+		if err := removeRequireClean(
+			ctx,
+			commandRuntime.git,
+			directory.path,
+			"linked worktree "+worktree.Slot,
+		); err != nil {
+			return removeLinkedTarget{}, removeNode{}, err
+		}
 	}
 
 	return removeLinkedTarget{
@@ -1187,6 +1205,26 @@ func removeRequireClean(
 	git RemoveGit,
 	path, description string,
 ) error {
+	dirty, err := removeInspectDirty(ctx, git, path, description)
+	if err != nil {
+		return err
+	}
+	if dirty {
+		return fmt.Errorf(
+			"%w: %s %q has tracked or untracked changes",
+			ErrRemoveSafety,
+			description,
+			removeOutputPath(path),
+		)
+	}
+	return nil
+}
+
+func removeInspectDirty(
+	ctx context.Context,
+	git RemoveGit,
+	path, description string,
+) (bool, error) {
 	output, err := git.OutputDir(
 		ctx,
 		path,
@@ -1197,17 +1235,9 @@ func removeRequireClean(
 		"--ignore-submodules=none",
 	)
 	if err != nil {
-		return fmt.Errorf("inspect %s cleanliness at %q: %w", description, path, err)
+		return false, fmt.Errorf("inspect %s cleanliness at %q: %w", description, path, err)
 	}
-	if len(output) != 0 {
-		return fmt.Errorf(
-			"%w: %s %q has tracked or untracked changes",
-			ErrRemoveSafety,
-			description,
-			removeOutputPath(path),
-		)
-	}
-	return nil
+	return len(output) != 0, nil
 }
 
 func removeCaptureNode(

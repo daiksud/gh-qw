@@ -77,7 +77,7 @@ $ gh qw worktree add --herdr feature/docs
 | `gh qw migrate` | Migrate GitHub repositories from a ghq layout. |
 | `gh qw worktree add` | Create a linked worktree at its deterministic branch path; `--herdr` opens a Herdr workspace for it. |
 | `gh qw worktree list` | List one repository's registered worktrees. |
-| `gh qw worktree remove` | Remove one managed linked worktree; `--herdr` closes its Herdr workspace. |
+| `gh qw worktree remove` | Remove one managed linked worktree, or use `--gone` to safely remove every linked worktree whose upstream ref is gone; `--herdr` closes affected Herdr workspaces. |
 | `gh qw worktree prune` | Prune stale Git metadata and proven orphaned paths. |
 
 See the [CLI reference](docs/reference/cli/README.md) for every argument, flag, output format,

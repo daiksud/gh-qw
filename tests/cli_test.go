@@ -146,6 +146,49 @@ func TestCLIRepositoryAndWorktreeLifecycle(t *testing.T) {
 	assertContains(t, result.stderr, "removed worktree "+featureOutput)
 	assertPathMissing(t, featurePath)
 
+	goneBranch := "gone/e2e"
+	gonePath := filepath.Join(
+		fixture.worktreeRoot,
+		"github.com",
+		"acme",
+		"widget",
+		filepath.FromSlash(goneBranch),
+	)
+	result = fixture.runCLI(
+		t,
+		"worktree",
+		"add",
+		"-R",
+		testIdentity,
+		"-b",
+		goneBranch,
+		"main",
+	)
+	assertStatus(t, result, 0)
+	assertPathExists(t, gonePath)
+	goneUpstream := "refs/remotes/origin/gone/e2e"
+	fixture.runGit(t, mainPath, "update-ref", goneUpstream, "HEAD")
+	fixture.runGit(t, mainPath, "branch", "--set-upstream-to=origin/gone/e2e", goneBranch)
+	fixture.runGit(t, mainPath, "update-ref", "-d", goneUpstream)
+
+	result = fixture.runCLI(
+		t,
+		"worktree",
+		"remove",
+		"-R",
+		testIdentity,
+		"--gone",
+		"--yes",
+	)
+	assertStatus(t, result, 0)
+	assertStdout(t, result, "")
+	assertContains(t, result.stderr, "remove slot=\""+goneBranch+"\"")
+	assertContains(t, result.stderr, "removed worktree "+filepath.ToSlash(gonePath))
+	assertPathMissing(t, gonePath)
+	if output := fixture.runGit(t, mainPath, "show-ref", "--verify", "refs/heads/"+goneBranch); strings.TrimSpace(output) == "" {
+		t.Fatalf("gone cleanup removed local branch %q", goneBranch)
+	}
+
 	staleBranch := "stale/e2e"
 	stalePath := filepath.Join(
 		fixture.worktreeRoot,
