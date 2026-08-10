@@ -239,6 +239,13 @@ func worktreeRemoveGoneBuildPlan(
 			err,
 		)
 	}
+	attachedBranches := make(map[string]struct{}, len(worktrees))
+	for _, worktree := range worktrees {
+		if worktree.Main || worktree.Detached || worktree.Branch == "" {
+			continue
+		}
+		attachedBranches[worktree.Branch] = struct{}{}
+	}
 
 	upstreams, err := commandRuntime.git.BranchUpstreams(ctx, repository.Path)
 	if err != nil {
@@ -250,6 +257,9 @@ func worktreeRemoveGoneBuildPlan(
 	}
 	upstreamByBranch := make(map[string]string, len(upstreams))
 	for _, upstream := range upstreams {
+		if _, attached := attachedBranches[upstream.Branch]; !attached {
+			continue
+		}
 		if err := local.ValidateBranch(upstream.Branch); err != nil {
 			return worktreeRemoveGonePlan{}, fmt.Errorf(
 				"inspect branch upstreams for %q: invalid branch %q: %w",

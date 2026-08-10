@@ -838,6 +838,7 @@ func TestNewWorktreeRemoveCommandGoneRealGitLifecycle(t *testing.T) {
 		)
 	}
 	worktreeRemoveRunGit(t, repositoryPath, "update-ref", "-d", worktrees[1].ref)
+	worktreeRemoveRunGit(t, repositoryPath, "update-ref", "refs/heads/HEAD", "HEAD")
 
 	var stdout, stderr bytes.Buffer
 	prompts := 0
@@ -904,6 +905,44 @@ func TestNewWorktreeRemoveCommandGoneRealGitLifecycle(t *testing.T) {
 	for _, item := range worktrees {
 		worktreeRemoveRunGit(t, repositoryPath, "show-ref", "--verify", "refs/heads/"+item.branch)
 	}
+
+	invalidAttachedPath := filepath.Join(
+		worktreeRoot, "github.com", "acme", "widget", "slot", "invalid-attached",
+	)
+	if err := os.MkdirAll(filepath.Dir(invalidAttachedPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	worktreeRemoveRunGit(
+		t,
+		repositoryPath,
+		"worktree",
+		"add",
+		"-b",
+		"@",
+		invalidAttachedPath,
+		"refs/heads/main",
+	)
+	stdout.Reset()
+	stderr.Reset()
+	command = NewWorktreeRemoveCommand(WorktreeRemoveDependencies{
+		Resolver: worktreeRemoveStaticResolver{result: rootpkg.Result{
+			RepositoryRoots: []string{repositoryRoot},
+			WorktreeRoot:    worktreeRoot,
+		}},
+		Getwd:  func() (string, error) { return root, nil },
+		Stdout: &stdout,
+		Stderr: &stderr,
+	})
+	command.SetArgs([]string{"-R", "acme/widget", "--gone", "--yes"})
+	err := command.Execute()
+	if err == nil || !strings.Contains(err.Error(), "invalid branch \"@\"") {
+		t.Fatalf("attached-invalid Execute() error = %v; stderr = %q", err, stderr.String())
+	}
+	if info, statErr := os.Stat(invalidAttachedPath); statErr != nil || !info.IsDir() {
+		t.Fatalf("attached-invalid worktree changed: info=%v err=%v", info, statErr)
+	}
+	worktreeRemoveRunGit(t, repositoryPath, "worktree", "remove", invalidAttachedPath)
+	worktreeRemoveRunGit(t, repositoryPath, "update-ref", "-d", "refs/heads/@")
 
 	stdout.Reset()
 	stderr.Reset()
