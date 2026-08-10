@@ -24,11 +24,17 @@ type worktreeRemoveGoneEntry struct {
 }
 
 type worktreeRemoveGonePlan struct {
-	roots      rootpkg.Result
-	repository local.Repository
-	common     removePlan
-	current    string
-	entries    []worktreeRemoveGoneEntry
+	roots        rootpkg.Result
+	repositories []local.Repository
+	repository   local.Repository
+	common       removePlan
+	current      string
+	entries      []worktreeRemoveGoneEntry
+}
+
+type worktreeRemoveGoneRegistration struct {
+	repository string
+	path       string
 }
 
 type worktreeRemoveGoneSharedError struct {
@@ -201,13 +207,21 @@ func worktreeRemoveGonePreflightWithRoots(
 	if err != nil {
 		return worktreeRemoveGonePlan{}, err
 	}
-	return worktreeRemoveGoneBuildPlan(ctx, commandRuntime, roots, repository, request.force)
+	return worktreeRemoveGoneBuildPlan(
+		ctx,
+		commandRuntime,
+		roots,
+		discovery.Repositories,
+		repository,
+		request.force,
+	)
 }
 
 func worktreeRemoveGoneBuildPlan(
 	ctx context.Context,
 	commandRuntime worktreeRemoveRuntime,
 	roots rootpkg.Result,
+	repositories []local.Repository,
 	repository local.Repository,
 	force bool,
 ) (worktreeRemoveGonePlan, error) {
@@ -279,9 +293,10 @@ func worktreeRemoveGoneBuildPlan(
 	}
 
 	plan := worktreeRemoveGonePlan{
-		roots:      roots,
-		repository: repository,
-		common:     common,
+		roots:        roots,
+		repositories: append([]local.Repository(nil), repositories...),
+		repository:   repository,
+		common:       common,
 	}
 	type goneCandidate struct {
 		worktree local.Worktree
@@ -318,6 +333,17 @@ func worktreeRemoveGoneBuildPlan(
 	if len(candidates) == 0 {
 		return plan, nil
 	}
+	registrations, err := worktreeRemoveGoneRegistrations(
+		ctx,
+		commandRuntime,
+		repositories,
+	)
+	if err != nil {
+		return worktreeRemoveGonePlan{}, fmt.Errorf(
+			"inspect registered worktrees across discovered repositories: %w",
+			err,
+		)
+	}
 
 	current, err := worktreeRemoveGoneCurrentPath(commandRuntime)
 	if err != nil {
@@ -347,10 +373,11 @@ func worktreeRemoveGoneBuildPlan(
 			plan.entries = append(plan.entries, entry)
 			continue
 		}
-		if contained, found := worktreeRemoveGoneContainedWorktree(worktrees, worktree); found {
+		if contained, found := worktreeRemoveGoneContainedRegistration(registrations, worktree); found {
 			entry.reason = fmt.Sprintf(
-				"contains registered worktree at %q",
-				removeOutputPath(contained.Path),
+				"contains registered worktree from %q at %q",
+				contained.repository,
+				removeOutputPath(contained.path),
 			)
 			plan.entries = append(plan.entries, entry)
 			continue
@@ -468,24 +495,125 @@ func worktreeRemoveGonePathContains(directory, path string) bool {
 	return removeSamePath(directory, path) || removePathStrictlyWithin(directory, path)
 }
 
-func worktreeRemoveGoneContainedWorktree(
-	worktrees []local.Worktree,
+func worktreeRemoveGoneContainedRegistration(
+	registrations []worktreeRemoveGoneRegistration,
 	parent local.Worktree,
-) (local.Worktree, bool) {
-	var contained local.Worktree
+) (worktreeRemoveGoneRegistration, bool) {
+	var contained worktreeRemoveGoneRegistration
 	found := false
-	for _, worktree := range worktrees {
-		if !removePathStrictlyWithin(parent.Path, worktree.Path) {
+	for _, registration := range registrations {
+		if !removePathStrictlyWithin(parent.Path, registration.path) {
 			continue
 		}
-		if !found || removePathKey(worktree.Path) < removePathKey(contained.Path) ||
-			(removePathKey(worktree.Path) == removePathKey(contained.Path) &&
-				worktree.Slot < contained.Slot) {
-			contained = worktree
+		if !found || removePathKey(registration.path) < removePathKey(contained.path) ||
+			(removePathKey(registration.path) == removePathKey(contained.path) &&
+				registration.repository < contained.repository) {
+			contained = registration
 			found = true
 		}
 	}
 	return contained, found
+}
+
+func worktreeRemoveGoneRegistrations(
+	ctx context.Context,
+	commandRuntime worktreeRemoveRuntime,
+	repositories []local.Repository,
+) ([]worktreeRemoveGoneRegistration, error) {
+	var registrations []worktreeRemoveGoneRegistration
+	for _, repository := range repositories {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		worktrees, err := commandRuntime.git.WorktreeList(ctx, repository.Path)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"list registered worktrees for %q: %w",
+				repository.Identity,
+				err,
+			)
+		}
+		for _, worktree := range worktrees {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			paths, err := worktreeRemoveGoneRegistrationPaths(commandRuntime.fs, worktree.Path)
+			if err != nil {
+				return nil, fmt.Errorf(
+					"inspect registered path %q for %q: %w",
+					worktree.Path,
+					repository.Identity,
+					err,
+				)
+			}
+			for _, path := range paths {
+				registrations = append(registrations, worktreeRemoveGoneRegistration{
+					repository: repository.Identity,
+					path:       path,
+				})
+			}
+		}
+	}
+	return registrations, nil
+}
+
+func worktreeRemoveGoneRegistrationPaths(
+	filesystem removeFilesystem,
+	path string,
+) ([]string, error) {
+	if !filepath.IsAbs(path) {
+		return nil, fmt.Errorf("registered path %q is not absolute", path)
+	}
+	path = filepath.Clean(path)
+	physical, err := worktreeRemoveGonePhysicalizeRegistration(filesystem, path)
+	if err != nil {
+		return nil, err
+	}
+	paths := []string{path}
+	if !removeSamePath(path, physical) {
+		paths = append(paths, physical)
+	}
+	return paths, nil
+}
+
+func worktreeRemoveGonePhysicalizeRegistration(
+	filesystem removeFilesystem,
+	path string,
+) (string, error) {
+	current := path
+	var missingSuffix []string
+	for {
+		missing, err := removePathMissing(filesystem, current)
+		if err != nil {
+			return "", fmt.Errorf("inspect path component %q: %w", current, err)
+		}
+		if !missing {
+			break
+		}
+
+		parent := filepath.Dir(current)
+		if removeSamePath(parent, current) {
+			return "", fmt.Errorf("find existing path ancestor for %q", path)
+		}
+		missingSuffix = append(missingSuffix, filepath.Base(current))
+		current = parent
+	}
+
+	physical, err := filesystem.evalSymlinks(current)
+	if err != nil {
+		return "", fmt.Errorf("resolve symbolic links in %q: %w", current, err)
+	}
+	if !filepath.IsAbs(physical) {
+		return "", fmt.Errorf("resolved registered path %q is not absolute", physical)
+	}
+	physical = filepath.Clean(physical)
+	for index := len(missingSuffix) - 1; index >= 0; index-- {
+		physical = filepath.Join(physical, missingSuffix[index])
+	}
+	if !filepath.IsAbs(physical) {
+		return "", fmt.Errorf("physical registered path %q is not absolute", physical)
+	}
+	return filepath.Clean(physical), nil
 }
 
 func worktreeRemoveGoneHasKept(plan worktreeRemoveGonePlan) bool {
@@ -549,6 +677,12 @@ func worktreeRemoveGoneComparePlans(
 		!removeSamePath(before.current, after.current) {
 		return fmt.Errorf("%w: repository, current directory, or configuration changed", ErrRemoveSafety)
 	}
+	if err := worktreeRemoveGoneCompareRepositories(
+		before.repositories,
+		after.repositories,
+	); err != nil {
+		return err
+	}
 	if err := removeComparePlans(filesystem, before.common, after.common); err != nil {
 		return err
 	}
@@ -568,6 +702,20 @@ func worktreeRemoveGoneComparePlans(
 				ErrRemoveSafety,
 				left.worktree.Slot,
 			)
+		}
+	}
+	return nil
+}
+
+func worktreeRemoveGoneCompareRepositories(
+	before, after []local.Repository,
+) error {
+	if len(before) != len(after) {
+		return fmt.Errorf("%w: discovered repository inventory changed", ErrRemoveSafety)
+	}
+	for index := range before {
+		if before[index] != after[index] {
+			return fmt.Errorf("%w: discovered repository inventory changed", ErrRemoveSafety)
 		}
 	}
 	return nil
@@ -812,14 +960,6 @@ func worktreeRemoveGoneRevalidateEntry(
 	if !removeSameWorktree(planned.worktree, worktree) {
 		return fmt.Errorf("%w: slot, path, branch, HEAD, lock, or prune state changed", ErrRemoveSafety)
 	}
-	if contained, found := worktreeRemoveGoneContainedWorktree(worktrees, worktree); found {
-		return fmt.Errorf(
-			"%w: contains registered worktree at %q",
-			ErrRemoveSafety,
-			removeOutputPath(contained.Path),
-		)
-	}
-
 	upstreams, err := commandRuntime.git.BranchUpstreams(ctx, plan.repository.Path)
 	if err != nil {
 		return worktreeRemoveGoneShared(fmt.Errorf("inspect branch upstreams: %w", err))
@@ -895,6 +1035,39 @@ func worktreeRemoveGoneRevalidateEntry(
 	}
 	if dirty && !force {
 		return fmt.Errorf("%w: worktree is dirty", ErrRemoveSafety)
+	}
+	discovery, err := commandRuntime.discover(
+		ctx,
+		plan.roots.RepositoryRoots,
+		local.DiscoveryOptions{
+			Git:        commandRuntime.git,
+			Filesystem: commandRuntime.filesystem,
+		},
+	)
+	if err != nil {
+		return worktreeRemoveGoneShared(fmt.Errorf("discover repositories: %w", err))
+	}
+	if err := worktreeRemoveGoneCompareRepositories(
+		plan.repositories,
+		discovery.Repositories,
+	); err != nil {
+		return worktreeRemoveGoneShared(err)
+	}
+	registrations, err := worktreeRemoveGoneRegistrations(
+		ctx,
+		commandRuntime,
+		discovery.Repositories,
+	)
+	if err != nil {
+		return worktreeRemoveGoneShared(err)
+	}
+	if contained, found := worktreeRemoveGoneContainedRegistration(registrations, worktree); found {
+		return fmt.Errorf(
+			"%w: contains registered worktree from %q at %q",
+			ErrRemoveSafety,
+			contained.repository,
+			removeOutputPath(contained.path),
+		)
 	}
 	return nil
 }
