@@ -337,6 +337,14 @@ func worktreeRemoveGoneBuildPlan(
 			plan.entries = append(plan.entries, entry)
 			continue
 		}
+		if contained, found := worktreeRemoveGoneContainedWorktree(worktrees, worktree); found {
+			entry.reason = fmt.Sprintf(
+				"contains registered worktree at %q",
+				removeOutputPath(contained.Path),
+			)
+			plan.entries = append(plan.entries, entry)
+			continue
+		}
 
 		target, base, targetErr := removePrepareLinkedTargetWithCleanliness(
 			ctx,
@@ -447,6 +455,26 @@ func worktreeRemoveGonePathContains(directory, path string) bool {
 	return removeSamePath(directory, path) || removePathStrictlyWithin(directory, path)
 }
 
+func worktreeRemoveGoneContainedWorktree(
+	worktrees []local.Worktree,
+	parent local.Worktree,
+) (local.Worktree, bool) {
+	var contained local.Worktree
+	found := false
+	for _, worktree := range worktrees {
+		if !removePathStrictlyWithin(parent.Path, worktree.Path) {
+			continue
+		}
+		if !found || removePathKey(worktree.Path) < removePathKey(contained.Path) ||
+			(removePathKey(worktree.Path) == removePathKey(contained.Path) &&
+				worktree.Slot < contained.Slot) {
+			contained = worktree
+			found = true
+		}
+	}
+	return contained, found
+}
+
 func worktreeRemoveGoneHasKept(plan worktreeRemoveGonePlan) bool {
 	for _, entry := range plan.entries {
 		if !entry.remove {
@@ -547,6 +575,24 @@ func worktreeRemoveGoneExecute(
 		if err := ctx.Err(); err != nil {
 			return failed, err
 		}
+		var workspaceID string
+		var workspaceFound bool
+		var herdrFindErr error
+		if herdrEnabled {
+			workspaceID, workspaceFound, herdrFindErr = commandRuntime.herdr.FindWorkspaceForPath(
+				ctx,
+				plan.repository.Path,
+				entry.target.directory.path,
+			)
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return failed, ctxErr
+			}
+			if errors.Is(herdrFindErr, context.Canceled) ||
+				errors.Is(herdrFindErr, context.DeadlineExceeded) {
+				return failed, herdrFindErr
+			}
+		}
+
 		if err := worktreeRemoveGoneRevalidateShared(ctx, commandRuntime, plan); err != nil {
 			return failed, fmt.Errorf("revalidate shared removal boundary: %w", err)
 		}
@@ -578,24 +624,6 @@ func worktreeRemoveGoneExecute(
 				return failed, fmt.Errorf("write gone-worktree revalidation failure: %w", writeErr)
 			}
 			continue
-		}
-
-		var workspaceID string
-		var workspaceFound bool
-		var herdrFindErr error
-		if herdrEnabled {
-			workspaceID, workspaceFound, herdrFindErr = commandRuntime.herdr.FindWorkspaceForPath(
-				ctx,
-				plan.repository.Path,
-				entry.target.directory.path,
-			)
-			if ctxErr := ctx.Err(); ctxErr != nil {
-				return failed, ctxErr
-			}
-			if errors.Is(herdrFindErr, context.Canceled) ||
-				errors.Is(herdrFindErr, context.DeadlineExceeded) {
-				return failed, herdrFindErr
-			}
 		}
 
 		removeErr := commandRuntime.git.WorktreeRemove(
@@ -770,6 +798,13 @@ func worktreeRemoveGoneRevalidateEntry(
 	}
 	if !removeSameWorktree(planned.worktree, worktree) {
 		return fmt.Errorf("%w: slot, path, branch, HEAD, lock, or prune state changed", ErrRemoveSafety)
+	}
+	if contained, found := worktreeRemoveGoneContainedWorktree(worktrees, worktree); found {
+		return fmt.Errorf(
+			"%w: contains registered worktree at %q",
+			ErrRemoveSafety,
+			removeOutputPath(contained.Path),
+		)
 	}
 
 	upstreams, err := commandRuntime.git.BranchUpstreams(ctx, plan.repository.Path)

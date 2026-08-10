@@ -619,19 +619,19 @@ refreshed. It removes worktree registrations and paths only; local branches and 
 
 Before changing anything, bulk mode validates every candidate and writes one stable, slot-sorted
 plan to `stderr`; `stdout` remains empty. It keeps the current worktree, locked or prunable records,
-paths outside the deterministic managed layout, invalid Git associations, and dirty worktrees
-unless `--force` was supplied. `--force` passes exactly one force level to Git; it does not unlock,
-skip confirmation, or bypass any other safety validation. `--dry-run` stops after the plan, while
-`--yes` skips only the single bulk confirmation. `--dry-run --yes` is valid and behaves like
-`--dry-run`.
+paths outside the deterministic managed layout, invalid Git associations, worktrees that contain
+another registered worktree, and dirty worktrees unless `--force` was supplied. `--force` passes
+exactly one force level to Git; it does not unlock, skip confirmation, or bypass any other safety
+validation. `--dry-run` stops after the plan, while `--yes` skips only the single bulk confirmation.
+`--dry-run --yes` is valid and behaves like `--dry-run`.
 
 After confirmation (or immediately with `--yes`), the complete plan is rebuilt and compared before
 the first deletion. Each target's slot, path, branch, HEAD, upstream, lock/prune state, dirty state,
-Git association, and filesystem identity are checked again immediately before its removal. A
-candidate-specific refusal or Git removal failure is reported and independent candidates continue;
-a changed shared boundary, indeterminate registered state, cancellation, or output failure stops
-the remainder. Successful Git removal must leave both the exact path absent and the registration
-gone before empty deterministic parents are cleaned up.
+Git association, filesystem identity, and absence of nested registered worktrees are checked again
+immediately before its removal. A candidate-specific refusal or Git removal failure is reported and
+independent candidates continue; a changed shared boundary, indeterminate registered state,
+cancellation, or output failure stops the remainder. Successful Git removal must leave both the
+exact path absent and the registration gone before empty deterministic parents are cleaned up.
 
 No candidates exits `0`. A declined confirmation, any kept candidate, or any partial failure exits
 `1`, including a `--dry-run` plan that contains a kept candidate. Invalid flag/argument combinations

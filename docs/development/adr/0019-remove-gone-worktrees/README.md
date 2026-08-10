@@ -42,10 +42,11 @@ focused on broken or expired worktree metadata and do not add a generic `cleanup
 
 Build and print one deterministic plan, confirm it once through the controlling terminal, rebuild
 and compare the entire plan before the first deletion, and revalidate each target immediately before
-mutation. Keep unsafe candidates with a reason. Continue after candidate-specific refusals and Git
-removal failures so independent work can complete, but stop the remainder when a shared boundary or
-registered state becomes indeterminate. `--force` is exactly Git's one force level for dirty
-worktrees; `--yes` skips only the bulk confirmation.
+mutation. Keep unsafe candidates with a reason, including any worktree whose path contains another
+registered worktree, so recursive path removal cannot affect an unplanned registration. Continue
+after candidate-specific refusals and Git removal failures so independent work can complete, but
+stop the remainder when a shared boundary or registered state becomes indeterminate. `--force` is
+exactly Git's one force level for dirty worktrees; `--yes` skips only the bulk confirmation.
 
 Resolve an enabled Herdr workspace before unregistering each target and close it after successful
 removal, preserving ADR-0018's ordering. This backward-compatible public CLI addition is a SemVer
