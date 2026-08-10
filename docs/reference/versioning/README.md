@@ -64,6 +64,11 @@ so the major version remains zero:
 | Backward-compatible bug fix | PATCH | **PATCH** |
 | No public API impact | no bump | no bump |
 
+For example, the backward-compatible `worktree remove --gone` public CLI addition is a MINOR
+change. If `v0.2.0` is still the latest release when it ships and no other change selects a
+different version, the resulting version is `v0.3.0` (see
+[ADR-0019](../../development/adr/0019-remove-gone-worktrees/)).
+
 `gh-qw` remains `0.y.z` under this policy even across a backward-incompatible change: that change
 bumps MINOR rather than MAJOR. Declaring `1.0.0` is a deliberate, separate decision that this
 automatic mechanism never makes by itself. The tag verification job currently rejects any tag with

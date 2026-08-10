@@ -113,12 +113,12 @@ leaving the command's own result and exit status unaffected — a shared configu
 break ordinary use outside Herdr.
 
 When enabled, `worktree add` opens and focuses a Herdr workspace at the new worktree's own
-directory after creating it, labeled `<repo>@<branch>`. `worktree remove` and `rm` resolve the
-workspace already open for that worktree, remove the worktree exactly as they otherwise would, and
-then close the resolved workspace; a worktree with no open workspace is left alone. A Herdr
-failure (herdr missing from `PATH`, or any operation it reports failing) is a status `1` error that
-never changes the underlying worktree add or removal, which has already completed; `worktree add`'s
-`stdout` still holds only the new absolute path.
+directory after creating it, labeled `<repo>@<branch>`. `worktree remove` and `rm` resolve each
+workspace already open for a worktree before unregistering it, remove the worktree exactly as they
+otherwise would, and then close the resolved workspace; a worktree with no open workspace is left
+alone. A Herdr failure (herdr missing from `PATH`, or any operation it reports failing) is a status
+`1` error that never changes the underlying worktree add or removal, which has already completed;
+`worktree add`'s `stdout` still holds only the new absolute path.
 
 ## Repository specifications and canonical identities
 
@@ -584,7 +584,12 @@ with status `1` without emitting a partial record set.
 ### `worktree remove`
 
 ```text
-gh qw worktree remove [-R|--repo <repo>] [-f] [--herdr|--no-herdr] <branch>
+gh qw worktree remove [-R|--repo <repo>] [-f|--force]
+                      [--herdr|--no-herdr] <branch>
+
+gh qw worktree remove [-R|--repo <repo>] --gone
+                      [-n|--dry-run] [-y|--yes] [-f|--force]
+                      [--herdr|--no-herdr]
 ```
 
 `remove` resolves `<branch>` to the deterministic linked-worktree slot, verifies that Git
@@ -600,6 +605,43 @@ empty.
 that even when `GHQW_HERDR` or configuration would otherwise enable it. See
 [Herdr workspace integration](#herdr-workspace-integration) for enablement precedence and failure
 handling.
+
+`--gone` is a bulk mode and is mutually exclusive with `<branch>`. It considers registered linked
+worktrees only. A linked worktree is a candidate when it is attached to a local branch, that branch
+has an upstream, and the upstream's fully qualified ref is absent from the local Git ref database.
+The check uses structured `git for-each-ref` fields plus exact `git show-ref --verify`; it does not
+parse Git's localized `[gone]` display. The worktree's attached branch, not its deterministic slot,
+selects the upstream. Main and detached worktrees, branches without an upstream, and branches whose
+upstream ref still exists are not candidates.
+
+Bulk removal never fetches. Run `git fetch --all --prune` first when the local ref database must be
+refreshed. It removes worktree registrations and paths only; local branches and commits remain.
+
+Before changing anything, bulk mode validates every candidate and writes one stable, slot-sorted
+plan to `stderr`; `stdout` remains empty. It keeps the current worktree, locked or prunable records,
+paths outside the deterministic managed layout, invalid Git associations, worktrees that contain
+another registration from any discovered repository, and dirty worktrees unless `--force` was
+supplied. `--force` passes exactly one force level to Git; it does not unlock, skip confirmation, or
+bypass any other safety validation. A dirty worktree allowed by `--force` remains annotated as dirty
+in the removal plan. `--dry-run` stops after the plan, while `--yes` skips only the single bulk
+confirmation. `--dry-run --yes` is valid and behaves like `--dry-run`.
+
+Nested-registration checks use Git's raw registered paths. A missing registered path is still
+protective, and any existing symbolic-link prefix is resolved before containment is evaluated.
+
+After confirmation (or immediately with `--yes`), the complete plan is rebuilt and compared before
+the first deletion, including the complete discovered-repository inventory. Each target's slot,
+path, branch, HEAD, upstream, lock/prune state, dirty state, Git association, filesystem identity,
+and absence of nested registrations across that unchanged repository inventory are checked again
+immediately before its removal. A candidate-specific refusal or Git removal failure is reported and
+independent candidates continue; a changed shared boundary or repository inventory, indeterminate
+registered state, cancellation, or output failure stops the remainder. Successful Git removal must
+leave both the exact path absent and the registration gone before empty deterministic parents are
+cleaned up.
+
+No candidates exits `0`. A declined confirmation, any kept candidate, or any partial failure exits
+`1`, including a `--dry-run` plan that contains a kept candidate. Invalid flag/argument combinations
+exit `2`.
 
 ### `worktree prune`
 

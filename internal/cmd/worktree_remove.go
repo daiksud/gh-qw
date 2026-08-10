@@ -9,8 +9,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
-	"strings"
 	"syscall"
 
 	"github.com/daiksud/gh-qw/internal/fsidentity"
@@ -25,6 +23,8 @@ import (
 // WorktreeRemoveGit is the Git capability required by worktree remove.
 type WorktreeRemoveGit interface {
 	local.Git
+	BranchUpstreams(context.Context, string) ([]gitcmd.BranchUpstream, error)
+	RefExists(context.Context, string, string) (bool, error)
 	WorktreeRemove(context.Context, string, gitcmd.WorktreeRemoveOptions) error
 }
 
@@ -50,10 +50,27 @@ type WorktreeRemoveDependencies struct {
 		string,
 		...local.ManagedWorktreeOptions,
 	) (local.Worktree, error)
+	Enumerate func(
+		context.Context,
+		local.Repository,
+		string,
+		...local.WorktreeOptions,
+	) ([]local.Worktree, error)
+	ValidateAssociation func(
+		context.Context,
+		local.Repository,
+		local.Worktree,
+		string,
+		...local.AssociationOptions,
+	) error
 	Git        WorktreeRemoveGit
 	Filesystem local.FilesystemOptions
-	Getwd      func() (string, error)
-	Remove     func(string) error
+	Prompt     RemovePrompt
+	// OpenTerminal opens the controlling terminal used by the --gone bulk
+	// confirmation. Nil uses the platform controlling terminal.
+	OpenTerminal func() (io.ReadCloser, error)
+	Getwd        func() (string, error)
+	Remove       func(string) error
 	// Herdr closes the workspace open for the linked worktree being
 	// removed when --herdr (or GHQW_HERDR/configuration outside a
 	// Herdr-managed pane) enables the integration. Nil uses
@@ -87,8 +104,23 @@ type worktreeRemoveRuntime struct {
 		string,
 		...local.ManagedWorktreeOptions,
 	) (local.Worktree, error)
+	enumerate func(
+		context.Context,
+		local.Repository,
+		string,
+		...local.WorktreeOptions,
+	) ([]local.Worktree, error)
+	validateAssociation func(
+		context.Context,
+		local.Repository,
+		local.Worktree,
+		string,
+		...local.AssociationOptions,
+	) error
 	git        WorktreeRemoveGit
 	filesystem local.FilesystemOptions
+	fs         removeFilesystem
+	prompt     RemovePrompt
 	getwd      func() (string, error)
 	remove     func(string) error
 	herdr      HerdrCloser
@@ -102,6 +134,9 @@ type worktreeRemoveRequest struct {
 	selectorSet bool
 	branch      string
 	force       bool
+	gone        bool
+	dryRun      bool
+	yes         bool
 	herdr       herdrIntent
 }
 
@@ -127,33 +162,43 @@ func (err *worktreeRemoveUsageError) Is(target error) bool {
 	return target == repospec.ErrUsage
 }
 
-type worktreeRemoveFilesystem struct {
-	readDir      func(string) ([]os.DirEntry, error)
-	lstat        func(string) (fs.FileInfo, error)
-	evalSymlinks func(string) (string, error)
-	sameFile     func(fs.FileInfo, fs.FileInfo) bool
-	remove       func(string) error
-}
+type worktreeRemoveFilesystem = removeFilesystem
 
 // NewWorktreeRemoveCommand returns the command that removes one deterministic
-// linked worktree.
+// linked worktree or safely plans removal of all gone-upstream worktrees.
 func NewWorktreeRemoveCommand(dependencies WorktreeRemoveDependencies) *cobra.Command {
 	commandRuntime := worktreeRemovePrepareRuntime(dependencies)
 
 	var (
 		selector   string
 		force      bool
+		gone       bool
+		dryRun     bool
+		yes        bool
 		herdrFlags herdrFlagValues
 	)
 
 	command := &cobra.Command{
-		Use:           "remove [-R|--repo selector] [-f|--force] [--herdr|--no-herdr] <branch>",
-		Short:         "Remove a linked worktree",
+		Use:   "remove [flags] (<branch>|--gone)",
+		Short: "Remove a linked worktree",
+		Long: "Remove one deterministic linked worktree, or use --gone to plan and remove " +
+			"all safe linked worktrees whose upstream refs are absent.",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		Args: func(command *cobra.Command, args []string) error {
+			if gone {
+				if err := cobra.NoArgs(command, args); err != nil {
+					return worktreeRemoveNewUsageError(
+						fmt.Errorf("--gone and <branch> are mutually exclusive: %w", err),
+					)
+				}
+				return nil
+			}
 			if err := cobra.ExactArgs(1)(command, args); err != nil {
 				return worktreeRemoveNewUsageError(err)
+			}
+			if command.Flags().Changed("dry-run") || command.Flags().Changed("yes") {
+				return worktreeRemoveNewUsageError(errors.New("--dry-run and --yes require --gone"))
 			}
 			if err := local.ValidateBranch(args[0]); err != nil {
 				return worktreeRemoveNewUsageError(err)
@@ -161,20 +206,34 @@ func NewWorktreeRemoveCommand(dependencies WorktreeRemoveDependencies) *cobra.Co
 			return nil
 		},
 		RunE: func(command *cobra.Command, args []string) error {
-			return worktreeRemoveRun(command.Context(), commandRuntime, worktreeRemoveRequest{
+			request := worktreeRemoveRequest{
 				selector:    selector,
 				selectorSet: command.Flags().Changed("repo"),
-				branch:      args[0],
 				force:       force,
+				gone:        gone,
+				dryRun:      dryRun,
+				yes:         yes,
 				herdr:       newHerdrIntent(command),
-			})
+			}
+			if gone {
+				return worktreeRemoveGoneRun(command.Context(), commandRuntime, request)
+			}
+			request.branch = args[0]
+			return worktreeRemoveRun(command.Context(), commandRuntime, request)
 		},
 	}
 
 	flags := command.Flags()
 	flags.StringVarP(&selector, "repo", "R", "", "Select an existing repository")
 	flags.BoolVarP(&force, "force", "f", false, "Remove a dirty linked worktree")
+	flags.BoolVar(&gone, "gone", false, "Remove linked worktrees whose upstream refs are gone")
+	flags.BoolVarP(&dryRun, "dry-run", "n", false, "Print the bulk removal plan without changing files")
+	flags.BoolVarP(&yes, "yes", "y", false, "Skip the bulk removal confirmation")
 	registerHerdrFlags(command, &herdrFlags, "Close")
+	flags.Lookup("herdr").Usage = "Close Herdr workspaces for removed linked worktrees"
+	command.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
+		return worktreeRemoveNewUsageError(err)
+	})
 	command.SetOut(commandRuntime.stdout)
 	command.SetErr(commandRuntime.stderr)
 
@@ -214,6 +273,12 @@ func worktreeRemovePrepareRuntime(
 	if dependencies.ResolveManaged == nil {
 		dependencies.ResolveManaged = local.ResolveManagedWorktree
 	}
+	if dependencies.Enumerate == nil {
+		dependencies.Enumerate = local.EnumerateWorktrees
+	}
+	if dependencies.ValidateAssociation == nil {
+		dependencies.ValidateAssociation = local.ValidateWorktreeAssociation
+	}
 	getwd := dependencies.Getwd
 	if getwd == nil {
 		getwd = os.Getwd
@@ -221,6 +286,32 @@ func worktreeRemovePrepareRuntime(
 	remove := dependencies.Remove
 	if remove == nil {
 		remove = os.Remove
+	}
+	readDir := dependencies.Filesystem.ReadDir
+	if readDir == nil {
+		readDir = os.ReadDir
+	}
+	lstat := dependencies.Filesystem.Lstat
+	if lstat == nil {
+		lstat = os.Lstat
+	}
+	evalSymlinks := dependencies.Filesystem.EvalSymlinks
+	if evalSymlinks == nil {
+		evalSymlinks = filepath.EvalSymlinks
+	}
+	sameFile := dependencies.Filesystem.SameFile
+	if sameFile == nil {
+		sameFile = os.SameFile
+	}
+	openTerminal := dependencies.OpenTerminal
+	if openTerminal == nil {
+		openTerminal = removeOpenControllingTerminal
+	}
+	prompt := dependencies.Prompt
+	if prompt == nil {
+		prompt = func(ctx context.Context, writer io.Writer, message string) (bool, error) {
+			return removeConfirm(ctx, writer, message, openTerminal)
+		}
 	}
 	herdrRunner := dependencies.Herdr
 	if herdrRunner == nil {
@@ -232,18 +323,29 @@ func worktreeRemovePrepareRuntime(
 	}
 
 	return worktreeRemoveRuntime{
-		resolver:       resolver,
-		discover:       dependencies.Discover,
-		current:        dependencies.Current,
-		resolveManaged: dependencies.ResolveManaged,
-		git:            git,
-		filesystem:     dependencies.Filesystem,
-		getwd:          getwd,
-		remove:         remove,
-		herdr:          herdrRunner,
-		lookupEnv:      lookupEnv,
-		stdout:         stdout,
-		stderr:         stderr,
+		resolver:            resolver,
+		discover:            dependencies.Discover,
+		current:             dependencies.Current,
+		resolveManaged:      dependencies.ResolveManaged,
+		enumerate:           dependencies.Enumerate,
+		validateAssociation: dependencies.ValidateAssociation,
+		git:                 git,
+		filesystem:          dependencies.Filesystem,
+		fs: removeFilesystem{
+			readDir:      readDir,
+			lstat:        lstat,
+			evalSymlinks: evalSymlinks,
+			sameFile:     sameFile,
+			remove:       remove,
+			removeAll:    os.RemoveAll,
+		},
+		prompt:    prompt,
+		getwd:     getwd,
+		remove:    remove,
+		herdr:     herdrRunner,
+		lookupEnv: lookupEnv,
+		stdout:    stdout,
+		stderr:    stderr,
 	}
 }
 
@@ -716,23 +818,11 @@ func worktreeRemoveInspectPhysicalDirectory(
 }
 
 func worktreeRemovePathStrictlyWithin(base, candidate string) bool {
-	base = filepath.Clean(base)
-	candidate = filepath.Clean(candidate)
-	relative, err := filepath.Rel(base, candidate)
-	if err != nil || relative == "." || filepath.IsAbs(relative) {
-		return false
-	}
-	return relative != ".." &&
-		!strings.HasPrefix(relative, ".."+string(filepath.Separator))
+	return removePathStrictlyWithin(base, candidate)
 }
 
 func worktreeRemoveSamePath(first, second string) bool {
-	first = filepath.Clean(first)
-	second = filepath.Clean(second)
-	if first == second {
-		return true
-	}
-	return runtime.GOOS == "windows" && strings.EqualFold(first, second)
+	return removeSamePath(first, second)
 }
 
 func worktreeRemoveWriteWarnings(writer io.Writer, warnings []local.Warning) error {
@@ -755,20 +845,7 @@ func worktreeRemoveWriteDiagnostic(writer io.Writer, normalizedPath string) erro
 }
 
 func worktreeRemoveWriteAll(writer io.Writer, data []byte) error {
-	for len(data) > 0 {
-		written, err := writer.Write(data)
-		if written < 0 || written > len(data) {
-			return io.ErrShortWrite
-		}
-		data = data[written:]
-		if err != nil {
-			return err
-		}
-		if written == 0 {
-			return io.ErrShortWrite
-		}
-	}
-	return nil
+	return removeWriteAll(writer, data)
 }
 
 func worktreeRemoveNewUsageError(err error) error {

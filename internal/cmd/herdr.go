@@ -18,7 +18,7 @@ type HerdrCreator interface {
 }
 
 // HerdrCloser is the Herdr capability `worktree remove --herdr` and
-// `rm --herdr` use to find and close the workspace open for a linked
+// `rm --herdr` use to find and close each workspace open for a linked
 // worktree being removed. *herdr.Runner satisfies it.
 type HerdrCloser interface {
 	FindWorkspaceForPath(ctx context.Context, repoPath, worktreePath string) (string, bool, error)
