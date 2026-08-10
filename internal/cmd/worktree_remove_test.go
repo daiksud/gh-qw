@@ -1048,8 +1048,9 @@ func TestNewWorktreeRemoveCommandGoneDryRunAndForceDirty(t *testing.T) {
 	if err := command.Execute(); err != nil {
 		t.Fatalf("forced dry-run error = %v; stderr = %q", err, stderr.String())
 	}
-	if !strings.Contains(stderr.String(), "remove slot=\"feature/dirty\"") {
-		t.Fatalf("forced dry-run stderr = %q, want remove plan", stderr.String())
+	if !strings.Contains(stderr.String(), "remove slot=\"feature/dirty\"") ||
+		!strings.Contains(stderr.String(), "reason=\"dirty; --force enabled\"") {
+		t.Fatalf("forced dry-run stderr = %q, want annotated remove plan", stderr.String())
 	}
 	if _, err := os.Stat(target); err != nil {
 		t.Fatalf("forced dry-run changed worktree: %v", err)

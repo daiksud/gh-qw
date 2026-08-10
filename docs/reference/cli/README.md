@@ -622,7 +622,8 @@ plan to `stderr`; `stdout` remains empty. It keeps the current worktree, locked 
 paths outside the deterministic managed layout, invalid Git associations, worktrees that contain
 another registered worktree, and dirty worktrees unless `--force` was supplied. `--force` passes
 exactly one force level to Git; it does not unlock, skip confirmation, or bypass any other safety
-validation. `--dry-run` stops after the plan, while `--yes` skips only the single bulk confirmation.
+validation. A dirty worktree allowed by `--force` remains annotated as dirty in the removal plan.
+`--dry-run` stops after the plan, while `--yes` skips only the single bulk confirmation.
 `--dry-run --yes` is valid and behaves like `--dry-run`.
 
 After confirmation (or immediately with `--yes`), the complete plan is rebuilt and compared before

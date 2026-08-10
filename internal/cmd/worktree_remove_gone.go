@@ -393,6 +393,9 @@ func worktreeRemoveGoneBuildPlan(
 			plan.entries = append(plan.entries, entry)
 			continue
 		}
+		if dirty {
+			entry.reason = "dirty; --force enabled"
+		}
 
 		if common.worktreeBaseDir == nil {
 			baseCopy := base
