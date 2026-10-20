@@ -1,70 +1,50 @@
 ---
 type: adr
-title: "ADR-0009: Add fzf-based interactive selection to list"
-description: "Let list --fzf delegate interactive picking to the external fzf executable instead of gh-qw launching a shell."
+title: "ADR-0009: Leave interactive selection to callers"
+description: "Keep list focused on identities and paths, with selection and navigation owned by the caller."
 resource: gh-qw
-tags: [gh-qw, adr, adr-0009, cli, fzf, list]
-timestamp: 2026-08-06
+tags: [gh-qw, adr, adr-0009, cli, list]
+timestamp: 2026-10-20
 ---
 
-# ADR-0009: Add fzf-based interactive selection to list
+# ADR-0009: Leave interactive selection to callers
 
 - **Status:** Accepted
 - **Date:** 2026-08-06
+- **Updated:** 2026-10-20
 - **Deciders:** gh-qw maintainers
 - **Related:** [ADR-0006](../0006-command-set-v1/)
 
 ## Context
 
 `gh qw list` prints canonical identities or paths for discovered repositories and, with
-`--worktree`, their linked worktrees. As the number of repositories and worktrees grows, picking
-one from that plain output becomes harder to do quickly. Many CLIs solve this by piping candidates
-to the widely used external `fzf` fuzzy finder for interactive selection.
+`--worktree`, their linked worktrees. The former `--fzf` integration delegated selection to an
+external executable but still required candidate mapping, selection handling, a dedicated runner,
+and cancellation-status handling in gh-qw. That unused integration adds maintenance without
+serving the project's current requirements.
 
-[ADR-0006](../0006-command-set-v1/) already decided that `gh-qw` will not add `look`, `--look`, or
-any shell-launch behavior, precisely because spawning a shell from `gh-qw` creates portability and
-shell-state problems; `gh-qw` outputs paths and leaves navigation to the caller's own shell. Adding
-interactive selection must fit within that boundary rather than reopening it.
+[ADR-0006](../0006-command-set-v1/) leaves navigation to the caller's own shell. Removing the
+picker integration keeps list focused on producing output that callers can compose themselves.
 
 ## Decision
 
-`list` gains a `--fzf` flag. It filters candidates exactly like ordinary `list` (respecting
-`<query>`, `-e`/`--exact`, and `--worktree`), then feeds their canonical identities, one per line,
-to the external `fzf` executable resolved from `PATH` for a person to pick exactly one. `gh-qw`
-never launches a shell itself: `fzf` renders its own interactive UI directly against the
-controlling terminal, and `gh-qw` only writes the selected entry's absolute path to `stdout`,
-exactly like `-p`/`--full-path` for a single entry. `--full-path` and `--unique` are accepted
-alongside `--fzf` without error but have no effect, since `--fzf`'s output is always a path.
+Remove `--fzf` and its implementation without adding a compatibility flag or replacement picker.
+Ordinary list filtering, sorting, exact matching, full paths, shortest unique suffixes, and
+linked-worktree output retain their existing contracts. `gh-qw` neither selects an entry nor
+launches a shell.
 
-No candidates exits successfully without starting `fzf`. Canceling `fzf` (Esc or Ctrl-C) or `fzf`
-finding no match for a typed query reuse `fzf`'s own documented exit statuses (130 and 1
-respectively) with empty `stdout` and `stderr`, since `fzf`'s own screen already communicated the
-outcome. Any other selection failure, including `fzf` missing from `PATH`, is an ordinary error.
+The removed flag is an unknown-flag usage error with exit status `2`. The former cancellation
+status `130` is no longer part of gh-qw's public contract. Existing shell functions must remove
+`--fzf`; callers can use `list --full-path` as input to their own selection and navigation logic.
+See the [CLI migration guidance](../../../reference/cli/#migrating-shell-functions).
 
-A caller wires a small shell function to get the `cd` behavior, composing `gh-qw`'s path output
-with their own shell exactly as ADR-0006 intended:
-
-```sh
-qwcd() { local dir; dir=$(gh qw list --fzf) || return; cd "$dir"; }
-```
+This accepted ADR is revised in place under the project's `0.y.z` policy. Its original URL stays
+stable for existing links.
 
 ## Consequences
 
-### Positive
-
-- Interactive selection is available without `gh-qw` spawning a shell or owning any picker logic
-  of its own; ADR-0006's boundary stays intact rather than being revisited.
-- `fzf`'s own exit-status vocabulary (cancellation, no match) is reused directly instead of
-  gh-qw inventing a parallel convention.
-
-### Negative
-
-- `--fzf` requires a separately installed `fzf` on `PATH`; without it, the flag fails with a clear
-  runtime error instead of silently falling back to plain output.
-- Getting the `cd` behavior itself still requires a caller-defined shell function; `gh-qw` does not
-  ship or install one.
-
-### Neutral
-
-- A future interactive integration, if any, should follow this same shape — an external tool
-  drives the interaction, and `gh-qw` only prints the outcome — rather than reopening ADR-0006.
+- gh-qw no longer discovers or invokes a picker, maps selections back to paths, or handles picker
+  cancellation.
+- Users of the former flag must update their shell functions; this is a breaking CLI change.
+- Selection tools and their exit statuses belong to the caller's composition rather than gh-qw's
+  public API.

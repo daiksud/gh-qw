@@ -32,7 +32,7 @@ The public API is the CLI-observable contract: command and subcommand names and 
 names, short forms, meaning, and defaults; positional-argument and repository-specification syntax;
 the `stdout` output contract; process exit statuses; configuration keys, environment variables, and
 their precedence; the on-disk layout and identity forms; and the external-tool prerequisites a
-command depends on (`gh` authentication, `fzf` for `list --fzf`). `stderr` wording, the `internal/`
+command depends on (such as `gh` authentication). `stderr` wording, the `internal/`
 Go package layout, documentation, CI configuration, and tests are explicitly excluded. The full,
 exhaustive declaration lives in the
 [versioning reference](../../../reference/versioning/#public-api), which this ADR does not

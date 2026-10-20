@@ -38,8 +38,7 @@ type commandContextFunc func(context.Context, string, ...string) *exec.Cmd
 // gh-qw's own standard output, which stays reserved for gh-qw's own result
 // data (an absolute worktree path, for `gh qw worktree add`). herdr's own
 // standard error carries only diagnostics and, on failure, a JSON error
-// envelope; Runner streams it to Stderr the same way internal/fzf and
-// internal/ghcmd stream their own external tool's stderr.
+// envelope; Runner streams it to Stderr like internal/ghcmd.
 //
 // When Stderr resolves to an *os.File (see procio.PassthroughFile), herdr
 // inherits that file descriptor directly instead of writing through a
@@ -249,8 +248,7 @@ func (r *Runner) runJSON(ctx context.Context, into any, args ...string) error {
 
 // output runs herdr with args and returns its captured standard output.
 // herdr's own stdout is always fully captured here rather than streamed
-// anywhere: unlike fzf's interactive UI or gh's own progress output, it is
-// pure machine-readable JSON that gh-qw parses internally and never
+// anywhere: it is machine-readable JSON that gh-qw parses internally and never
 // surfaces on its own standard output.
 func (r *Runner) output(ctx context.Context, args ...string) ([]byte, error) {
 	executable, err := r.resolveExecutable()

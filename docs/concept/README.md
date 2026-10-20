@@ -73,12 +73,12 @@ Compatibility is limited to the directory convention and familiar repository ide
 - multiple version-control systems or `--vcs`; or
 - Git-config-backed settings such as `ghq.root`.
 
-`list --fzf` composes with the external `fzf` executable for interactive selection, but it still
-only ever prints the selected entry's absolute path; `gh-qw` itself never launches a shell or
-changes directory (see [ADR-0009](../development/adr/0009-interactive-selection-via-fzf/)).
-`worktree add`/`worktree remove`/`rm --herdr` compose with the external `herdr` executable the same
-way, opening or closing a Herdr workspace without `gh-qw` ever owning a shell or that workspace's
-UI itself (see [ADR-0018](../development/adr/0018-herdr-workspace-integration/)).
+`list` prints identities or absolute paths. Callers own selection and directory navigation;
+`gh-qw` does not provide a picker or launch a shell
+(see [ADR-0009](../development/adr/0009-interactive-selection-via-fzf/)).
+`worktree add`/`worktree remove`/`rm --herdr` compose with the external `herdr` executable,
+opening or closing a Herdr workspace without `gh-qw` owning its UI
+(see [ADR-0018](../development/adr/0018-herdr-workspace-integration/)).
 
 Normal settings belong to `gh-qw`'s configuration file or environment. Migration may inspect
 ghq settings only to locate a source root; they do not become ongoing `gh-qw` configuration.

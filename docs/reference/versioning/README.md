@@ -29,12 +29,12 @@ SemVer 2.0.0 requires a declared public API (clause 1). For `gh-qw`, the public 
 2. flag names, short forms, meaning, and default values;
 3. positional-argument forms and repository-specification syntax;
 4. the `stdout` output contract: content, format, ordering, and separator normalization;
-5. process exit statuses (`0`, `1`, `2`, and `list --fzf`'s `130`);
+5. process exit statuses (`0`, `1`, and `2`);
 6. configuration keys and environment variables, and their precedence (`root`, `worktree_root`,
    `GHQW_ROOT`, `GHQW_WORKTREE_ROOT`);
 7. the on-disk layout and identity forms (`<root>/<host>/<owner>/<repo>`, `<canonical>@<slot>`); and
 8. the external-tool prerequisites a command depends on (`gh` authentication for `get`/`worktree
-   add`; the `fzf` executable for `list --fzf`).
+   add`).
 
 A version-affecting change is one that changes one of the above. The following are explicitly
 **not** part of the public API and never affect the version number by themselves:

@@ -12,7 +12,7 @@ timestamp: 2026-08-07
 - **Status:** Accepted
 - **Date:** 2026-08-07
 - **Deciders:** gh-qw maintainers
-- **Related:** [ADR-0006](../0006-command-set-v1/), [ADR-0009](../0009-interactive-selection-via-fzf/)
+- **Related:** [ADR-0006](../0006-command-set-v1/)
 
 ## Context
 
@@ -29,10 +29,8 @@ person or agent driving several linked worktrees through Herdr today has to manu
 matching workspace after every `worktree remove`/`rm`. That manual step is repetitive, easy to
 forget, and leaves stale workspaces open at paths that no longer exist once a worktree is removed.
 
-[ADR-0009](../0009-interactive-selection-via-fzf/) already established the shape for exactly this
-kind of integration: delegate interaction to an external tool through its own documented CLI,
-report only the outcome, and do not reopen the shell-launch boundary from ADR-0006. Adding a Herdr
-integration should follow that same shape rather than inventing a new one.
+The integration delegates interaction to an external tool through its documented CLI and reports
+only the outcome, preserving the shell-launch boundary from ADR-0006.
 
 ## Decision
 
@@ -58,7 +56,7 @@ enablement through `GHQW_HERDR` or `config.toml` outside Herdr instead only warn
 skips the integration, leaving the command's own result and exit status unaffected, so a shared
 configuration file does not break ordinary use on a machine or in CI that never runs inside Herdr.
 
-Exactly like `list --fzf`, `herdr`'s own JSON responses are parsed internally by a small
+`herdr`'s own JSON responses are parsed internally by a small
 `internal/herdr` package and never appear on gh-qw's own `stdout`; gh-qw still never launches a
 shell of its own, deferring entirely to Herdr's own workspace and pane management.
 
@@ -70,8 +68,7 @@ shell of its own, deferring entirely to Herdr's own workspace and pane managemen
   automatically, without a manual `herdr workspace create`/`cd` step and without a stale workspace
   surviving `worktree remove`/`rm`.
 - The integration is one small, focused `internal/herdr` package that talks to a single documented
-  external CLI, matching the shape already proven by `internal/fzf` and `internal/ghcmd` — no new
-  architectural precedent is required.
+  external CLI, like `internal/ghcmd`.
 - Because the resolved enablement is decided before any Git operation starts and never changes
   `worktree add`/`remove`'s own deterministic path or `stdout` contract, Herdr integration is
   strictly additive to the existing CLI reference.

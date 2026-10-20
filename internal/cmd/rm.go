@@ -244,8 +244,7 @@ func NewRemoveCommand(dependencies RemoveDependencies) *cobra.Command {
 			// The Herdr integration only ever applies to a linked
 			// <branch> target, never to a whole-repository removal;
 			// --herdr/--no-herdr are accepted without error but have no
-			// effect there, matching how `list --fzf` already accepts
-			// --full-path/--unique without effect (see ADR-0009).
+			// effect there.
 			var herdrEnabled bool
 			if selection.linked {
 				herdrEnabled, err = resolveHerdrIntegration(
