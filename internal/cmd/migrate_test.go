@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 
@@ -465,12 +466,24 @@ func (git *migrateTestGit) WorktreeRepair(
 	return git.runner.WorktreeRepair(ctx, dir, paths...)
 }
 
+type migrateLockedWriter struct {
+	mu     sync.Mutex
+	writer io.Writer
+}
+
+func (writer *migrateLockedWriter) Write(data []byte) (int, error) {
+	writer.mu.Lock()
+	defer writer.mu.Unlock()
+	return writer.writer.Write(data)
+}
+
 func migrateTestGitRunner(stderr io.Writer) *migrateTestGit {
+	output := &migrateLockedWriter{writer: stderr}
 	return &migrateTestGit{
 		runner: &gitcmd.Runner{
 			Executable: "git",
-			Stdout:     stderr,
-			Stderr:     stderr,
+			Stdout:     output,
+			Stderr:     output,
 		},
 	}
 }
