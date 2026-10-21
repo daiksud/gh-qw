@@ -41,8 +41,8 @@ Neither `plan` nor `apply` ever runs in CI. See [Token permissions](#token-permi
 
 The `docs` job in [`.github/workflows/ci.yml`](https://github.com/daiksud/gh-qw/blob/main/.github/workflows/ci.yml)
 validates the documentation source, builds the Astro site, checks generated links, and runs the
-runtime smoke test. The `CI success` job aggregates that result with the Go and settings jobs so
-the ruleset does not depend on matrix runner names.
+runtime smoke test. The `CI success` job aggregates that result with the Go, settings, and release-preparation
+validation jobs so the ruleset does not depend on matrix runner names.
 
 The default branch ruleset requires the `CI success` status from the `github-actions` app. The
 required check uses `strict_required_status_checks_policy: false` intentionally: GitHub auto-merge

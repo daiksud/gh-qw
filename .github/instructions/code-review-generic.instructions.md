@@ -14,6 +14,18 @@ When performing a code review, respond in **English** (or specify your preferred
 
 > **Customization Tip**: Change to your preferred language by replacing "English" with "Portuguese (Brazilian)", "Spanish", "French", etc.
 
+## gh-qw pull request classification
+
+- Verify that the PR's Conventional Commits type and version-affecting labels describe
+  the actual change to the gh-qw public API.
+- `feat` and `fix` refer to user-visible gh-qw features and fixes; changes to CI,
+  documentation tools, and tests use maintenance types.
+- Reviewers request changes to PR titles or labels when required, without branch renames.
+  Branch names are not evidence of the correct semantic type.
+- Path labels are supplemental; remove stale ones as a PR changes scope.
+- Breaking changes and deprecations need corresponding labels and migration information
+  in commit footers preserved by the final squash merge.
+
 ## Review Priorities
 
 When performing a code review, prioritize issues in the following order:

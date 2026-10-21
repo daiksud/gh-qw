@@ -1,7 +1,7 @@
 ---
 type: adr
 title: "ADR-0010: Declare a public API and follow Semantic Versioning"
-description: "Declare gh-qw's public API and adopt SemVer 2.0.0, with a 0.y.z policy that preserves ordinary MINOR/PATCH bumps and holds MAJOR at zero, enforced by tags."
+description: "Declare gh-qw's public API and adopt SemVer 2.0.0, with a 0.y.z policy and release validation before tagging."
 resource: gh-qw
 tags: [gh-qw, adr, adr-0010, semver, release, public-api]
 timestamp: 2026-08-09
@@ -42,40 +42,38 @@ duplicate.
 PATCH rules apply: a backward-compatible addition, a deprecation, or a substantial internal
 improvement (including performance) is MINOR, and a backward-compatible bug fix remains PATCH.
 The sole `0.y.z` exception is that a backward-incompatible public API change is MINOR instead of
-MAJOR, keeping the major version at zero. The tag verification job implements both this `0.y.z`
-policy and the ordinary rules for releases after `1.0.0`, but rejects any nonzero-major tag while
-the previous release is `0.y.z`. Declaring `1.0.0` is a deliberate, separate decision that
-requires this graduation guard to be updated first.
+MAJOR, keeping the major version at zero. The next release is computed from the reviewed labels of PRs merged after
+the latest published stable release. A maintainer manually dispatches the
+Release workflow from `main`; branch names have no part in versioning.
+Authors and reviewers may correct PR titles and labels without renaming
+branches.
 
-Every tag push is verified mechanically before a release is built: a CI job computes the expected
-next version from the labels of pull requests merged since the last release and fails the workflow
-if the pushed tag does not match, or if no merged pull request carries a version-affecting label.
-There is no override for this check. Once released, a version's contents are never modified
-(SemVer clause 3); a mistaken release is corrected with a new version, never by replacing a tag,
-rebuilding its assets, or rewriting its notes.
+The workflow captures one commit and runs full CI and every binary
+build against it before tag or GitHub Release creation. Tag pushes do not
+trigger releases. Graduation from `0.y.z` to `1.0.0` remains a deliberate
+policy change.
+
+Published versions remain immutable (SemVer clause 3). A preparation,
+test, or build failure leaves no tag. Final GitHub API operations are
+not atomic and may leave a tag or draft if they fail.
 
 ## Consequences
 
 ### Positive
 
-- Version numbers become a mechanically checked fact about a release's contents instead of a
-  judgment call made at tag time.
-- Contributors have one place (the versioning reference) that says exactly what counts as a
-  version-affecting change, so internal refactors, tests, and documentation never force a release.
-- The `0.y.z` policy lets `gh-qw` keep its major version at zero across breaking changes while
-  allowing features, deprecations, and performance improvements to advance MINOR as they would
-  after `1.0.0`.
+- Version selection is mechanical but its semantic inputs are reviewed.
+- PR type and labels may be corrected without renaming a branch.
+- All release tests and binaries succeed before tag creation.
+- Failed/unpublished tags cannot change the release baseline.
+- A selected commit remains fixed if `main` advances.
 
 ### Negative
 
-- Any CLI-observable change requires the correct branch prefix (see
-  [ADR-0011](../0011-type-named-release-labels/)) or the release tag is rejected outright, with no
-  manual escape hatch.
-- Holding MAJOR at zero for breaking changes is a nonstandard SemVer rule that must be understood
-  by anyone tagging a `gh-qw` release. The tag check also rejects a `v1.0.0` graduation until the
-  project deliberately approves it and the guard is updated.
+- Reviewers must detect missing or incorrect semantic labels.
+- Each release reruns CI as well as its binary builds.
+- An API failure in the last step can leave a tag or draft release.
 
 ### Neutral
 
-- This ADR declares the public API and the version-selection rule; it does not define how labels
-  are computed from branch names and paths — see [ADR-0011](../0011-type-named-release-labels/).
+- Breaking changes select MINOR during `0.y.z` as declared above.
+- [ADR-0011](../0011-type-named-release-labels/) defines label ownership.

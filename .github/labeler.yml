@@ -1,91 +1,22 @@
-# Applies gh-qw's release labels automatically. See the versioning reference
-# (docs/reference/versioning/) and ADR-0011 for the full label vocabulary,
-# color scheme, and version-impact rules; this file is the executable half of
-# that contract.
-#
-# Six labels affect the computed release version (see the version-check job in
-# .github/workflows/release.yml) and are matched ONLY against the pull
-# request's head branch name below, never against changed file paths, so a
-# path match can never introduce version ambiguity.
-#
-# The `breaking-change/` and `deprecated/` prefixes are exceptions layered on
-# top of the actual Conventional Commits type. They must be followed by one
-# of the version-affecting types (`feat`, `perf`, or `fix`), so labeler — which
-# cannot read commit footers — can apply both the footer label and the type
-# label. Bare exception prefixes and unsupported combinations intentionally
-# match nothing.
-
-"BREAKING CHANGE":
-  - head-branch: ["^breaking-change/(?:feat|perf|fix)/"]
-
-DEPRECATED:
-  - head-branch: ["^deprecated/(?:feat|perf|fix)/"]
-
-feat:
-  - head-branch: ["^(?:(?:breaking-change|deprecated)/)?feat/"]
-
-perf:
-  - head-branch: ["^(?:(?:breaking-change|deprecated)/)?perf/"]
-
-fix:
-  - head-branch: ["^(?:(?:breaking-change|deprecated)/)?fix/"]
-
-revert:
-  - head-branch: ["^revert/"]
-
-# The remaining labels never affect the computed version. Each matches its own
-# branch prefix OR a set of changed-file globs, so a pull request gets the
-# label whether it announces its own type by branch name or it is inferred
-# from its content. `any-glob-to-all-files` requires every changed file to
-# fall under at least one glob, keeping this an "X-only" rule: a code change
-# with an incidental documentation update does not also become `docs`.
-
+# Only unambiguous all-file path categories receive automatic labels.
+# Branch names and PR titles are not classification inputs.
+# Release-affecting and other semantic labels are reviewed manually.
 docs:
-  - any:
-      - head-branch: ["^docs/"]
-      - changed-files:
-          - any-glob-to-all-files:
-              - "docs/**"
-              - "**/*.md"
-              - "**/*.mdx"
-              - ".pages/src/**"
-              - ".pages/public/**"
-
-refactor:
-  - head-branch: ["^refactor/"]
-
-style:
-  - head-branch: ["^style/"]
+  - changed-files:
+      - any-glob-to-all-files:
+          - "{docs/**,**/*.md,**/*.mdx,.pages/src/**,.pages/public/**}"
 
 test:
-  - any:
-      - head-branch: ["^test/"]
-      - changed-files:
-          - any-glob-to-all-files:
-              - "tests/**"
-              - ".pages/test/**"
+  - changed-files:
+      - any-glob-to-all-files:
+          - "{tests/**,.pages/test/**,**/*_test.go}"
 
 build:
-  - any:
-      - head-branch: ["^build/"]
-      - changed-files:
-          - any-glob-to-all-files:
-              - "go.mod"
-              - "go.sum"
-              - ".pages/package.json"
-              - ".pages/pnpm-lock.yaml"
-              - ".pages/astro.config.mjs"
-              - ".pages/vite.config.ts"
-              - ".pages/tsconfig.json"
-              - ".pages/pnpm-workspace.yaml"
+  - changed-files:
+      - any-glob-to-all-files:
+          - "{go.mod,go.sum,.pages/package.json,.pages/pnpm-lock.yaml,.pages/astro.config.mjs,.pages/vite.config.ts,.pages/tsconfig.json,.pages/pnpm-workspace.yaml}"
 
 ci:
-  - any:
-      - head-branch: ["^ci/"]
-      - changed-files:
-          - any-glob-to-all-files:
-              - ".github/workflows/**"
-              - ".pages/scripts/**"
-
-chore:
-  - head-branch: ["^chore/"]
+  - changed-files:
+      - any-glob-to-all-files:
+          - "{.github/workflows/**,.github/scripts/**,.pages/scripts/**}"
