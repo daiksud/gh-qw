@@ -12,6 +12,7 @@ import (
 	"github.com/daiksud/gh-qw/internal/gitcmd"
 	"github.com/daiksud/gh-qw/internal/local"
 	"github.com/daiksud/gh-qw/internal/physicalpath"
+	"github.com/daiksud/gh-qw/internal/removal"
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
 )
 
@@ -31,11 +32,6 @@ type worktreeRemoveGonePlan struct {
 	common       removePlan
 	current      string
 	entries      []worktreeRemoveGoneEntry
-}
-
-type worktreeRemoveGoneRegistration struct {
-	repository string
-	path       string
 }
 
 type worktreeRemoveGoneSharedError struct {
@@ -216,24 +212,20 @@ func worktreeRemoveGoneBuildPlan(
 	repository local.Repository,
 	force bool,
 ) (worktreeRemoveGonePlan, error) {
-	removeRuntime := worktreeRemoveGoneSafetyRuntime(commandRuntime)
-	common, err := removePrepareCommon(
-		ctx,
-		removeRuntime,
-		removeSelection{raw: repository.Identity, selector: repository.Identity},
-		roots,
-		repository,
-	)
+	observer := commandRuntime.observer()
+	observer.Git = removal.NewInventory(commandRuntime.git)
+	observation, err := observer.ObserveRepository(ctx, roots, repository)
 	if err != nil {
 		return worktreeRemoveGonePlan{}, err
 	}
+	common := removePlan{RepositoryObservation: observation, selection: removeSelection{raw: repository.Identity, selector: repository.Identity}}
 
 	worktrees, err := commandRuntime.enumerate(
 		ctx,
 		repository,
 		roots.WorktreeRoot,
 		local.WorktreeOptions{
-			Lister:     commandRuntime.git,
+			Lister:     observer.Git,
 			Filesystem: commandRuntime.filesystem,
 		},
 	)
@@ -324,9 +316,7 @@ func worktreeRemoveGoneBuildPlan(
 	if len(candidates) == 0 {
 		return plan, nil
 	}
-	registrations, err := worktreeRemoveGoneRegistrations(
-		ctx,
-		commandRuntime,
+	registrations, err := observer.Registrations(ctx,
 		repositories,
 	)
 	if err != nil {
@@ -364,22 +354,21 @@ func worktreeRemoveGoneBuildPlan(
 			plan.entries = append(plan.entries, entry)
 			continue
 		}
-		if contained, found := worktreeRemoveGoneContainedRegistration(registrations, worktree); found {
+		if contained, found := removal.ContainedRegistration(registrations, worktree); found {
 			entry.reason = fmt.Sprintf(
 				"contains registered worktree from %q at %q",
-				contained.repository,
-				removeOutputPath(contained.path),
+				contained.Repository,
+				removeOutputPath(contained.Path),
 			)
 			plan.entries = append(plan.entries, entry)
 			continue
 		}
 
-		target, base, targetErr := removePrepareLinkedTargetWithCleanliness(
+		target, base, targetErr := removeObserveEligibleLinked(
 			ctx,
-			removeRuntime,
-			common,
+			observer,
+			common.RepositoryObservation,
 			worktree,
-			false,
 		)
 		if targetErr != nil {
 			if errors.Is(targetErr, context.Canceled) ||
@@ -390,10 +379,10 @@ func worktreeRemoveGoneBuildPlan(
 			plan.entries = append(plan.entries, entry)
 			continue
 		}
-		dirty, dirtyErr := removeInspectDirty(
+		dirty, dirtyErr := removal.InspectDirty(
 			ctx,
-			removeRuntime.git,
-			target.directory.path,
+			commandRuntime.git,
+			target.Directory.Path,
 			"linked worktree "+worktree.Slot,
 		)
 		if dirtyErr != nil {
@@ -418,8 +407,7 @@ func worktreeRemoveGoneBuildPlan(
 		if common.worktreeBaseDir == nil {
 			baseCopy := base
 			common.worktreeBaseDir = &baseCopy
-		} else if err := removeCompareNode(
-			commandRuntime.fs,
+		} else if err := removal.CompareNode(commandRuntime.fs.observations(),
 			*common.worktreeBaseDir,
 			base,
 			"worktree base",
@@ -441,22 +429,6 @@ func worktreeRemoveGoneBuildPlan(
 	})
 	plan.common = common
 	return plan, nil
-}
-
-func worktreeRemoveGoneSafetyRuntime(commandRuntime worktreeRemoveRuntime) removeRuntime {
-	return removeRuntime{
-		resolver:            commandRuntime.resolver,
-		discover:            commandRuntime.discover,
-		resolveManaged:      commandRuntime.resolveManaged,
-		enumerate:           commandRuntime.enumerate,
-		validateAssociation: commandRuntime.validateAssociation,
-		git:                 commandRuntime.git,
-		filesystem:          commandRuntime.filesystem,
-		fs:                  commandRuntime.fs,
-		prompt:              commandRuntime.prompt,
-		stdout:              commandRuntime.stdout,
-		stderr:              commandRuntime.stderr,
-	}
 }
 
 func worktreeRemoveGoneCurrentPath(commandRuntime worktreeRemoveRuntime) (string, error) {
@@ -482,96 +454,6 @@ func worktreeRemoveGoneCurrentPath(commandRuntime worktreeRemoveRuntime) (string
 
 func worktreeRemoveGonePathContains(directory, path string) bool {
 	return physicalpath.SamePath(directory, path) || removePathStrictlyWithin(directory, path)
-}
-
-func worktreeRemoveGoneContainedRegistration(
-	registrations []worktreeRemoveGoneRegistration,
-	parent local.Worktree,
-) (worktreeRemoveGoneRegistration, bool) {
-	var contained worktreeRemoveGoneRegistration
-	found := false
-	for _, registration := range registrations {
-		if !removePathStrictlyWithin(parent.Path, registration.path) {
-			continue
-		}
-		if !found || physicalpath.Key(registration.path) < physicalpath.Key(contained.path) ||
-			(physicalpath.Key(registration.path) == physicalpath.Key(contained.path) &&
-				registration.repository < contained.repository) {
-			contained = registration
-			found = true
-		}
-	}
-	return contained, found
-}
-
-func worktreeRemoveGoneRegistrations(
-	ctx context.Context,
-	commandRuntime worktreeRemoveRuntime,
-	repositories []local.Repository,
-) ([]worktreeRemoveGoneRegistration, error) {
-	var registrations []worktreeRemoveGoneRegistration
-	for _, repository := range repositories {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		worktrees, err := commandRuntime.git.WorktreeList(ctx, repository.Path)
-		if err != nil {
-			return nil, fmt.Errorf(
-				"list registered worktrees for %q: %w",
-				repository.Identity,
-				err,
-			)
-		}
-		for _, worktree := range worktrees {
-			if err := ctx.Err(); err != nil {
-				return nil, err
-			}
-			paths, err := worktreeRemoveGoneRegistrationPaths(commandRuntime.fs, worktree.Path)
-			if err != nil {
-				return nil, fmt.Errorf(
-					"inspect registered path %q for %q: %w",
-					worktree.Path,
-					repository.Identity,
-					err,
-				)
-			}
-			for _, path := range paths {
-				registrations = append(registrations, worktreeRemoveGoneRegistration{
-					repository: repository.Identity,
-					path:       path,
-				})
-			}
-		}
-	}
-	return registrations, nil
-}
-
-func worktreeRemoveGoneRegistrationPaths(
-	filesystem removeFilesystem,
-	path string,
-) ([]string, error) {
-	if !filepath.IsAbs(path) {
-		return nil, fmt.Errorf("registered path %q is not absolute", path)
-	}
-	path = filepath.Clean(path)
-	physical, err := worktreeRemoveGonePhysicalizeRegistration(filesystem, path)
-	if err != nil {
-		return nil, err
-	}
-	paths := []string{path}
-	if !physicalpath.SamePath(path, physical) {
-		paths = append(paths, physical)
-	}
-	return paths, nil
-}
-
-func worktreeRemoveGonePhysicalizeRegistration(filesystem removeFilesystem, path string) (string, error) {
-	observer := physicalpath.Filesystem{Lstat: filesystem.lstat, EvalSymlinks: filesystem.evalSymlinks}
-	physical, err := observer.ResolveAbsolute(path)
-	if err != nil {
-		return "", fmt.Errorf("resolve registered path %q: %w", path, err)
-	}
-	return physical, nil
 }
 
 func worktreeRemoveGoneHasKept(plan worktreeRemoveGonePlan) bool {
@@ -634,7 +516,7 @@ func worktreeRemoveGoneComparePlans(
 		!physicalpath.SamePath(before.current, after.current) {
 		return fmt.Errorf("%w: repository, current directory, or configuration changed", ErrRemoveSafety)
 	}
-	if err := worktreeRemoveGoneCompareRepositories(
+	if err := removal.CompareRepositories(
 		before.repositories,
 		after.repositories,
 	); err != nil {
@@ -649,7 +531,7 @@ func worktreeRemoveGoneComparePlans(
 	for index := range before.entries {
 		left := before.entries[index]
 		right := after.entries[index]
-		if !removeSameWorktree(left.worktree, right.worktree) ||
+		if !removal.SameWorktree(left.worktree, right.worktree) ||
 			left.upstream != right.upstream ||
 			left.remove != right.remove ||
 			left.reason != right.reason ||
@@ -659,20 +541,6 @@ func worktreeRemoveGoneComparePlans(
 				ErrRemoveSafety,
 				left.worktree.Slot,
 			)
-		}
-	}
-	return nil
-}
-
-func worktreeRemoveGoneCompareRepositories(
-	before, after []local.Repository,
-) error {
-	if len(before) != len(after) {
-		return fmt.Errorf("%w: discovered repository inventory changed", ErrRemoveSafety)
-	}
-	for index := range before {
-		if before[index] != after[index] {
-			return fmt.Errorf("%w: discovered repository inventory changed", ErrRemoveSafety)
 		}
 	}
 	return nil
@@ -729,7 +597,7 @@ func worktreeRemoveGoneExecute(
 			ctx,
 			plan.repository.Path,
 			gitcmd.WorktreeRemoveOptions{
-				Path:  entry.target.directory.path,
+				Path:  entry.target.Directory.Path,
 				Force: request.force,
 			},
 		)
@@ -753,7 +621,7 @@ func worktreeRemoveGoneExecute(
 			continue
 		}
 
-		pathMissing, err := removePathMissing(commandRuntime.fs, entry.target.directory.path)
+		pathMissing, err := removePathMissing(commandRuntime.fs, entry.target.Directory.Path)
 		if err != nil || !pathMissing {
 			if err == nil {
 				err = errors.New("Git returned success but the exact worktree path still exists")
@@ -780,7 +648,7 @@ func worktreeRemoveGoneExecute(
 		}
 		stillRegistered := false
 		for _, worktree := range registered {
-			if physicalpath.SamePath(worktree.Path, entry.target.directory.path) {
+			if physicalpath.SamePath(worktree.Path, entry.target.Directory.Path) {
 				stillRegistered = true
 				break
 			}
@@ -801,12 +669,12 @@ func worktreeRemoveGoneExecute(
 		cleanupErr := removeCleanupEmptyChain(
 			commandRuntime.fs,
 			*plan.common.worktreeBaseDir,
-			entry.target.cleanup,
+			entry.target.Cleanup,
 		)
 		if err := removeWriteProgress(
 			commandRuntime.stderr,
 			"removed worktree",
-			entry.target.directory.path,
+			entry.target.Directory.Path,
 		); err != nil {
 			return failed, fmt.Errorf("write gone-worktree removal progress: %w", err)
 		}
@@ -830,29 +698,7 @@ func worktreeRemoveGoneRevalidateShared(
 	commandRuntime worktreeRemoveRuntime,
 	plan worktreeRemoveGonePlan,
 ) error {
-	for _, item := range []struct {
-		name string
-		node removeNode
-	}{
-		{"repository root", plan.common.repositoryRoot},
-		{"main repository", plan.common.mainDirectory},
-		{"main .git", plan.common.mainGit},
-		{"worktree root", plan.common.worktreeRoot},
-		{"worktree base", *plan.common.worktreeBaseDir},
-	} {
-		if err := removeRevalidateNode(commandRuntime.fs, item.node, item.name); err != nil {
-			return err
-		}
-	}
-	if err := removeValidateMainGitAssociation(
-		ctx,
-		commandRuntime.git,
-		plan.common.mainDirectory.path,
-		plan.common.mainGit.path,
-	); err != nil {
-		return fmt.Errorf("%w: %v", ErrRemoveSafety, err)
-	}
-	return nil
+	return commandRuntime.observer().RevalidateRepository(ctx, plan.common.RepositoryObservation, plan.common.worktreeBaseDir)
 }
 
 func worktreeRemoveGoneRevalidateEntry(
@@ -878,7 +724,7 @@ func worktreeRemoveGoneRevalidateEntry(
 	if err != nil {
 		return err
 	}
-	if !removeSameWorktree(planned.worktree, worktree) {
+	if !removal.SameWorktree(planned.worktree, worktree) {
 		return fmt.Errorf("%w: slot, path, branch, HEAD, lock, or prune state changed", ErrRemoveSafety)
 	}
 	upstreams, err := commandRuntime.git.BranchUpstreams(ctx, plan.repository.Path)
@@ -920,32 +766,30 @@ func worktreeRemoveGoneRevalidateEntry(
 		return fmt.Errorf("%w: current shell is inside this worktree", ErrRemoveSafety)
 	}
 
-	removeRuntime := worktreeRemoveGoneSafetyRuntime(commandRuntime)
-	target, base, err := removePrepareLinkedTargetWithCleanliness(
+	observer := commandRuntime.observer()
+	target, base, err := removeObserveEligibleLinked(
 		ctx,
-		removeRuntime,
-		plan.common,
+		observer,
+		plan.common.RepositoryObservation,
 		worktree,
-		false,
 	)
 	if err != nil {
 		return err
 	}
-	if err := removeCompareNode(
-		commandRuntime.fs,
+	if err := removal.CompareNode(commandRuntime.fs.observations(),
 		*plan.common.worktreeBaseDir,
 		base,
 		"worktree base",
 	); err != nil {
 		return err
 	}
-	if err := removeCompareLinkedTarget(commandRuntime.fs, planned.target, target); err != nil {
+	if err := removal.CompareLinked(commandRuntime.fs.observations(), planned.target, target); err != nil {
 		return err
 	}
-	dirty, err := removeInspectDirty(
+	dirty, err := removal.InspectDirty(
 		ctx,
-		removeRuntime.git,
-		target.directory.path,
+		commandRuntime.git,
+		target.Directory.Path,
 		"linked worktree "+worktree.Slot,
 	)
 	if err != nil {
@@ -968,26 +812,27 @@ func worktreeRemoveGoneRevalidateEntry(
 	if err != nil {
 		return worktreeRemoveGoneShared(fmt.Errorf("discover repositories: %w", err))
 	}
-	if err := worktreeRemoveGoneCompareRepositories(
+	if err := removal.CompareRepositories(
 		plan.repositories,
 		discovery.Repositories,
 	); err != nil {
 		return worktreeRemoveGoneShared(err)
 	}
-	registrations, err := worktreeRemoveGoneRegistrations(
-		ctx,
-		commandRuntime,
+	// Discovery is a fresh inventory boundary: do not reuse the earlier selected
+	// repository enumeration when checking newly nested registrations.
+
+	registrations, err := commandRuntime.observer().Registrations(ctx,
 		discovery.Repositories,
 	)
 	if err != nil {
 		return worktreeRemoveGoneShared(err)
 	}
-	if contained, found := worktreeRemoveGoneContainedRegistration(registrations, worktree); found {
+	if contained, found := removal.ContainedRegistration(registrations, worktree); found {
 		return fmt.Errorf(
 			"%w: contains registered worktree from %q at %q",
 			ErrRemoveSafety,
-			contained.repository,
-			removeOutputPath(contained.path),
+			contained.Repository,
+			removeOutputPath(contained.Path),
 		)
 	}
 	return nil

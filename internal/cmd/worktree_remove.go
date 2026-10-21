@@ -15,6 +15,7 @@ import (
 	"github.com/daiksud/gh-qw/internal/gitcmd"
 	"github.com/daiksud/gh-qw/internal/local"
 	"github.com/daiksud/gh-qw/internal/physicalpath"
+	"github.com/daiksud/gh-qw/internal/removal"
 	"github.com/daiksud/gh-qw/internal/repospec"
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
 	"github.com/spf13/cobra"
@@ -390,15 +391,11 @@ func worktreeRemoveRun(
 		return fmt.Errorf("validate worktree cleanup boundary: %w", err)
 	}
 
-	worktree, err := commandRuntime.resolveManaged(
+	worktree, err := commandRuntime.observer().ResolveWorktree(
 		ctx,
 		repository,
 		roots.WorktreeRoot,
 		request.branch,
-		local.ManagedWorktreeOptions{
-			Git:        commandRuntime.git,
-			Filesystem: commandRuntime.filesystem,
-		},
 	)
 	if err != nil {
 		return fmt.Errorf(
@@ -767,4 +764,8 @@ func worktreeRemoveWrapError(operation string, err error) error {
 		return nil
 	}
 	return fmt.Errorf("%s: %w", operation, err)
+}
+
+func (commandRuntime worktreeRemoveRuntime) observer() removal.Observer {
+	return removal.Observer{Git: commandRuntime.git, Filesystem: commandRuntime.fs.observations(), LocalFilesystem: commandRuntime.filesystem, ResolveManaged: commandRuntime.resolveManaged, ValidateAssociation: commandRuntime.validateAssociation}
 }
