@@ -12,7 +12,7 @@ timestamp: 2026-08-10
 - **Status:** Accepted
 - **Date:** 2026-08-10
 - **Deciders:** gh-qw maintainers
-- **Related:** [ADR-0002](../0002-distribute-as-gh-cli-extension/), [ADR-0005](../0005-dedicated-worktree-root/), [ADR-0018](../0018-herdr-workspace-integration/)
+- **Related:** [ADR-0002](../0002-distribute-as-gh-cli-extension/), [ADR-0005](../0005-dedicated-worktree-root/)
 
 ## Context
 
@@ -52,8 +52,7 @@ remainder when a shared boundary, repository inventory, or registered state beco
 `--force` is exactly Git's one force level for dirty worktrees; `--yes` skips only the bulk
 confirmation.
 
-Resolve an enabled Herdr workspace before unregistering each target and close it after successful
-removal, preserving ADR-0018's ordering. This backward-compatible public CLI addition is a SemVer
+This backward-compatible public CLI addition is a SemVer
 MINOR change; from `v0.2.0`, absent another version-affecting change, it targets `v0.3.0`.
 
 ## Consequences

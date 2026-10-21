@@ -76,8 +76,7 @@ Compatibility is limited to the directory convention and familiar repository ide
 `list` prints identities or absolute paths. Callers own selection and directory navigation;
 `gh-qw` does not provide a picker or launch a shell
 (see [ADR-0009](../development/adr/0009-interactive-selection-via-fzf/)).
-`worktree add`/`worktree remove`/`rm --herdr` compose with the external `herdr` executable,
-opening or closing a Herdr workspace without `gh-qw` owning its UI
+Workspace management belongs to callers, independently of Git worktree creation and removal
 (see [ADR-0018](../development/adr/0018-herdr-workspace-integration/)).
 
 Normal settings belong to `gh-qw`'s configuration file or environment. Migration may inspect

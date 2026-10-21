@@ -61,13 +61,8 @@ $ gh qw list --full-path --exact cli/cli
 Existing shell functions using the removed `--fzf` flag must be updated; see the
 [migration guidance](docs/reference/cli/README.md#migrating-shell-functions).
 
-Inside a Herdr-managed pane, `--herdr` opens and focuses a Herdr workspace for a new linked
-worktree, and closes it again on removal:
-
-```console
-$ gh qw worktree add --herdr feature/docs
-/Users/alice/.local/share/ghqw/worktrees/github.com/cli/cli/feature/docs
-```
+Herdr workspace integrations have been removed; see the
+[migration guidance](docs/reference/cli/README.md#migrating-herdr-integrations).
 
 ## Commands
 
@@ -76,11 +71,11 @@ $ gh qw worktree add --herdr feature/docs
 | `gh qw get` / `gh qw clone` | Clone a missing repository or update an existing one. |
 | `gh qw list` | List repositories and, with `--worktree`, linked worktrees. |
 | `gh qw root` | Print configured repository roots. |
-| `gh qw rm` | Remove a repository or an `@branch` linked worktree safely; `--herdr` closes its Herdr workspace. |
+| `gh qw rm` | Remove a repository or an `@branch` linked worktree safely. |
 | `gh qw migrate` | Migrate GitHub repositories from a ghq layout. |
-| `gh qw worktree add` | Create a linked worktree at its deterministic branch path; `--herdr` opens a Herdr workspace for it. |
+| `gh qw worktree add` | Create a linked worktree at its deterministic branch path. |
 | `gh qw worktree list` | List one repository's registered worktrees. |
-| `gh qw worktree remove` | Remove one managed linked worktree, or use `--gone` to safely remove every linked worktree whose upstream ref is gone; `--herdr` closes affected Herdr workspaces. |
+| `gh qw worktree remove` | Remove one managed linked worktree, or use `--gone` to safely remove every linked worktree whose upstream ref is gone. |
 | `gh qw worktree prune` | Prune stale Git metadata and proven orphaned paths. |
 
 See the [CLI reference](docs/reference/cli/README.md) for every argument, flag, output format,
@@ -94,10 +89,9 @@ when `XDG_CONFIG_HOME` is unset):
 ```toml
 root = "~/ghqw"
 worktree_root = "~/.local/share/ghqw/worktrees"
-# herdr = true
 ```
 
-`GHQW_ROOT`, `GHQW_WORKTREE_ROOT`, and `GHQW_HERDR` override these values. See the
+`GHQW_ROOT` and `GHQW_WORKTREE_ROOT` override these values. See the
 [configuration reference](docs/reference/configuration/README.md) for precedence, multiple
 roots, path safety, and ghq migration source discovery.
 
