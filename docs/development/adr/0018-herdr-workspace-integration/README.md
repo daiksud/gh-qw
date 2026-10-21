@@ -1,87 +1,56 @@
 ---
 type: adr
-title: "ADR-0018: Integrate worktree add/remove and rm with Herdr workspaces"
-description: "Let --herdr open and close a Herdr workspace for a linked worktree by delegating to the external herdr executable."
+title: "ADR-0018: Leave workspace management to callers"
+description: "Keep Git worktree operations independent of terminal workspace management."
 resource: gh-qw
-tags: [gh-qw, adr, adr-0018, cli, herdr, worktree]
-timestamp: 2026-08-07
+tags: [gh-qw, adr, adr-0018, cli, worktree]
+timestamp: 2026-10-21
 ---
 
-# ADR-0018: Integrate worktree add/remove and rm with Herdr workspaces
+# ADR-0018: Leave workspace management to callers
 
 - **Status:** Accepted
 - **Date:** 2026-08-07
+- **Updated:** 2026-10-21
 - **Deciders:** gh-qw maintainers
 - **Related:** [ADR-0006](../0006-command-set-v1/)
 
 ## Context
 
-`gh qw worktree add` creates a linked worktree at its deterministic branch path
-([ADR-0004](../0004-ghq-directory-convention/), [ADR-0005](../0005-dedicated-worktree-root/)) and prints
-only that absolute path; `worktree remove` and `rm` remove one back out.
-[ADR-0006](../0006-command-set-v1/) already decided that `gh-qw` never launches a shell of its own —
-it outputs paths and leaves navigation to the caller.
+`worktree add` creates a linked worktree at its deterministic branch path and prints that path.
+`worktree remove` and `rm` remove managed worktrees after checking their registration and physical
+boundaries. Terminal workspace management is separate from these Git operations.
 
-Herdr is a separate terminal-workspace manager for coding agents, organizing terminals into
-workspaces, tabs, and panes and exposing them through its own `herdr` executable and socket API. A
-person or agent driving several linked worktrees through Herdr today has to manually run
-`herdr workspace create --cwd <path> --focus` after every `worktree add` and manually close the
-matching workspace after every `worktree remove`/`rm`. That manual step is repetitive, easy to
-forget, and leaves stale workspaces open at paths that no longer exist once a worktree is removed.
-
-The integration delegates interaction to an external tool through its documented CLI and reports
-only the outcome, preserving the shell-launch boundary from ADR-0006.
+The former Herdr integration coupled successful Git operations to workspace creation, lookup,
+and closing. Its flags, configuration, environment precedence, process execution, and error
+aggregation expanded the command surface without contributing to repository or worktree management.
 
 ## Decision
 
-`worktree add`, `worktree remove` (including the later `--gone` bulk mode), and `rm` (for an
-`@branch` linked-worktree target only) gain a `--herdr`/`--no-herdr` flag pair. A new `herdr`
-boolean key in `config.toml` and a `GHQW_HERDR` environment variable let a person enable the
-integration by default instead of passing the flag on every invocation. These resolve with one
-fixed precedence: an explicit flag, then `GHQW_HERDR`, then the configuration key, then disabled.
+Remove the Herdr integration completely. `worktree add`, `worktree remove` (including `--gone`),
+and `rm` no longer create, find, or close terminal workspaces. Remove the integration package,
+command helpers, and their dedicated tests. Preserve worktree layout, output, confirmation,
+registration checks, and physical boundary checks.
 
-When enabled, `worktree add` runs `herdr workspace create --cwd <new-worktree-path>
---label <repo>@<branch> --focus` through the `herdr` executable resolved from `PATH`, after the
-worktree itself is created and validated and after gh-qw's own `stdout` contract — the new absolute
-path — is already satisfied. `worktree remove` and `rm` resolve each workspace `herdr` already has
-open for a target worktree path with `herdr worktree list` **before** unregistering that target
-(Herdr's own worktree listing depends on Git's own registration, which the removal itself would
-erase), remove the worktree, and only then close the resolved workspace with
-`herdr workspace close`. A worktree with no open workspace is left alone: that is an ordinary,
-expected outcome, not a failure.
+The former `--herdr` and `--no-herdr` flags are unknown flags with CLI status `2`. The former
+`herdr` configuration key is an unknown key with status `2`, including when set to `false`.
+`GHQW_HERDR` and `HERDR_ENV` are ignored. There is no replacement workspace integration or setting.
+Callers manage their terminal workspaces separately.
 
-An explicit `--herdr` outside of a Herdr-managed pane (`HERDR_ENV` unset or not `1`) is a usage
-error, since the person explicitly asked for an integration that cannot exist there. Implicit
-enablement through `GHQW_HERDR` or `config.toml` outside Herdr instead only warns on `stderr` and
-skips the integration, leaving the command's own result and exit status unaffected, so a shared
-configuration file does not break ordinary use on a machine or in CI that never runs inside Herdr.
-
-`herdr`'s own JSON responses are parsed internally by a small
-`internal/herdr` package and never appear on gh-qw's own `stdout`; gh-qw still never launches a
-shell of its own, deferring entirely to Herdr's own workspace and pane management.
+This breaking change requires removing the retired flags and configuration key from existing
+scripts and settings. See the [CLI migration guidance](../../../reference/cli/#migrating-herdr-integrations)
+and [configuration reference](../../../reference/configuration/#retired-workspace-settings).
+The ADR is revised in place during `0.y.z` development; its existing URL remains stable.
 
 ## Consequences
 
 ### Positive
 
-- A person or agent driving several linked worktrees through Herdr gets one workspace per worktree
-  automatically, without a manual `herdr workspace create`/`cd` step and without a stale workspace
-  surviving `worktree remove`/`rm`.
-- The integration is one small, focused `internal/herdr` package that talks to a single documented
-  external CLI, like `internal/ghcmd`.
-- Because the resolved enablement is decided before any Git operation starts and never changes
-  `worktree add`/`remove`'s own deterministic path or `stdout` contract, Herdr integration is
-  strictly additive to the existing CLI reference.
+- Git worktree completion and exit status no longer depend on a terminal workspace manager.
+- Commands have fewer flags and dependencies, and configuration has fewer precedence rules.
+- Existing removal safety checks remain independently testable without workspace side effects.
 
 ### Negative
 
-- `--herdr` requires a separately installed `herdr` on `PATH` and a running Herdr session; outside
-  one, the explicit flag is a hard usage error rather than silently doing nothing.
-- Implicit (`GHQW_HERDR`/`config.toml`) enablement is deliberately lenient (warn and skip), so a
-  person relying on it outside Herdr might not immediately notice a workspace was never created if
-  they miss the warning.
-
-### Neutral
-
-- `worktree prune` and starting an agent inside the new workspace are intentionally out of scope
-  for this decision. A future ADR can extend the same `internal/herdr` seam if that need arises.
+- Existing users must remove retired flags and the configuration key before upgrading.
+- Callers that want terminal workspaces must manage them outside `gh-qw`.

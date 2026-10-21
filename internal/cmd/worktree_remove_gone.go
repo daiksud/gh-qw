@@ -71,15 +71,6 @@ func worktreeRemoveGoneRun(
 	if err != nil {
 		return fmt.Errorf("resolve roots: %w", err)
 	}
-	herdrEnabled, err := resolveHerdrIntegration(
-		request.herdr,
-		roots.Herdr,
-		commandRuntime.lookupEnv,
-		commandRuntime.stderr,
-	)
-	if err != nil {
-		return worktreeRemoveNewUsageError(err)
-	}
 	plan, err := worktreeRemoveGonePreflightWithRoots(
 		ctx,
 		commandRuntime,
@@ -139,7 +130,6 @@ func worktreeRemoveGoneRun(
 		commandRuntime,
 		revalidated,
 		request,
-		herdrEnabled,
 	)
 	if err != nil {
 		return err
@@ -463,8 +453,6 @@ func worktreeRemoveGoneSafetyRuntime(commandRuntime worktreeRemoveRuntime) remov
 		filesystem:          commandRuntime.filesystem,
 		fs:                  commandRuntime.fs,
 		prompt:              commandRuntime.prompt,
-		herdr:               commandRuntime.herdr,
-		lookupEnv:           commandRuntime.lookupEnv,
 		stdout:              commandRuntime.stdout,
 		stderr:              commandRuntime.stderr,
 	}
@@ -672,8 +660,7 @@ func worktreeRemoveGoneComparePlans(
 	filesystem removeFilesystem,
 	before, after worktreeRemoveGonePlan,
 ) error {
-	if before.roots.Herdr != after.roots.Herdr ||
-		before.repository != after.repository ||
+	if before.repository != after.repository ||
 		!removeSamePath(before.current, after.current) {
 		return fmt.Errorf("%w: repository, current directory, or configuration changed", ErrRemoveSafety)
 	}
@@ -726,7 +713,6 @@ func worktreeRemoveGoneExecute(
 	commandRuntime worktreeRemoveRuntime,
 	plan worktreeRemoveGonePlan,
 	request worktreeRemoveRequest,
-	herdrEnabled bool,
 ) (bool, error) {
 	failed := false
 	for _, entry := range plan.entries {
@@ -736,24 +722,6 @@ func worktreeRemoveGoneExecute(
 		if err := ctx.Err(); err != nil {
 			return failed, err
 		}
-		var workspaceID string
-		var workspaceFound bool
-		var herdrFindErr error
-		if herdrEnabled {
-			workspaceID, workspaceFound, herdrFindErr = commandRuntime.herdr.FindWorkspaceForPath(
-				ctx,
-				plan.repository.Path,
-				entry.target.directory.path,
-			)
-			if ctxErr := ctx.Err(); ctxErr != nil {
-				return failed, ctxErr
-			}
-			if errors.Is(herdrFindErr, context.Canceled) ||
-				errors.Is(herdrFindErr, context.DeadlineExceeded) {
-				return failed, herdrFindErr
-			}
-		}
-
 		if err := worktreeRemoveGoneRevalidateShared(ctx, commandRuntime, plan); err != nil {
 			return failed, fmt.Errorf("revalidate shared removal boundary: %w", err)
 		}
@@ -860,28 +828,11 @@ func worktreeRemoveGoneExecute(
 			continue
 		}
 
-		var candidateErrors []error
-		if herdrFindErr != nil {
-			candidateErrors = append(candidateErrors, fmt.Errorf("find Herdr workspace: %w", herdrFindErr))
-		}
-		if err := removeCleanupEmptyChain(
+		cleanupErr := removeCleanupEmptyChain(
 			commandRuntime.fs,
 			*plan.common.worktreeBaseDir,
 			entry.target.cleanup,
-		); err != nil {
-			candidateErrors = append(candidateErrors, fmt.Errorf("cleanup empty parents: %w", err))
-		}
-		if herdrEnabled && herdrFindErr == nil && workspaceFound {
-			if err := commandRuntime.herdr.CloseWorkspace(ctx, workspaceID); err != nil {
-				if ctxErr := ctx.Err(); ctxErr != nil {
-					return failed, ctxErr
-				}
-				if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-					return failed, err
-				}
-				candidateErrors = append(candidateErrors, fmt.Errorf("close Herdr workspace: %w", err))
-			}
-		}
+		)
 		if err := removeWriteProgress(
 			commandRuntime.stderr,
 			"removed worktree",
@@ -889,13 +840,13 @@ func worktreeRemoveGoneExecute(
 		); err != nil {
 			return failed, fmt.Errorf("write gone-worktree removal progress: %w", err)
 		}
-		if joined := errors.Join(candidateErrors...); joined != nil {
+		if cleanupErr != nil {
 			failed = true
 			if writeErr := worktreeRemoveGoneWriteFailure(
 				commandRuntime.stderr,
 				"warning",
 				entry.worktree.Slot,
-				joined,
+				fmt.Errorf("cleanup empty parents: %w", cleanupErr),
 			); writeErr != nil {
 				return failed, fmt.Errorf("write gone-worktree post-removal failure: %w", writeErr)
 			}

@@ -77,7 +77,7 @@ path. An unset, empty, or relative `XDG_CONFIG_HOME` is treated as if it were no
 `gh-qw` falls back to `~/.config/ghqw/config.toml`, where `~` is the current user's home directory
 as resolved by the operating system. This rule is uniform across platforms, including Windows.
 
-The file and all three keys are optional:
+The file and both keys are optional:
 
 ```toml
 # One string:
@@ -87,11 +87,6 @@ root = "~/ghqw"
 # root = ["~/ghqw", "~/work/repos"]
 
 worktree_root = "~/.local/share/ghqw/worktrees"
-
-# Enable Herdr workspace integration by default for worktree add/remove and
-# rm, without passing --herdr on every invocation (see the CLI reference's
-# "Herdr workspace integration" section):
-# herdr = true
 ```
 
 ### Schema
@@ -100,12 +95,11 @@ worktree_root = "~/.local/share/ghqw/worktrees"
 | --- | --- | --- |
 | `root` | string or non-empty array of strings | Ordered repository roots. The first normalized root is primary. |
 | `worktree_root` | string | Root for linked worktrees created and managed by `gh-qw`. |
-| `herdr` | boolean | Default for `--herdr`/`--no-herdr` on `worktree add`, `worktree remove`, and `rm` when neither flag is given. |
 
-Only these three top-level keys are valid. Tables, unknown keys, duplicate keys, an empty root
-array, empty path strings, mixed-type arrays, TOML parse errors, and type mismatches (including a
-non-boolean `herdr`) are configuration errors and produce CLI status `2`. An unreadable file or
-other filesystem I/O failure produces status `1`.
+Only these two top-level keys are valid. Tables, unknown keys, duplicate keys, an empty root
+array, empty path strings, mixed-type arrays, TOML parse errors, and type mismatches are
+configuration errors and produce CLI status `2`. An unreadable file or other filesystem I/O
+failure produces status `1`.
 
 If the file is absent, all values default. If the file exists but a key is absent, only that key
 defaults. The file is read as UTF-8 TOML; comments and ordinary TOML string escaping are allowed.
@@ -137,21 +131,12 @@ From highest to lowest precedence:
 
 The worktree setting is one path, not a path-list. `GHQW_ROOT` does not affect it.
 
-### Herdr integration default
+### Retired workspace settings
 
-From highest to lowest precedence, before any command-line `--herdr`/`--no-herdr` flag, which
-always wins over all three:
-
-1. `GHQW_HERDR`, when set to a recognized boolean token (`1`/`true`/`yes`/`on` or
-   `0`/`false`/`no`/`off`, case-insensitively; any other non-empty value is a configuration error,
-   CLI status `2`);
-2. `herdr` in the [configuration file](#configuration-file); and
-3. disabled.
-
-See the CLI reference's
-[Herdr workspace integration](../cli/#herdr-workspace-integration) for the commands this affects,
-the mutually exclusive `--herdr`/`--no-herdr` flags, and how enablement outside of a Herdr-managed
-pane is handled.
+The former `herdr` key is no longer valid, including `herdr = false`; remove it from
+`config.toml` to avoid an unknown-key error (CLI status `2`). `GHQW_HERDR` and `HERDR_ENV`
+are no longer read and have no effect. Remove them from shell startup files and scripts.
+See the [CLI migration guidance](../cli/#migrating-herdr-integrations).
 
 ## Multiple repository roots
 
@@ -270,8 +255,7 @@ the JSON schema valid.
 
 ## Relevant environment inherited from `gh` and Git
 
-`GHQW_ROOT`, `GHQW_WORKTREE_ROOT`, and `GHQW_HERDR` are the only `gh-qw` configuration variables
-(see [Herdr integration default](#herdr-integration-default) for the last one). There is no
+`GHQW_ROOT` and `GHQW_WORKTREE_ROOT` are the only `gh-qw` configuration variables. There is no
 `GHQW_CONFIG`, `GHQW_HOST`, `GHQW_LOOK`, or VCS-selection variable.
 
 Every `gh` or Git subprocess `gh-qw` runs inherits the calling process's complete environment
