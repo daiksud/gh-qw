@@ -663,6 +663,7 @@ func getAcquire(
 			return "", err
 		}
 		err = git.RepoSync(ctx, path, ghcmd.SyncOptions{
+			Host:   state.repository.Host,
 			Source: state.repository.Owner + "/" + state.repository.Repo,
 		})
 		if err != nil {

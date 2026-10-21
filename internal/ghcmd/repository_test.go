@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
+	"slices"
+	"strings"
 	"testing"
 )
 
@@ -236,6 +239,45 @@ func TestRepositoryCommandsPreserveStandardAuthenticationEnvironment(t *testing.
 			command := recorder.last(t)
 			if !slicesEqual(command.cmd.Env, runner.Env) {
 				t.Fatal("subprocess environment differs from caller environment")
+			}
+		})
+	}
+}
+
+func TestRepoSyncUsesSelectedHostWithoutChangingAuthentication(t *testing.T) {
+	keys := []string{"GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"}
+	for _, key := range keys {
+		t.Setenv(key, "dummy-"+key)
+	}
+	t.Setenv("GH_HOST", "ambient.example.com")
+	t.Setenv(helperProcessEnv, "1")
+	for _, inherited := range []bool{false, true} {
+		t.Run(map[bool]string{false: "configured", true: "inherited"}[inherited], func(t *testing.T) {
+			runner, recorder := newHelperRunner(t, "auth-environment")
+			if inherited {
+				runner.Env = nil
+			}
+			before := slices.Clone(runner.Env)
+			for _, host := range []string{"github.com", "selected.example.com"} {
+				var output bytes.Buffer
+				runner.Stdout = &output
+				runner.Stderr = &bytes.Buffer{}
+				if err := runner.RepoSync(context.Background(), t.TempDir(), SyncOptions{Host: host, Source: "acme/widget"}); err != nil {
+					t.Fatal(err)
+				}
+				want := []string{host}
+				for _, key := range keys {
+					want = append(want, "dummy-"+key)
+				}
+				if output.String() != strings.Join(want, "\n") {
+					t.Fatal("subprocess host or authentication environment differs")
+				}
+				if !slices.Equal(recorder.last(t).args, []string{"repo", "sync", "--source", "acme/widget"}) {
+					t.Fatal("sync must remain a local operation")
+				}
+				if !slices.Equal(runner.Env, before) || os.Getenv("GH_HOST") != "ambient.example.com" {
+					t.Fatal("sync mutated caller environment")
+				}
 			}
 		})
 	}

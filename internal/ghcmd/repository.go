@@ -3,6 +3,8 @@ package ghcmd
 import (
 	"context"
 	"fmt"
+	"os"
+	"slices"
 )
 
 // SubmoduleMode controls whether gh recursively initializes submodules
@@ -98,6 +100,8 @@ func validateSubmoduleMode(mode SubmoduleMode) error {
 
 // SyncOptions controls `gh repo sync`.
 type SyncOptions struct {
+	// Host selects the repository host for local remote discovery.
+	Host string
 	// Source is the "<owner>/<repo>" to synchronize from. It is required so
 	// synchronization always targets the repository's own remote rather than
 	// a fork parent, which is `gh repo sync`'s default source.
@@ -115,7 +119,21 @@ func (r *Runner) RepoSync(ctx context.Context, dir string, options SyncOptions) 
 	if err != nil {
 		return err
 	}
-	return r.runDir(ctx, dir, args...)
+	if options.Host == "" {
+		return r.runDir(ctx, dir, args...)
+	}
+	var scoped Runner
+	if r != nil {
+		scoped = *r
+	}
+	if scoped.Env == nil {
+		scoped.Env = os.Environ()
+	} else {
+		scoped.Env = slices.Clone(scoped.Env)
+	}
+	// os/exec applies the last value for duplicate environment keys.
+	scoped.Env = append(scoped.Env, "GH_HOST="+options.Host)
+	return scoped.runDir(ctx, dir, args...)
 }
 
 func repoSyncArgs(options SyncOptions) ([]string, error) {

@@ -243,10 +243,11 @@ Choose gh's active account or standard token environment variables as described 
 `GHQW_CONFIG`, `GHQW_HOST`, `GHQW_LOOK`, or VCS-selection variable.
 
 Every `gh` or Git subprocess `gh-qw` runs inherits the calling process's complete environment
-without authentication-specific overrides.
+without token overrides. Local `gh repo sync` sets its child process's `GH_HOST` to the selected
+repository host, preserving explicit-host precedence and local remote discovery.
 `gh-qw` never clears or restricts the rest of the environment before spawning `gh` or Git, so any
 variable either of them already documents — including the families below — reaches them exactly as
-it would running standalone.
+it would running standalone, except for this scoped `GH_HOST` selection.
 
 Standard tool variables can still affect the external services used by a command:
 
@@ -258,7 +259,7 @@ Standard tool variables can still affect the external services used by a command
 | `XDG_CACHE_HOME` | Does not configure any gh-qw cache; the former [account cache](#account-cache) is ignored. |
 | `GH_HOST` | Selects the host for bare `<repo>` and hostless `owner/repo` input. An explicit URL or host takes precedence; the default is `github.com`. |
 | `GH_TOKEN`, `GITHUB_TOKEN` | Reach gh unchanged; gh applies its standard GitHub.com token precedence and host rules. |
-| `GH_ENTERPRISE_TOKEN`, `GITHUB_ENTERPRISE_TOKEN` | Reach gh unchanged; gh applies its standard GitHub Enterprise token precedence and host rules. |
+| `GH_ENTERPRISE_TOKEN`, `GITHUB_ENTERPRISE_TOKEN` | Reach gh unchanged and apply to the selected Enterprise host. `GH_HOST` does not restrict them to one host; see [account selection](../cli/#gh-account-selection). |
 | `GH_CONFIG_DIR` | May relocate GitHub CLI's own authentication/configuration state; it does not relocate `gh-qw` configuration. |
 | `GIT_SSH`, `GIT_SSH_COMMAND`, `GIT_ASKPASS`, `SSH_ASKPASS`, `GIT_TERMINAL_PROMPT` | Affect Git transport and credential prompting when inherited by Git subprocesses. |
 | Git credential helpers and standard Git config-location variables | Continue to affect Git itself, but never define `gh-qw` roots or identity rules. |

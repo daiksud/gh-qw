@@ -780,6 +780,7 @@ func (planner *worktreeAddPlanner) worktreeAddCreationTarget(
 		planner.ctx,
 		planner.repository.Path,
 		ghcmd.SyncOptions{
+			Host:   planner.repository.Host,
 			Source: planner.repository.Owner + "/" + planner.repository.Repo,
 			Branch: defaultBranch,
 		},

@@ -65,10 +65,19 @@ precedence if any item has an invalid specification; otherwise any runtime failu
 
 Network operations use the active account configured in `gh` for the selected host and
 [gh's standard environment variables](https://cli.github.com/manual/gh_help_environment).
-`gh-qw` passes the caller's environment unchanged to clone and sync. It does not match accounts
+`gh-qw` preserves the caller's authentication environment. For local sync, it sets the child
+process's `GH_HOST` to the repository's selected host so an unrelated ambient host cannot filter
+out the checkout's remote. All token variables remain unchanged. It does not match accounts
 to repository owners, list accounts, prompt for an account, inject a token, or run authentication
 preflight checks before clone or sync. Local operations, help/version, and worktrees created from
 existing branches do not query authentication.
+
+Enterprise token environment variables follow gh's native host selection: `GH_HOST` is not a
+token allowlist. An explicit Enterprise host can receive `GH_ENTERPRISE_TOKEN` or
+`GITHUB_ENTERPRISE_TOKEN`, including when repository input comes from stdin. Use trusted repository
+inputs when these variables are set. For externally supplied lists, validate the target hosts
+before invoking gh-qw; unset both Enterprise token variables and use gh credentials stored for
+individual hosts when credentials must be restricted by host. gh-qw does not enforce a host allowlist.
 
 In multi-account environments, configure the desired account yourself with
 [`gh auth switch --hostname HOST --user LOGIN`](https://cli.github.com/manual/gh_auth_switch)

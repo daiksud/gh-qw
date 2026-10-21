@@ -471,7 +471,7 @@ func TestNewGetCommandRejectsInvalidAndUndocumentedFlagsBeforeResolving(t *testi
 }
 
 func TestNewGetCommandReusesExistingRepositoryAndUpdatesOnRequest(t *testing.T) {
-	t.Parallel()
+	t.Setenv("GH_HOST", "ambient.example.com")
 
 	tests := []struct {
 		name        string
@@ -495,7 +495,6 @@ func TestNewGetCommandReusesExistingRepositoryAndUpdatesOnRequest(t *testing.T) 
 	for _, test := range tests {
 		test := test
 		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
 
 			root := getTempRoot(t)
 			path := filepath.Join(root, "github.com", "acme", "widget")
@@ -535,7 +534,7 @@ func TestNewGetCommandReusesExistingRepositoryAndUpdatesOnRequest(t *testing.T) 
 				return nil
 			}
 			command := cmd.NewGetCommand(deps)
-			command.SetArgs(append(test.args, "acme/widget"))
+			command.SetArgs(append(test.args, "github.com/acme/widget"))
 
 			if err := command.Execute(); err != nil {
 				t.Fatalf("Execute() error = %v", err)
@@ -549,6 +548,9 @@ func TestNewGetCommandReusesExistingRepositoryAndUpdatesOnRequest(t *testing.T) 
 				}
 				if got, want := gotSync.Source, "acme/widget"; got != want {
 					t.Fatalf("Update() Source = %q, want %q", got, want)
+				}
+				if gotSync.Host != "github.com" {
+					t.Fatalf("Update() Host = %q, want github.com", gotSync.Host)
 				}
 				if gotSync.Branch != "" {
 					t.Fatalf("Update() Branch = %q, want empty (gh resolves the default branch)", gotSync.Branch)

@@ -39,7 +39,9 @@ Consequently, `get` rejects `file://` input, while local discovery and `migrate`
 it.
 
 Use gh's active account for the selected host and its standard token environment variables.
-Pass the execution environment unchanged to clone and sync. Do not enumerate or select
+Preserve every token variable for clone and sync. For local sync, set the child process's
+`GH_HOST` to the selected repository host without changing the caller's environment. Do not
+enumerate or select
 accounts, maintain a selection cache, inject tokens, perform unconditional auth preflight, or
 switch accounts during an operation. Local operations do not query authentication.
 

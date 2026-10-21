@@ -118,6 +118,7 @@ func TestNewWorktreeAddCommandAutomaticResolution(t *testing.T) {
 			},
 			wantAPICalls: 1,
 			wantSyncs: []ghcmd.SyncOptions{{
+				Host:   "github.com",
 				Source: "acme/widget",
 				Branch: "main",
 			}},
@@ -161,6 +162,7 @@ func TestNewWorktreeAddCommandAutomaticResolution(t *testing.T) {
 }
 
 func TestNewWorktreeAddCommandFetchesDefaultBranchThroughAPIAndSync(t *testing.T) {
+	t.Setenv("GH_HOST", "ambient.example.com")
 	fixture := worktreeAddNewFixture(t, "feature/api-fetch")
 	fixture.api.branch = "main"
 	fixture.gh.syncCreatesRemoteBranch = true
@@ -169,6 +171,9 @@ func TestNewWorktreeAddCommandFetchesDefaultBranchThroughAPIAndSync(t *testing.T
 	}
 	if fixture.api.calls != 1 || len(fixture.gh.syncs) != 1 {
 		t.Fatalf("API calls=%d, syncs=%v; want one of each", fixture.api.calls, fixture.gh.syncs)
+	}
+	if fixture.gh.syncs[0].Host != "github.com" {
+		t.Fatalf("sync host = %q, want github.com", fixture.gh.syncs[0].Host)
 	}
 }
 
