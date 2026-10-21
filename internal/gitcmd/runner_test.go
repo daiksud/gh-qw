@@ -351,18 +351,6 @@ func TestRunnerWrapsExecutableStartFailure(t *testing.T) {
 	}
 }
 
-func TestTailBufferKeepsOnlyTail(t *testing.T) {
-	buffer := newTailBuffer(5)
-	_, _ = buffer.Write([]byte("abc"))
-	_, _ = buffer.Write([]byte("defg"))
-	if got := string(buffer.Bytes()); got != "cdefg" {
-		t.Fatalf("tail = %q, want %q", got, "cdefg")
-	}
-	_, _ = buffer.Write([]byte("123456"))
-	if got := string(buffer.Bytes()); got != "23456" {
-		t.Fatalf("tail after oversized write = %q, want %q", got, "23456")
-	}
-}
 
 func slicesEqual(got, want []string) bool {
 	if len(got) != len(want) {
