@@ -1,14 +1,12 @@
 package migrate
 
 import (
-	"errors"
-	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
 
 	"github.com/daiksud/gh-qw/internal/local"
+	"github.com/daiksud/gh-qw/internal/physicalpath"
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
 )
 
@@ -18,8 +16,6 @@ type Filesystem struct {
 	ReadDir      func(string) ([]os.DirEntry, error)
 	Lstat        func(string) (fs.FileInfo, error)
 	Stat         func(string) (fs.FileInfo, error)
-	ReadFile     func(string) ([]byte, error)
-	WriteFile    func(string, []byte, fs.FileMode) error
 	Readlink     func(string) (string, error)
 	Symlink      func(string, string) error
 	EvalSymlinks func(string) (string, error)
@@ -39,8 +35,6 @@ type filesystem struct {
 	readDir      func(string) ([]os.DirEntry, error)
 	lstat        func(string) (fs.FileInfo, error)
 	stat         func(string) (fs.FileInfo, error)
-	readFile     func(string) ([]byte, error)
-	writeFile    func(string, []byte, fs.FileMode) error
 	readlink     func(string) (string, error)
 	symlink      func(string, string) error
 	evalSymlinks func(string) (string, error)
@@ -58,8 +52,6 @@ func newFilesystem(options Filesystem) filesystem {
 		readDir:      options.ReadDir,
 		lstat:        options.Lstat,
 		stat:         options.Stat,
-		readFile:     options.ReadFile,
-		writeFile:    options.WriteFile,
 		readlink:     options.Readlink,
 		symlink:      options.Symlink,
 		evalSymlinks: options.EvalSymlinks,
@@ -79,12 +71,6 @@ func newFilesystem(options Filesystem) filesystem {
 	}
 	if result.stat == nil {
 		result.stat = os.Stat
-	}
-	if result.readFile == nil {
-		result.readFile = os.ReadFile
-	}
-	if result.writeFile == nil {
-		result.writeFile = os.WriteFile
 	}
 	if result.readlink == nil {
 		result.readlink = os.Readlink
@@ -138,111 +124,22 @@ func rootOptions(filesystem filesystem) rootpkg.Options {
 	}
 }
 
+func (f filesystem) physicalPaths() physicalpath.Filesystem {
+	return physicalpath.Filesystem{Lstat: f.lstat, Stat: f.stat, EvalSymlinks: f.evalSymlinks, SameFile: f.sameFile}
+}
+
 func (f filesystem) physicalizeAbsolute(path string) (string, error) {
-	if path == "" {
-		return "", errors.New("path is empty")
-	}
-	if !filepath.IsAbs(path) {
-		return "", fmt.Errorf("path %q is not absolute", path)
-	}
-
-	current := filepath.Clean(path)
-	var suffix []string
-	for {
-		_, err := f.lstat(current)
-		switch {
-		case err == nil:
-			physical, evalErr := f.evalSymlinks(current)
-			if evalErr != nil {
-				return "", fmt.Errorf("resolve symbolic links in %q: %w", current, evalErr)
-			}
-			if !filepath.IsAbs(physical) {
-				return "", fmt.Errorf("resolved path %q is not absolute", physical)
-			}
-			parts := append([]string{filepath.Clean(physical)}, suffix...)
-			return filepath.Clean(filepath.Join(parts...)), nil
-		case errors.Is(err, fs.ErrNotExist):
-			parent := filepath.Dir(current)
-			if parent == current {
-				return "", fmt.Errorf("find existing path ancestor for %q: %w", path, err)
-			}
-			suffix = append([]string{filepath.Base(current)}, suffix...)
-			current = parent
-		default:
-			return "", fmt.Errorf("lstat path %q: %w", current, err)
-		}
-	}
+	return f.physicalPaths().ResolveAbsolute(path)
 }
-
 func (f filesystem) samePhysicalPath(first, second string) (bool, error) {
-	firstPhysical, err := f.physicalizeAbsolute(first)
-	if err != nil {
-		return false, err
-	}
-	secondPhysical, err := f.physicalizeAbsolute(second)
-	if err != nil {
-		return false, err
-	}
-	if firstPhysical == secondPhysical ||
-		(runtime.GOOS == "windows" && equalFoldPath(firstPhysical, secondPhysical)) {
-		return true, nil
-	}
-
-	firstInfo, firstErr := f.stat(firstPhysical)
-	secondInfo, secondErr := f.stat(secondPhysical)
-	if firstErr == nil && secondErr == nil {
-		return f.sameFile(firstInfo, secondInfo), nil
-	}
-	if firstErr != nil && !errors.Is(firstErr, fs.ErrNotExist) {
-		return false, fmt.Errorf("stat path %q: %w", firstPhysical, firstErr)
-	}
-	if secondErr != nil && !errors.Is(secondErr, fs.ErrNotExist) {
-		return false, fmt.Errorf("stat path %q: %w", secondPhysical, secondErr)
-	}
-	return false, nil
+	return f.physicalPaths().Equivalent(first, second)
 }
-
 func pathStrictlyWithin(base, candidate string) bool {
-	relative, err := filepath.Rel(filepath.Clean(base), filepath.Clean(candidate))
-	if err != nil || relative == "." || filepath.IsAbs(relative) {
-		return false
-	}
-	return relative != ".." && !hasParentPrefix(relative)
+	return physicalpath.StrictlyWithin(base, candidate)
 }
 
 func pathsOverlap(first, second string) bool {
-	return filepath.Clean(first) == filepath.Clean(second) ||
-		pathStrictlyWithin(first, second) ||
-		pathStrictlyWithin(second, first)
-}
-
-func hasParentPrefix(path string) bool {
-	return len(path) > 2 &&
-		path[:2] == ".." &&
-		os.IsPathSeparator(path[2])
-}
-
-func equalFoldPath(first, second string) bool {
-	if len(first) != len(second) {
-		return false
-	}
-	for index := range len(first) {
-		left := first[index]
-		right := second[index]
-		if left == right {
-			continue
-		}
-		if left >= 'A' && left <= 'Z' {
-			left += 'a' - 'A'
-		}
-		if right >= 'A' && right <= 'Z' {
-			right += 'a' - 'A'
-		}
-		if left != right {
-			return false
-		}
-	}
-	return true
+	return filepath.Clean(first) == filepath.Clean(second) || pathStrictlyWithin(first, second) || pathStrictlyWithin(second, first)
 }
 
 func preservedMode(mode fs.FileMode) fs.FileMode {

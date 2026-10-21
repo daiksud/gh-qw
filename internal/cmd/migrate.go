@@ -23,6 +23,7 @@ import (
 type MigrateGit interface {
 	migratepkg.ConfigGit
 	migratepkg.RepositoryGit
+	migratepkg.WorktreeLister
 	WorktreeRepair(context.Context, string, ...string) error
 }
 
@@ -44,14 +45,14 @@ type MigrateDependencies struct {
 }
 
 type migratePlanItem struct {
-	source       string
-	sourceRoot   string
-	destination  string
-	snapshot     migratepkg.RepositorySnapshot
-	backPointers migratepkg.BackPointerPlan
-	bulk         bool
-	singleRoots  []string
-	identity     string
+	source      string
+	sourceRoot  string
+	destination string
+	snapshot    migratepkg.RepositorySnapshot
+	worktrees   migratepkg.WorktreeRepairPlan
+	bulk        bool
+	singleRoots []string
+	identity    string
 }
 
 var migrateErrDeclined = errors.New("migration declined")
@@ -367,6 +368,7 @@ func migratePlanSingle(
 	}
 
 	item, err := migratePrepareSnapshot(
+		ctx,
 		dependencies,
 		snapshot,
 		"",
@@ -401,10 +403,11 @@ func migratePrepareItem(
 			snapshot.Path,
 		)
 	}
-	return migratePrepareSnapshot(dependencies, snapshot, sourceRoot, destination)
+	return migratePrepareSnapshot(ctx, dependencies, snapshot, sourceRoot, destination)
 }
 
 func migratePrepareSnapshot(
+	ctx context.Context,
 	dependencies MigrateDependencies,
 	snapshot migratepkg.RepositorySnapshot,
 	sourceRoot, destination string,
@@ -423,20 +426,22 @@ func migratePrepareSnapshot(
 	if err := migratepkg.ValidateTree(source, dependencies.Filesystem); err != nil {
 		return migratePlanItem{}, fmt.Errorf("preflight repository tree: %w", err)
 	}
-	backPointers, err := migratepkg.PlanBackPointers(
+	worktrees, err := migratepkg.PlanWorktreeRepair(
+		ctx,
 		source,
 		destination,
+		dependencies.Git,
 		dependencies.Filesystem,
 	)
 	if err != nil {
 		return migratePlanItem{}, fmt.Errorf("preflight linked worktrees: %w", err)
 	}
 	return migratePlanItem{
-		source:       source,
-		sourceRoot:   sourceRoot,
-		destination:  destination,
-		snapshot:     snapshot,
-		backPointers: backPointers,
+		source:      source,
+		sourceRoot:  sourceRoot,
+		destination: destination,
+		snapshot:    snapshot,
+		worktrees:   worktrees,
 	}, nil
 }
 
@@ -459,7 +464,7 @@ func migrateExecuteItem(
 	if err := migratepkg.ValidateTree(item.source, dependencies.Filesystem); err != nil {
 		return false, fmt.Errorf("revalidate repository tree: %w", err)
 	}
-	if err := item.backPointers.Revalidate(dependencies.Filesystem); err != nil {
+	if err := item.worktrees.Revalidate(ctx, dependencies.Git, dependencies.Filesystem); err != nil {
 		return false, fmt.Errorf("revalidate linked worktrees: %w", err)
 	}
 	if !item.bulk {
@@ -521,21 +526,14 @@ func migrateExecuteItem(
 		return false, fmt.Errorf("migrate %q to %q: %w", item.source, item.destination, err)
 	}
 
-	if err := item.backPointers.ApplyBackPointers(dependencies.Filesystem); err != nil {
-		return false, fmt.Errorf(
-			"repository moved to %q, but linked-worktree back-pointer repair failed; "+
-				"leave the repository at its destination and repair it manually: %w",
-			item.destination,
-			err,
-		)
-	}
-	repairPaths := item.backPointers.RepairPaths()
+	repairPaths := item.worktrees.RepairPaths()
 	if len(repairPaths) != 0 {
 		if err := dependencies.Git.WorktreeRepair(ctx, item.destination, repairPaths...); err != nil {
 			return false, fmt.Errorf(
 				"repository moved to %q, but git worktree repair failed; "+
-					"leave the repository there and rerun git worktree repair from that directory: %w",
+					"leave the repository there and rerun git worktree repair from that directory with these path arguments: %q: %w",
 				item.destination,
+				repairPaths,
 				err,
 			)
 		}
@@ -663,7 +661,7 @@ func migrateWritePlan(writer io.Writer, plan []migratePlanItem) error {
 		); err != nil {
 			return err
 		}
-		paths := item.backPointers.RepairPaths()
+		paths := item.worktrees.RepairPaths()
 		if len(paths) == 0 {
 			continue
 		}

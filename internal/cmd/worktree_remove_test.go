@@ -16,6 +16,7 @@ import (
 
 	"github.com/daiksud/gh-qw/internal/gitcmd"
 	"github.com/daiksud/gh-qw/internal/local"
+	"github.com/daiksud/gh-qw/internal/physicalpath"
 	"github.com/daiksud/gh-qw/internal/repospec"
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
 	"github.com/spf13/cobra"
@@ -1093,129 +1094,124 @@ func TestNewWorktreeRemoveCommandGoneKeepsParentOfOtherRepositoryWorktree(t *tes
 	}
 }
 
-func TestWorktreeRemoveGoneRegistrationPathsPhysicalizeMissingSymlinkSuffix(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("symbolic-link creation requires privileges on Windows")
-	}
-
-	root := worktreeRemovePhysicalPath(t, t.TempDir())
-	physicalParent := filepath.Join(root, "physical")
-	if err := os.MkdirAll(physicalParent, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	aliasParent := filepath.Join(root, "alias")
-	if err := os.Symlink(physicalParent, aliasParent); err != nil {
-		t.Fatal(err)
-	}
-	registered := filepath.Join(aliasParent, "missing", "child")
-	paths, err := worktreeRemoveGoneRegistrationPaths(removeFilesystem{
-		lstat:        os.Lstat,
-		evalSymlinks: filepath.EvalSymlinks,
-	}, registered)
-	if err != nil {
-		t.Fatalf("worktreeRemoveGoneRegistrationPaths() error = %v", err)
-	}
-	want := []string{
-		filepath.Clean(registered),
-		filepath.Join(physicalParent, "missing", "child"),
-	}
-	if !reflect.DeepEqual(paths, want) {
-		t.Fatalf("registration paths = %#v, want %#v", paths, want)
-	}
-}
-
-func TestNewWorktreeRemoveCommandGoneKeepsNewOtherRepositoryWorktreeBeforeRemoval(t *testing.T) {
-	root := worktreeRemovePhysicalPath(t, t.TempDir())
-	repositoryRoot := filepath.Join(root, "repositories")
-	worktreeRoot := filepath.Join(root, "worktrees")
-	repositoryPath := filepath.Join(repositoryRoot, "github.com", "acme", "widget")
-	otherRepositoryPath := filepath.Join(repositoryRoot, "github.com", "other", "tool")
-	for _, path := range []string{repositoryPath, otherRepositoryPath, worktreeRoot} {
-		if err := os.MkdirAll(path, 0o755); err != nil {
-			t.Fatal(err)
+func TestNewWorktreeRemoveCommandGoneKeepsNewNestedWorktreeBeforeRemoval(t *testing.T) {
+	for _, sameRepository := range []bool{false, true} {
+		name := "other repository"
+		if sameRepository {
+			name = "selected repository"
 		}
-	}
-	worktreeRemoveRunGit(t, repositoryPath, "init", "-b", "main")
-	worktreeRemoveRunGit(t, repositoryPath, "config", "user.name", "gh-qw test")
-	worktreeRemoveRunGit(t, repositoryPath, "config", "user.email", "gh-qw@example.invalid")
-	if err := os.WriteFile(filepath.Join(repositoryPath, ".gitignore"), []byte("child/\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	worktreeRemoveRunGit(t, repositoryPath, "add", ".gitignore")
-	worktreeRemoveRunGit(t, repositoryPath, "commit", "-m", "initial")
-	worktreeRemoveRunGit(t, repositoryPath, "config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*")
-	worktreeRemoveRunGit(t, otherRepositoryPath, "init", "-b", "main")
-	worktreeRemoveRunGit(t, otherRepositoryPath, "config", "user.name", "gh-qw test")
-	worktreeRemoveRunGit(t, otherRepositoryPath, "config", "user.email", "gh-qw@example.invalid")
-	if err := os.WriteFile(filepath.Join(otherRepositoryPath, "README"), []byte("other\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	worktreeRemoveRunGit(t, otherRepositoryPath, "add", "README")
-	worktreeRemoveRunGit(t, otherRepositoryPath, "commit", "-m", "initial")
-
-	parentBranch := "gone-parent"
-	parentPath := filepath.Join(worktreeRoot, "github.com", "acme", "widget", "gone")
-	if err := os.MkdirAll(filepath.Dir(parentPath), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	worktreeRemoveRunGit(t, repositoryPath, "worktree", "add", "-b", parentBranch, parentPath, "HEAD")
-	parentUpstream := "refs/remotes/origin/gone-parent"
-	worktreeRemoveRunGit(t, repositoryPath, "update-ref", parentUpstream, "HEAD")
-	worktreeRemoveRunGit(t, repositoryPath, "config", "branch."+parentBranch+".remote", "origin")
-	worktreeRemoveRunGit(t, repositoryPath, "config", "branch."+parentBranch+".merge", "refs/heads/gone-parent")
-	worktreeRemoveRunGit(t, repositoryPath, "update-ref", "-d", parentUpstream)
-
-	childPath := filepath.Join(parentPath, "child")
-	git := &worktreeRemoveFailingRunner{
-		Runner:   &gitcmd.Runner{Executable: "git", Stdout: io.Discard, Stderr: io.Discard},
-		failPath: parentPath,
-	}
-	var stdout, stderr bytes.Buffer
-	prompts := 0
-	discoveryCalls := 0
-	injections := 0
-	discover := func(ctx context.Context, roots []string, options ...local.DiscoveryOptions) (local.DiscoveryResult, error) {
-		discoveryCalls++
-		if discoveryCalls == 3 {
-			if prompts != 1 {
-				t.Fatalf("late inventory check ran after %d confirmations, want 1", prompts)
+		t.Run(name, func(t *testing.T) {
+			root := worktreeRemovePhysicalPath(t, t.TempDir())
+			repositoryRoot := filepath.Join(root, "repositories")
+			worktreeRoot := filepath.Join(root, "worktrees")
+			repositoryPath := filepath.Join(repositoryRoot, "github.com", "acme", "widget")
+			otherRepositoryPath := filepath.Join(repositoryRoot, "github.com", "other", "tool")
+			for _, path := range []string{repositoryPath, otherRepositoryPath, worktreeRoot} {
+				if err := os.MkdirAll(path, 0o755); err != nil {
+					t.Fatal(err)
+				}
 			}
-			worktreeRemoveRunGit(t, otherRepositoryPath, "worktree", "add", "-b", "live-child", childPath, "HEAD")
-			injections++
-		}
-		return local.DiscoverRepositories(ctx, roots, options...)
-	}
-	command := NewWorktreeRemoveCommand(WorktreeRemoveDependencies{
-		Resolver: worktreeRemoveStaticResolver{result: rootpkg.Result{
-			RepositoryRoots: []string{repositoryRoot},
-			WorktreeRoot:    worktreeRoot,
-		}},
-		Git:      git,
-		Discover: discover,
-		Getwd:    func() (string, error) { return root, nil },
-		Prompt: func(context.Context, io.Writer, string) (bool, error) {
-			prompts++
-			return true, nil
-		},
-		Stdout: &stdout,
-		Stderr: &stderr,
-	})
-	command.SetArgs([]string{"-R", "acme/widget", "--gone", "--force"})
-	err := command.Execute()
-	if got := ExitCode(err); got != 1 {
-		t.Fatalf("ExitCode(error=%v) = %d, want 1; stderr=%q", err, got, stderr.String())
-	}
-	if prompts != 1 || discoveryCalls != 3 || injections != 1 || len(git.removals) != 0 {
-		t.Fatalf("prompts=%d discovery=%d injections=%d removals=%#v", prompts, discoveryCalls, injections, git.removals)
-	}
-	if stdout.Len() != 0 || !strings.Contains(stderr.String(), "kept worktree \"gone\"") ||
-		!strings.Contains(stderr.String(), "contains registered worktree from \"github.com/other/tool\"") {
-		t.Fatalf("output stdout=%q stderr=%q", stdout.String(), stderr.String())
-	}
-	for _, path := range []string{parentPath, childPath} {
-		if info, statErr := os.Stat(path); statErr != nil || !info.IsDir() {
-			t.Fatalf("registered worktree %q changed: info=%v err=%v", path, info, statErr)
-		}
+			worktreeRemoveRunGit(t, repositoryPath, "init", "-b", "main")
+			worktreeRemoveRunGit(t, repositoryPath, "config", "user.name", "gh-qw test")
+			worktreeRemoveRunGit(t, repositoryPath, "config", "user.email", "gh-qw@example.invalid")
+			if err := os.WriteFile(filepath.Join(repositoryPath, ".gitignore"), []byte("child/\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			worktreeRemoveRunGit(t, repositoryPath, "add", ".gitignore")
+			worktreeRemoveRunGit(t, repositoryPath, "commit", "-m", "initial")
+			worktreeRemoveRunGit(t, repositoryPath, "config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*")
+			worktreeRemoveRunGit(t, otherRepositoryPath, "init", "-b", "main")
+			worktreeRemoveRunGit(t, otherRepositoryPath, "config", "user.name", "gh-qw test")
+			worktreeRemoveRunGit(t, otherRepositoryPath, "config", "user.email", "gh-qw@example.invalid")
+			if err := os.WriteFile(filepath.Join(otherRepositoryPath, "README"), []byte("other\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			worktreeRemoveRunGit(t, otherRepositoryPath, "add", "README")
+			worktreeRemoveRunGit(t, otherRepositoryPath, "commit", "-m", "initial")
+
+			parentBranch := "gone-parent"
+			parentPath := filepath.Join(worktreeRoot, "github.com", "acme", "widget", "gone")
+			if err := os.MkdirAll(filepath.Dir(parentPath), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			worktreeRemoveRunGit(t, repositoryPath, "worktree", "add", "-b", parentBranch, parentPath, "HEAD")
+			parentUpstream := "refs/remotes/origin/gone-parent"
+			worktreeRemoveRunGit(t, repositoryPath, "update-ref", parentUpstream, "HEAD")
+			worktreeRemoveRunGit(t, repositoryPath, "config", "branch."+parentBranch+".remote", "origin")
+			worktreeRemoveRunGit(t, repositoryPath, "config", "branch."+parentBranch+".merge", "refs/heads/gone-parent")
+			worktreeRemoveRunGit(t, repositoryPath, "update-ref", "-d", parentUpstream)
+
+			childRepository, childIdentity := otherRepositoryPath, "github.com/other/tool"
+			if sameRepository {
+				childRepository, childIdentity = repositoryPath, "github.com/acme/widget"
+			}
+			childPath := filepath.Join(parentPath, "child")
+			initialReads := map[string]int{}
+			initialPhase := true
+			git := &worktreeRemoveObservedRunner{worktreeRemoveFailingRunner: &worktreeRemoveFailingRunner{
+				Runner:   &gitcmd.Runner{Executable: "git", Stdout: io.Discard, Stderr: io.Discard},
+				failPath: parentPath,
+			}, onList: func(path string) {
+				if initialPhase {
+					initialReads[path]++
+				}
+			}}
+			var stdout, stderr bytes.Buffer
+			prompts := 0
+			discoveryCalls := 0
+			injections := 0
+			discover := func(ctx context.Context, roots []string, options ...local.DiscoveryOptions) (local.DiscoveryResult, error) {
+				discoveryCalls++
+				if discoveryCalls == 3 {
+					if prompts != 1 {
+						t.Fatalf("late inventory check ran after %d confirmations, want 1", prompts)
+					}
+					worktreeRemoveRunGit(t, childRepository, "worktree", "add", "-b", "live-child", childPath, "HEAD")
+					injections++
+				}
+				return local.DiscoverRepositories(ctx, roots, options...)
+			}
+			command := NewWorktreeRemoveCommand(WorktreeRemoveDependencies{
+				Resolver: worktreeRemoveStaticResolver{result: rootpkg.Result{
+					RepositoryRoots: []string{repositoryRoot},
+					WorktreeRoot:    worktreeRoot,
+				}},
+				Git:      git,
+				Discover: discover,
+				Getwd:    func() (string, error) { return root, nil },
+				Prompt: func(context.Context, io.Writer, string) (bool, error) {
+					prompts++
+					initialPhase = false
+					return true, nil
+				},
+				Stdout: &stdout,
+				Stderr: &stderr,
+			})
+			command.SetArgs([]string{"-R", "acme/widget", "--gone", "--force"})
+			err := command.Execute()
+			if got := ExitCode(err); got != 1 {
+				t.Fatalf("ExitCode(error=%v) = %d, want 1; stderr=%q", err, got, stderr.String())
+			}
+			for _, repository := range []string{repositoryPath, otherRepositoryPath} {
+				if initialReads[repository] != 1 {
+					t.Errorf("initial inventory reads for %q = %d, want 1", repository, initialReads[repository])
+				}
+			}
+
+			if prompts != 1 || discoveryCalls != 3 || injections != 1 || len(git.removals) != 0 {
+				t.Fatalf("prompts=%d discovery=%d injections=%d removals=%#v", prompts, discoveryCalls, injections, git.removals)
+			}
+			if stdout.Len() != 0 || !strings.Contains(stderr.String(), "kept worktree \"gone\"") ||
+				!strings.Contains(stderr.String(), "contains registered worktree from \""+childIdentity+"\"") {
+				t.Fatalf("output stdout=%q stderr=%q", stdout.String(), stderr.String())
+			}
+			for _, path := range []string{parentPath, childPath} {
+				if info, statErr := os.Stat(path); statErr != nil || !info.IsDir() {
+					t.Fatalf("registered worktree %q changed: info=%v err=%v", path, info, statErr)
+				}
+			}
+
+		})
 	}
 }
 
@@ -1371,8 +1367,8 @@ func TestNewWorktreeRemoveCommandGoneContinuesAfterGitFailure(t *testing.T) {
 	if got := ExitCode(err); got != 1 {
 		t.Fatalf("ExitCode(error=%v) = %d, want 1; stderr=%q", err, got, stderr.String())
 	}
-	if len(git.removals) != 2 || !removeSamePath(git.removals[0], paths[0]) ||
-		!removeSamePath(git.removals[1], paths[1]) {
+	if len(git.removals) != 2 || !physicalpath.SamePath(git.removals[0], paths[0]) ||
+		!physicalpath.SamePath(git.removals[1], paths[1]) {
 		t.Fatalf("WorktreeRemove paths = %#v, want %#v", git.removals, paths)
 	}
 	if _, err := os.Stat(paths[0]); err != nil {
@@ -1416,17 +1412,19 @@ func (git *worktreeRemoveFailingRunner) WorktreeRemove(
 	options gitcmd.WorktreeRemoveOptions,
 ) error {
 	git.removals = append(git.removals, options.Path)
-	if removeSamePath(options.Path, git.failPath) {
+	if physicalpath.SamePath(options.Path, git.failPath) {
 		return errors.New("simulated removal failure")
 	}
 	return git.Runner.WorktreeRemove(ctx, dir, options)
 }
 
 type worktreeRemoveFakeGit struct {
-	removals     []worktreeRemoveRemoval
-	removeErr    error
-	removeAction func(string) error
-	leavePath    bool
+	removals           []worktreeRemoveRemoval
+	removeErr          error
+	removeAction       func(string) error
+	leavePath          bool
+	postRemovalRecords []gitcmd.Worktree
+	postRemovalListErr error
 }
 
 func (git *worktreeRemoveFakeGit) OutputDir(
@@ -1441,7 +1439,10 @@ func (git *worktreeRemoveFakeGit) WorktreeList(
 	context.Context,
 	string,
 ) ([]gitcmd.Worktree, error) {
-	return nil, errors.New("unexpected WorktreeList call")
+	if len(git.removals) == 0 {
+		return nil, errors.New("unexpected WorktreeList before removal")
+	}
+	return append([]gitcmd.Worktree(nil), git.postRemovalRecords...), git.postRemovalListErr
 }
 
 func (git *worktreeRemoveFakeGit) BranchUpstreams(
@@ -1681,4 +1682,14 @@ func worktreeRemoveGitOutput(t *testing.T, dir string, args ...string) string {
 		t.Fatalf("git %s error = %v; output = %s", strings.Join(args, " "), err, output)
 	}
 	return string(output)
+}
+
+type worktreeRemoveObservedRunner struct {
+	*worktreeRemoveFailingRunner
+	onList func(string)
+}
+
+func (git *worktreeRemoveObservedRunner) WorktreeList(ctx context.Context, path string) ([]gitcmd.Worktree, error) {
+	git.onList(path)
+	return git.Runner.WorktreeList(ctx, path)
 }

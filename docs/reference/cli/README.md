@@ -346,6 +346,12 @@ worktree remove`.
 the exact planned paths to `stderr`. It neither prompts nor removes anything. Removal progress is
 also diagnostic output on `stderr`; successful `rm` leaves `stdout` empty.
 
+Each linked removal must leave both the exact path absent and its Git registration gone before
+empty parent directories are cleaned up. If a later step fails, `rm` reports the paths already
+removed and those remaining, including a path that disappeared before Git reported an error.
+Whole-repository removal revalidates the main repository after its linked worktrees are removed
+and deletes the main directory itself; Git does not remove the main worktree.
+
 There is no `--bare` or implicit force flag. If Git refuses a dirty or locked linked worktree,
 `rm` exits with status `1`; use the dedicated worktree command or Git directly when an explicit
 force operation is intended.
@@ -400,13 +406,18 @@ only after the copy completes successfully.
 
 For a main repository with linked worktrees, migration:
 
-1. rewrites `.git/worktrees/*/gitdir` back-pointers that referred to a path moved with the main
-   repository; and
-2. runs `git worktree repair` from the new main location to repair linked-worktree `.git`
-   pointers.
+1. obtains registered paths through `git worktree list --porcelain -z` before movement;
+2. maps paths inside the main directory to their destination, leaving external paths unchanged;
+3. revalidates registrations and physical boundaries before moving the main directory; and
+4. runs `git worktree repair` from the new main location with all mapped linked-worktree paths.
+
+Git repairs both directions of the association. `gh-qw` never rewrites Git administrative files
+to repair them, and does not fall back to editing those files when Git lacks repair support.
 
 A repair failure is reported as status `1` with the repository left at its new destination for
-manual recovery; it is never silently treated as success.
+manual recovery; it is never silently treated as success. The error lists the mapped worktree
+path arguments. Rerun `git worktree repair` from that destination with every listed path;
+running it without those arguments may leave moved internal worktrees unrepaired.
 
 Unless `-y` is present, `migrate` prints the complete plan and prompts before changing files.
 `--dry-run` prints the same plan, performs validation, does not prompt, and changes nothing.
@@ -557,9 +568,13 @@ registers that path with the selected main repository, and invokes `git worktree
 removes the main worktree. `-f` supplies one Git force level for a dirty worktree; a lock that Git
 requires stronger intervention to remove remains an error.
 
-After successful removal, empty slot-parent directories are removed upward to, but never
-including, `<worktree-root>/<canonical>`. Result and progress text go to `stderr`; `stdout` is
-empty.
+After Git reports success, `gh-qw` verifies that both the exact worktree path and its registration
+are gone. A retained or unknown registration prevents parent cleanup and success reporting.
+Empty slot-parent directories are then removed upward to, but never including,
+`<worktree-root>/<canonical>`. Cleanup preserves nonempty directories and symbolic links and
+refuses replaced directory identities or a changed cleanup boundary. A cleanup or diagnostic
+failure still reports that the worktree was removed. Result and progress text go to `stderr`;
+`stdout` is empty.
 
 `--gone` is a bulk mode and is mutually exclusive with `<branch>`. It considers registered linked
 worktrees only. A linked worktree is a candidate when it is attached to a local branch, that branch

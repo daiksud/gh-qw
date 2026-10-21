@@ -18,6 +18,7 @@ import (
 	"github.com/daiksud/gh-qw/internal/fsidentity"
 	"github.com/daiksud/gh-qw/internal/gitcmd"
 	"github.com/daiksud/gh-qw/internal/local"
+	"github.com/daiksud/gh-qw/internal/physicalpath"
 	"github.com/daiksud/gh-qw/internal/repospec"
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
 	"github.com/spf13/cobra"
@@ -534,7 +535,7 @@ func worktreePrunePrepareBase(
 		repository.Owner,
 		repository.Repo,
 	))
-	if !worktreePruneSamePath(base, expected) {
+	if !physicalpath.SamePath(base, expected) {
 		return "", fmt.Sprintf(
 			"leaving deterministic worktree directory for %q: derived path %q does not equal %q",
 			repository.Identity,
@@ -550,7 +551,7 @@ func worktreePrunePrepareBase(
 			err,
 		)
 	}
-	if !worktreePruneSamePath(physical, base) {
+	if !physicalpath.SamePath(physical, base) {
 		return "", fmt.Sprintf(
 			"leaving deterministic worktree directory %q: path contains a symbolic link",
 			base,
@@ -583,7 +584,7 @@ func worktreePrunePrepareAdminBase(
 		gitDirectory,
 		rootpkg.StrictlyUnder,
 	)
-	if err != nil || !worktreePruneSamePath(physicalGit, gitDirectory) {
+	if err != nil || !physicalpath.SamePath(physicalGit, gitDirectory) {
 		return "", fmt.Sprintf(
 			"leaving orphaned worktree directories for %q: main .git containment is unsafe",
 			repository.Identity,
@@ -603,7 +604,7 @@ func worktreePrunePrepareAdminBase(
 			err,
 		)
 	}
-	if !worktreePruneSamePath(physicalAdmin, adminBase) {
+	if !physicalpath.SamePath(physicalAdmin, adminBase) {
 		return "", fmt.Sprintf(
 			"leaving orphaned worktree directories for %q: administrative path contains a symbolic link",
 			repository.Identity,
@@ -650,7 +651,7 @@ func worktreePruneSnapshotAdmin(
 			!backpointerInfo.Mode().IsRegular() {
 			continue
 		}
-		snapshot.existing[worktreePrunePathKey(path)] = struct{}{}
+		snapshot.existing[physicalpath.Key(path)] = struct{}{}
 	}
 	return snapshot, ""
 }
@@ -685,7 +686,7 @@ func worktreePruneIndexRegistered(
 			)
 			continue
 		}
-		key := worktreePrunePathKey(physical)
+		key := physicalpath.Key(physical)
 		index.byPath[key] = append(index.byPath[key], worktree)
 		entry := worktreePruneRegisteredEntry{
 			path:     physical,
@@ -924,7 +925,7 @@ func (planner *worktreePrunePlanner) scanCandidate(path string) (bool, error) {
 			}
 			return false, nil
 		}
-		if worktreePrunePathKey(record.Path) != worktreePrunePathKey(path) {
+		if physicalpath.Key(record.Path) != physicalpath.Key(path) {
 			planner.warn(
 				"leaving worktree candidate %q: .git points to metadata registered for %q",
 				path,
@@ -944,7 +945,7 @@ func (planner *worktreePrunePlanner) scanCandidate(path string) (bool, error) {
 		return false, nil
 	}
 
-	if _, existed := planner.snapshot.existing[worktreePrunePathKey(target)]; existed &&
+	if _, existed := planner.snapshot.existing[physicalpath.Key(target)]; existed &&
 		!planner.request.dryRun {
 		return planner.addCandidate(path, target, worktreePruneProofMetadata, 0), nil
 	}
@@ -1071,7 +1072,7 @@ func worktreePruneReadCandidatePointer(
 	if err != nil {
 		return "", fmt.Errorf(".git pointer does not identify this repository: %w", err)
 	}
-	if !worktreePruneSamePath(physical, target) {
+	if !physicalpath.SamePath(physical, target) {
 		return "", errors.New(".git pointer target contains a symbolic link")
 	}
 	return filepath.Clean(physical), nil
@@ -1164,7 +1165,7 @@ func worktreePruneRecordForAdmin(
 		)
 	}
 	worktreePath := filepath.Dir(gitFile)
-	records := registered.byPath[worktreePrunePathKey(worktreePath)]
+	records := registered.byPath[physicalpath.Key(worktreePath)]
 	switch len(records) {
 	case 0:
 		return gitcmd.Worktree{}, fmt.Errorf(
@@ -1211,18 +1212,15 @@ func worktreePruneApplyCandidate(
 	if err := worktreePruneValidateRealDirectory(runtime, base, action.path); err != nil {
 		return fmt.Errorf("revalidate worktree %q before removal: %w", action.path, err)
 	}
-	candidateInfo, err := runtime.filesystem.lstat(action.path)
+	candidateInfo, err := fsidentity.Capture(action.path, runtime.filesystem.lstat, runtime.filesystem.sameFile)
 	if err != nil {
 		return fmt.Errorf("capture worktree %q before removal: %w", action.path, err)
-	}
-	if err := fsidentity.Prime(candidateInfo, runtime.filesystem.sameFile); err != nil {
-		return fmt.Errorf("capture worktree identity %q before removal: %w", action.path, err)
 	}
 	target, err := worktreePruneReadCandidatePointer(runtime, adminBase, action.path)
 	if err != nil {
 		return fmt.Errorf("revalidate worktree association for %q: %w", action.path, err)
 	}
-	if !worktreePruneSamePath(target, action.target) {
+	if !physicalpath.SamePath(target, action.target) {
 		return fmt.Errorf(
 			"revalidate worktree association for %q: administrative target changed",
 			action.path,
@@ -1246,7 +1244,7 @@ func worktreePruneApplyCandidate(
 
 	switch action.proof {
 	case worktreePruneProofMetadata:
-		if _, ok := snapshot.existing[worktreePrunePathKey(target)]; !ok {
+		if _, ok := snapshot.existing[physicalpath.Key(target)]; !ok {
 			return fmt.Errorf(
 				"refuse to remove worktree %q: Git-pruned metadata transition cannot be proven",
 				action.path,
@@ -1300,12 +1298,9 @@ func worktreePruneApplyEmpty(
 	if err := worktreePruneValidateRealDirectory(runtime, base, path); err != nil {
 		return fmt.Errorf("revalidate empty directory %q before removal: %w", path, err)
 	}
-	initialInfo, err := runtime.filesystem.lstat(path)
+	initialInfo, err := fsidentity.Capture(path, runtime.filesystem.lstat, runtime.filesystem.sameFile)
 	if err != nil {
 		return fmt.Errorf("capture empty directory %q before removal: %w", path, err)
-	}
-	if err := fsidentity.Prime(initialInfo, runtime.filesystem.sameFile); err != nil {
-		return fmt.Errorf("capture empty directory identity %q before removal: %w", path, err)
 	}
 	entries, err := runtime.filesystem.readDir(path)
 	if err != nil {
@@ -1333,7 +1328,7 @@ func worktreePruneValidateRealDirectory(
 	runtime worktreePruneRuntime,
 	base, path string,
 ) error {
-	if !worktreePruneStrictlyWithin(base, path) {
+	if !physicalpath.StrictlyWithin(base, path) {
 		return fmt.Errorf("%w: %q is not strictly below %q", rootpkg.ErrUnsafeTarget, path, base)
 	}
 	if err := worktreePruneValidateNoSymlinkPath(runtime, base, path, false); err != nil {
@@ -1343,7 +1338,7 @@ func worktreePruneValidateRealDirectory(
 	if err != nil {
 		return err
 	}
-	if !worktreePruneSamePath(physical, path) {
+	if !physicalpath.SamePath(physical, path) {
 		return errors.New("directory path contains a symbolic link")
 	}
 	info, err := runtime.filesystem.lstat(path)
@@ -1363,7 +1358,7 @@ func worktreePruneValidateNoSymlinkPath(
 ) error {
 	base = filepath.Clean(base)
 	target = filepath.Clean(target)
-	if !worktreePruneStrictlyWithin(base, target) {
+	if !physicalpath.StrictlyWithin(base, target) {
 		return fmt.Errorf("%w: target %q is outside %q", rootpkg.ErrUnsafeTarget, target, base)
 	}
 	baseInfo, err := runtime.filesystem.lstat(base)
@@ -1495,39 +1490,12 @@ func worktreePruneResolveExpiry(
 	return threshold, nil
 }
 
-func worktreePrunePhysicalizeAbsolute(
-	filesystem worktreePruneFilesystem,
-	path string,
-) (string, error) {
-	if path == "" || !filepath.IsAbs(path) {
-		return "", fmt.Errorf("path %q is not absolute", path)
-	}
-	current := filepath.Clean(path)
-	var suffix []string
-	for {
-		_, err := filesystem.lstat(current)
-		switch {
-		case err == nil:
-			physical, err := filesystem.evalSymlinks(current)
-			if err != nil {
-				return "", err
-			}
-			if !filepath.IsAbs(physical) {
-				return "", fmt.Errorf("resolved path %q is not absolute", physical)
-			}
-			parts := append([]string{filepath.Clean(physical)}, suffix...)
-			return filepath.Clean(filepath.Join(parts...)), nil
-		case errors.Is(err, fs.ErrNotExist):
-			parent := filepath.Dir(current)
-			if parent == current {
-				return "", err
-			}
-			suffix = append([]string{filepath.Base(current)}, suffix...)
-			current = parent
-		default:
-			return "", err
-		}
-	}
+func worktreePrunePhysicalizeAbsolute(filesystem worktreePruneFilesystem, path string) (string, error) {
+	return worktreePrunePhysicalPaths(filesystem).ResolveAbsolute(path)
+}
+
+func worktreePrunePhysicalPaths(filesystem worktreePruneFilesystem) physicalpath.Filesystem {
+	return physicalpath.Filesystem{Lstat: filesystem.lstat, Stat: filesystem.stat, EvalSymlinks: filesystem.evalSymlinks, SameFile: filesystem.sameFile, PathEqual: physicalpath.SamePath}
 }
 
 func worktreePruneRecordsForCandidate(
@@ -1535,18 +1503,15 @@ func worktreePruneRecordsForCandidate(
 	registered worktreePruneRegistered,
 	path string,
 ) ([]gitcmd.Worktree, error) {
-	key := worktreePrunePathKey(path)
+	key := physicalpath.Key(path)
 	records := append([]gitcmd.Worktree(nil), registered.byPath[key]...)
 
-	candidateInfo, err := runtime.filesystem.stat(path)
+	candidateInfo, err := fsidentity.Capture(path, runtime.filesystem.stat, runtime.filesystem.sameFile)
 	if err != nil {
 		return records, err
 	}
-	if err := fsidentity.Prime(candidateInfo, runtime.filesystem.sameFile); err != nil {
-		return records, err
-	}
 	for _, entry := range registered.entries {
-		if worktreePrunePathKey(entry.path) == key || entry.info == nil {
+		if physicalpath.Key(entry.path) == key || entry.info == nil {
 			continue
 		}
 		if runtime.filesystem.sameFile(candidateInfo, entry.info) {
@@ -1556,33 +1521,8 @@ func worktreePruneRecordsForCandidate(
 	return records, nil
 }
 
-func worktreePrunePathsEquivalent(
-	filesystem worktreePruneFilesystem,
-	first, second string,
-) (bool, error) {
-	firstPhysical, err := worktreePrunePhysicalizeAbsolute(filesystem, first)
-	if err != nil {
-		return false, err
-	}
-	secondPhysical, err := worktreePrunePhysicalizeAbsolute(filesystem, second)
-	if err != nil {
-		return false, err
-	}
-	if worktreePruneSamePath(firstPhysical, secondPhysical) {
-		return true, nil
-	}
-	firstInfo, firstErr := filesystem.stat(firstPhysical)
-	secondInfo, secondErr := filesystem.stat(secondPhysical)
-	if firstErr == nil && secondErr == nil {
-		return filesystem.sameFile(firstInfo, secondInfo), nil
-	}
-	if firstErr != nil && !errors.Is(firstErr, fs.ErrNotExist) {
-		return false, firstErr
-	}
-	if secondErr != nil && !errors.Is(secondErr, fs.ErrNotExist) {
-		return false, secondErr
-	}
-	return false, nil
+func worktreePrunePathsEquivalent(filesystem worktreePruneFilesystem, first, second string) (bool, error) {
+	return worktreePrunePhysicalPaths(filesystem).Equivalent(first, second)
 }
 
 func worktreePruneSingleLine(data []byte) (string, error) {
@@ -1597,34 +1537,6 @@ func worktreePruneSingleLine(data []byte) (string, error) {
 		return "", errors.New("value is not a single line")
 	}
 	return string(data), nil
-}
-
-func worktreePruneStrictlyWithin(base, candidate string) bool {
-	base = filepath.Clean(base)
-	candidate = filepath.Clean(candidate)
-	relative, err := filepath.Rel(base, candidate)
-	if err != nil || relative == "." || filepath.IsAbs(relative) {
-		return false
-	}
-	return relative != ".." &&
-		!strings.HasPrefix(relative, ".."+string(filepath.Separator))
-}
-
-func worktreePruneSamePath(first, second string) bool {
-	first = filepath.Clean(first)
-	second = filepath.Clean(second)
-	if first == second {
-		return true
-	}
-	return runtimepkg.GOOS == "windows" && strings.EqualFold(first, second)
-}
-
-func worktreePrunePathKey(path string) string {
-	path = filepath.Clean(path)
-	if runtimepkg.GOOS == "windows" {
-		return strings.ToLower(path)
-	}
-	return path
 }
 
 func worktreePruneWarning(writer io.Writer, message string) {

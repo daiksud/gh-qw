@@ -6,14 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"path/filepath"
-	"syscall"
 
-	"github.com/daiksud/gh-qw/internal/fsidentity"
 	"github.com/daiksud/gh-qw/internal/gitcmd"
 	"github.com/daiksud/gh-qw/internal/local"
+	"github.com/daiksud/gh-qw/internal/physicalpath"
+	"github.com/daiksud/gh-qw/internal/removal"
 	"github.com/daiksud/gh-qw/internal/repospec"
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
 	"github.com/spf13/cobra"
@@ -113,7 +112,6 @@ type worktreeRemoveRuntime struct {
 	fs         removeFilesystem
 	prompt     RemovePrompt
 	getwd      func() (string, error)
-	remove     func(string) error
 	stdout     io.Writer
 	stderr     io.Writer
 }
@@ -149,8 +147,6 @@ func (err *worktreeRemoveUsageError) Unwrap() error {
 func (err *worktreeRemoveUsageError) Is(target error) bool {
 	return target == repospec.ErrUsage
 }
-
-type worktreeRemoveFilesystem = removeFilesystem
 
 // NewWorktreeRemoveCommand returns the command that removes one deterministic
 // linked worktree or safely plans removal of all gone-upstream worktrees.
@@ -316,7 +312,6 @@ func worktreeRemovePrepareRuntime(
 		},
 		prompt: prompt,
 		getwd:  getwd,
-		remove: remove,
 		stdout: stdout,
 		stderr: stderr,
 	}
@@ -379,25 +374,12 @@ func worktreeRemoveRun(
 	if err != nil {
 		return fmt.Errorf("derive worktree path: %w", err)
 	}
-	filesystem := worktreeRemoveNewFilesystem(commandRuntime)
-	cleanupBaseInfo, err := worktreeRemoveCaptureCleanupBase(
-		filesystem,
-		base,
-		expectedPath,
-	)
-	if err != nil {
-		return fmt.Errorf("validate worktree cleanup boundary: %w", err)
-	}
 
-	worktree, err := commandRuntime.resolveManaged(
+	worktree, err := commandRuntime.observer().ResolveWorktree(
 		ctx,
 		repository,
 		roots.WorktreeRoot,
 		request.branch,
-		local.ManagedWorktreeOptions{
-			Git:        commandRuntime.git,
-			Filesystem: commandRuntime.filesystem,
-		},
 	)
 	if err != nil {
 		return fmt.Errorf(
@@ -416,36 +398,39 @@ func worktreeRemoveRun(
 		return err
 	}
 
-	if err := commandRuntime.git.WorktreeRemove(
-		ctx,
-		repository.Path,
-		gitcmd.WorktreeRemoveOptions{
-			Path:  worktree.Path,
-			Force: request.force,
-		},
-	); err != nil {
-		return fmt.Errorf(
-			"remove worktree %q: %w",
-			local.NormalizePathForOutput(worktree.Path),
-			err,
-		)
+	filesystem := commandRuntime.fs
+	cleanupBase, err := removal.CaptureNode(filesystem.observations(), "", base, removal.Directory, false)
+	if err != nil {
+		return fmt.Errorf("validate worktree cleanup boundary: %w", err)
+	}
+	cleanup, err := removal.CaptureCleanupChain(filesystem.observations(), base, filepath.Dir(expectedPath))
+	if err != nil {
+		return fmt.Errorf("capture worktree cleanup parents: %w", err)
 	}
 
-	normalizedPath := local.NormalizePathForOutput(worktree.Path)
-	if err := worktreeRemoveVerifyRemovedPath(filesystem, worktree.Path); err != nil {
-		return fmt.Errorf(
-			"worktree %q was removed by Git but its directory is unsafe: %w",
-			normalizedPath,
-			err,
-		)
-	}
-
-	cleanupErr := worktreeRemoveCleanupParents(
-		filesystem,
-		base,
-		worktree.Path,
-		cleanupBaseInfo,
+	result := filesystem.executor(commandRuntime.git).RemoveLinked(
+		ctx, repository.Path,
+		gitcmd.WorktreeRemoveOptions{Path: worktree.Path, Force: request.force},
+		cleanupBase, cleanup,
 	)
+	normalizedPath := local.NormalizePathForOutput(worktree.Path)
+	if result.Err != nil && result.FailedStep != removal.CleanupParents {
+		operation := fmt.Sprintf("remove worktree %q", normalizedPath)
+		switch result.FailedStep {
+		case removal.VerifyPath:
+			operation = fmt.Sprintf("worktree %q was removed by Git but its directory is unsafe", normalizedPath)
+		case removal.ReadRegistrations, removal.VerifyRegistration:
+			operation = fmt.Sprintf("worktree %q was removed by Git but its registration removal could not be verified", normalizedPath)
+		}
+		return fmt.Errorf("%s: %w", operation, result.Err)
+	}
+	cleanupErr := result.Err
+	if errors.Is(cleanupErr, removal.ErrCleanupParentShape) {
+		cleanupErr = nil
+	}
+	if errors.Is(cleanupErr, removal.ErrCleanupBoundary) {
+		cleanupErr = fmt.Errorf("worktree base %q changed after Git removal: %w", base, cleanupErr)
+	}
 	diagnosticErr := worktreeRemoveWriteDiagnostic(commandRuntime.stderr, normalizedPath)
 	return errors.Join(
 		worktreeRemoveWrapError(
@@ -453,10 +438,7 @@ func worktreeRemoveRun(
 			cleanupErr,
 		),
 		worktreeRemoveWrapError(
-			fmt.Sprintf(
-				"worktree %q was removed but write removal diagnostic",
-				normalizedPath,
-			),
+			fmt.Sprintf("worktree %q was removed but write removal diagnostic", normalizedPath),
 			diagnosticErr,
 		),
 	)
@@ -545,207 +527,11 @@ func worktreeRemoveValidateResolved(
 		return unsafe("managed lookup returned an inconsistent worktree identity")
 	case !filepath.IsAbs(worktree.Path):
 		return unsafe("managed lookup returned a non-absolute worktree path")
-	case !worktreeRemoveSamePath(worktree.Path, expectedPath):
+	case !physicalpath.SamePath(worktree.Path, expectedPath):
 		return unsafe("managed lookup returned a non-deterministic worktree path")
 	default:
 		return nil
 	}
-}
-
-func worktreeRemoveVerifyRemovedPath(
-	filesystem worktreeRemoveFilesystem,
-	worktreePath string,
-) error {
-	if _, err := filesystem.lstat(worktreePath); err == nil {
-		return fmt.Errorf(
-			"removed worktree directory %q still exists",
-			local.NormalizePathForOutput(worktreePath),
-		)
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("verify removed worktree directory %q: %w", worktreePath, err)
-	}
-	return nil
-}
-
-func worktreeRemoveCaptureCleanupBase(
-	filesystem worktreeRemoveFilesystem,
-	base, worktreePath string,
-) (fs.FileInfo, error) {
-	parent := filepath.Dir(filepath.Clean(worktreePath))
-	base = filepath.Clean(base)
-	if worktreeRemoveSamePath(parent, base) {
-		return nil, nil
-	}
-	if !worktreeRemovePathStrictlyWithin(base, parent) {
-		return nil, fmt.Errorf("parent %q is outside worktree base %q", parent, base)
-	}
-	info, err := worktreeRemoveInspectPhysicalDirectory(filesystem, base, base, false)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("inspect worktree base %q: %w", base, err)
-	}
-	return info, nil
-}
-
-func worktreeRemoveCleanupParents(
-	filesystem worktreeRemoveFilesystem,
-	base, worktreePath string,
-	cleanupBaseInfo fs.FileInfo,
-) error {
-	parent := filepath.Dir(filepath.Clean(worktreePath))
-	base = filepath.Clean(base)
-	if worktreeRemoveSamePath(parent, base) {
-		return nil
-	}
-	if !worktreeRemovePathStrictlyWithin(base, parent) {
-		return fmt.Errorf(
-			"parent %q is outside worktree base %q",
-			parent,
-			base,
-		)
-	}
-	revalidatedBase, err := worktreeRemoveInspectPhysicalDirectory(
-		filesystem,
-		base,
-		base,
-		false,
-	)
-	if err != nil {
-		return fmt.Errorf("revalidate worktree base %q: %w", base, err)
-	}
-	if cleanupBaseInfo == nil || !filesystem.sameFile(cleanupBaseInfo, revalidatedBase) {
-		return fmt.Errorf("worktree base %q changed after Git removal", base)
-	}
-
-	for current := parent; !worktreeRemoveSamePath(current, base); current = filepath.Dir(current) {
-		if !worktreeRemovePathStrictlyWithin(base, current) {
-			return fmt.Errorf(
-				"cleanup directory %q escaped worktree base %q",
-				current,
-				base,
-			)
-		}
-
-		info, err := filesystem.lstat(current)
-		if errors.Is(err, fs.ErrNotExist) {
-			continue
-		}
-		if err != nil {
-			return fmt.Errorf("inspect cleanup directory %q: %w", current, err)
-		}
-		if err := fsidentity.Prime(info, filesystem.sameFile); err != nil {
-			return fmt.Errorf("capture cleanup directory identity %q: %w", current, err)
-		}
-		if info.Mode()&fs.ModeSymlink != 0 || !info.IsDir() {
-			return nil
-		}
-		if _, err := worktreeRemoveInspectPhysicalDirectory(
-			filesystem,
-			base,
-			current,
-			true,
-		); err != nil {
-			return fmt.Errorf("revalidate cleanup directory %q: %w", current, err)
-		}
-
-		entries, err := filesystem.readDir(current)
-		if err != nil {
-			return fmt.Errorf("read cleanup directory %q: %w", current, err)
-		}
-		if len(entries) != 0 {
-			return nil
-		}
-
-		revalidated, err := filesystem.lstat(current)
-		if err != nil {
-			return fmt.Errorf("reinspect cleanup directory %q: %w", current, err)
-		}
-		if revalidated.Mode()&fs.ModeSymlink != 0 || !revalidated.IsDir() {
-			return nil
-		}
-		if !filesystem.sameFile(info, revalidated) {
-			return fmt.Errorf("cleanup directory %q changed during validation", current)
-		}
-
-		if err := filesystem.remove(current); err != nil {
-			if errors.Is(err, syscall.ENOTEMPTY) || errors.Is(err, syscall.EEXIST) {
-				return nil
-			}
-			return fmt.Errorf("remove empty cleanup directory %q: %w", current, err)
-		}
-	}
-	return nil
-}
-
-func worktreeRemoveNewFilesystem(
-	commandRuntime worktreeRemoveRuntime,
-) worktreeRemoveFilesystem {
-	readDir := commandRuntime.filesystem.ReadDir
-	if readDir == nil {
-		readDir = os.ReadDir
-	}
-	lstat := commandRuntime.filesystem.Lstat
-	if lstat == nil {
-		lstat = os.Lstat
-	}
-	evalSymlinks := commandRuntime.filesystem.EvalSymlinks
-	if evalSymlinks == nil {
-		evalSymlinks = filepath.EvalSymlinks
-	}
-	sameFile := commandRuntime.filesystem.SameFile
-	if sameFile == nil {
-		sameFile = os.SameFile
-	}
-	return worktreeRemoveFilesystem{
-		readDir:      readDir,
-		lstat:        lstat,
-		evalSymlinks: evalSymlinks,
-		sameFile:     sameFile,
-		remove:       commandRuntime.remove,
-	}
-}
-
-func worktreeRemoveInspectPhysicalDirectory(
-	filesystem worktreeRemoveFilesystem,
-	base, path string,
-	strictlyWithin bool,
-) (fs.FileInfo, error) {
-	info, err := filesystem.lstat(path)
-	if err != nil {
-		return nil, err
-	}
-	if err := fsidentity.Prime(info, filesystem.sameFile); err != nil {
-		return nil, fmt.Errorf("capture directory identity: %w", err)
-	}
-	if info.Mode()&fs.ModeSymlink != 0 || !info.IsDir() {
-		return nil, errors.New("path is not a real directory")
-	}
-
-	physical, err := filesystem.evalSymlinks(path)
-	if err != nil {
-		return nil, err
-	}
-	if !filepath.IsAbs(physical) {
-		return nil, fmt.Errorf("resolved path %q is not absolute", physical)
-	}
-	physical = filepath.Clean(physical)
-	if !worktreeRemoveSamePath(physical, path) {
-		return nil, fmt.Errorf("path resolves through a symbolic link to %q", physical)
-	}
-	if strictlyWithin && !worktreeRemovePathStrictlyWithin(base, physical) {
-		return nil, fmt.Errorf("resolved path %q is outside worktree base %q", physical, base)
-	}
-	return info, nil
-}
-
-func worktreeRemovePathStrictlyWithin(base, candidate string) bool {
-	return removePathStrictlyWithin(base, candidate)
-}
-
-func worktreeRemoveSamePath(first, second string) bool {
-	return removeSamePath(first, second)
 }
 
 func worktreeRemoveWriteWarnings(writer io.Writer, warnings []local.Warning) error {
@@ -780,4 +566,8 @@ func worktreeRemoveWrapError(operation string, err error) error {
 		return nil
 	}
 	return fmt.Errorf("%s: %w", operation, err)
+}
+
+func (commandRuntime worktreeRemoveRuntime) observer() removal.Observer {
+	return removal.Observer{Git: commandRuntime.git, Filesystem: commandRuntime.fs.observations(), LocalFilesystem: commandRuntime.filesystem, ResolveManaged: commandRuntime.resolveManaged, ValidateAssociation: commandRuntime.validateAssociation}
 }
