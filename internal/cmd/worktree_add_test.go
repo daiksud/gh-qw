@@ -24,58 +24,58 @@ import (
 
 func TestNewWorktreeAddCommandAutomaticResolution(t *testing.T) {
 	tests := []struct {
-		name string
-		args []string
-		configure func(*worktreeAddFixture)
-		wantOptions gitcmd.WorktreeAddOptions
+		name         string
+		args         []string
+		configure    func(*worktreeAddFixture)
+		wantOptions  gitcmd.WorktreeAddOptions
 		wantAPICalls int
-		wantSyncs []ghcmd.SyncOptions
+		wantSyncs    []ghcmd.SyncOptions
 	}{
 		{
-			name: "attaches existing local branch and ignores explicit commit-ish",
-			args: []string{"feature/local", "ignored"},
-			configure: func(f *worktreeAddFixture) { f.git.localBranches["feature/local"] = true },
+			name:        "attaches existing local branch and ignores explicit commit-ish",
+			args:        []string{"feature/local", "ignored"},
+			configure:   func(f *worktreeAddFixture) { f.git.localBranches["feature/local"] = true },
 			wantOptions: gitcmd.WorktreeAddOptions{Commitish: "feature/local"},
 		},
 		{
-			name: "delegates matching remote branches to Git",
-			args: []string{"feature/origin"},
-			configure: func(f *worktreeAddFixture) { f.git.remoteBranches["origin/feature/origin"] = true },
+			name:        "delegates matching remote branches to Git",
+			args:        []string{"feature/origin"},
+			configure:   func(f *worktreeAddFixture) { f.git.remoteBranches["origin/feature/origin"] = true },
 			wantOptions: gitcmd.WorktreeAddOptions{Commitish: "feature/origin"},
 		},
 		{
-			name: "delegates custom remotes to Git",
-			args: []string{"feature/upstream"},
-			configure: func(f *worktreeAddFixture) {
+			name:        "delegates custom remotes to Git",
+			args:        []string{"feature/upstream"},
+			configure:   func(f *worktreeAddFixture) {
 				f.git.remotes = []string{"upstream"}
 				f.git.remoteBranches["upstream/feature/upstream"] = true
 			},
 			wantOptions: gitcmd.WorktreeAddOptions{Commitish: "feature/upstream"},
 		},
 		{
-			name: "delegates missing branches to Git without speculative API",
-			args: []string{"feature/missing"},
+			name:        "delegates missing branches to Git without speculative API",
+			args:        []string{"feature/missing"},
 			wantOptions: gitcmd.WorktreeAddOptions{Commitish: "feature/missing"},
 		},
 		{
-			name: "creates branch from explicit commit-ish through Git",
-			args: []string{"feature/explicit", "release-base"},
+			name:        "creates branch from explicit commit-ish through Git",
+			args:        []string{"feature/explicit", "release-base"},
 			wantOptions: gitcmd.WorktreeAddOptions{Commitish: "release-base", NewBranch: "feature/explicit"},
 		},
 		{
-			name: "explicit new branch starts at local GitHub default",
-			args: []string{"-b", "feature/api-local"},
-			configure: func(f *worktreeAddFixture) { f.git.localBranches["main"] = true },
-			wantOptions: gitcmd.WorktreeAddOptions{Commitish: "refs/heads/main", NewBranch: "feature/api-local"},
+			name:         "explicit new branch starts at local GitHub default",
+			args:         []string{"-b", "feature/api-local"},
+			configure:    func(f *worktreeAddFixture) { f.git.localBranches["main"] = true },
+			wantOptions:  gitcmd.WorktreeAddOptions{Commitish: "refs/heads/main", NewBranch: "feature/api-local"},
 			wantAPICalls: 1,
 		},
 		{
-			name: "explicit new branch synchronizes missing local default",
-			args: []string{"-b", "feature/api-sync"},
-			configure: func(f *worktreeAddFixture) { f.gh.syncCreatesLocalBranch = true },
-			wantOptions: gitcmd.WorktreeAddOptions{Commitish: "refs/heads/main", NewBranch: "feature/api-sync"},
+			name:         "explicit new branch synchronizes missing local default",
+			args:         []string{"-b", "feature/api-sync"},
+			configure:    func(f *worktreeAddFixture) { f.gh.syncCreatesLocalBranch = true },
+			wantOptions:  gitcmd.WorktreeAddOptions{Commitish: "refs/heads/main", NewBranch: "feature/api-sync"},
 			wantAPICalls: 1,
-			wantSyncs: []ghcmd.SyncOptions{{Host: "github.com", Source: "acme/widget", Branch: "main"}},
+			wantSyncs:    []ghcmd.SyncOptions{{Host: "github.com", Source: "acme/widget", Branch: "main"}},
 		},
 	}
 	for _, test := range tests {

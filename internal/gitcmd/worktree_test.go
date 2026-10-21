@@ -93,7 +93,7 @@ func TestParseWorktreeListRejectsMalformedKnownFields(t *testing.T) {
 		{name: "empty HEAD", input: "worktree /repo\x00HEAD\x00"},
 		{name: "empty branch", input: "worktree /repo\x00branch\x00"},
 		{
-			name: "branch and detached",
+			name:  "branch and detached",
 			input: "" +
 				"worktree /repo\x00" +
 				"branch refs/heads/main\x00" +

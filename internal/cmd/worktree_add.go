@@ -495,7 +495,7 @@ func worktreeAddRun(
 	if syncBranch != "" {
 		if err := runtime.gh.RepoSync(
 			ctx, repository.Path, ghcmd.SyncOptions{
-				Host: repository.Host,
+				Host:   repository.Host,
 				Source: repository.Owner + "/" + repository.Repo,
 				Branch: syncBranch,
 			},
