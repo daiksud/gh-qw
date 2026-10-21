@@ -1,7 +1,7 @@
 ---
 type: adr
 title: "ADR-0002: Integrate distribution, network operations, and authentication with `gh`"
-description: "Distribute gh-qw as a GitHub CLI extension and use deterministic gh authentication for GitHub network operations."
+description: "Distribute gh-qw as a GitHub CLI extension and use gh active accounts and standard authentication for GitHub network operations."
 resource: gh-qw
 tags: [gh-qw, adr, adr-0002, github-cli, distribution, authentication]
 timestamp: 2026-08-05
@@ -11,6 +11,7 @@ timestamp: 2026-08-05
 
 - **Status:** Accepted
 - **Date:** 2026-08-05
+- **Updated:** 2026-10-21
 - **Deciders:** gh-qw maintainers
 - **Related:** [ADR-0003](../0003-go-cobra-prebuilt-binaries/), [ADR-0004](../0004-ghq-directory-convention/), [ADR-0006](../0006-command-set-v1/)
 
@@ -22,8 +23,8 @@ and terminal workflows. A standalone distribution or a separate network credenti
 duplicate installation, host, and authentication behavior.
 
 Plain networked Git can use a credential helper unrelated to the accounts authenticated in `gh`.
-Conversely, silently accepting whichever `gh` account is active makes multi-account behavior
-ambiguous. Authentication must be selected deterministically before a network request begins.
+Selecting accounts by repository owner duplicates gh authentication policy and adds prompts, cache
+state, and token overrides. Users should configure authentication through gh itself.
 
 ## Decision
 
@@ -37,19 +38,15 @@ state. Local branch, revision, and worktree operations continue to use Git direc
 Consequently, `get` rejects `file://` input, while local discovery and `migrate` can still resolve
 it.
 
-Before a delegated operation or GitHub API request, account resolution follows this order:
+Use gh's active account for the selected host and its standard token environment variables.
+Pass the execution environment unchanged to clone and sync. Do not enumerate or select
+accounts, maintain a selection cache, inject tokens, perform unconditional auth preflight, or
+switch accounts during an operation. Local operations do not query authentication.
 
-1. explicit `GH_TOKEN` or `GITHUB_TOKEN`;
-2. a valid cached login for `<host>/<owner>`;
-3. exactly one authenticated login matching the owner case-insensitively;
-4. the sole authenticated account for the host; or
-5. an interactive selection from multiple accounts.
-
-The selected login is cached and its token is injected only into the specific subprocess or API
-call. Cache, account-listing, token, prompt, or ambiguity errors fail before network access.
-There is no fallback to an ambient active account. Resolution is lazy: an existing repository
-without `--update`, and a worktree operation satisfied entirely from local state, do not list
-accounts or prompt.
+Explicit hosts take precedence. Bare repository names and hostless owner/repository input use
+`GH_HOST` when set, otherwise `github.com`; stored Enterprise accounts do not imply a host.
+Users migrating from owner matching must configure the desired gh active account or standard
+token variables and specify Enterprise hosts. Old account cache files are ignored.
 
 ## Consequences
 
@@ -57,8 +54,8 @@ accounts or prompt.
 
 - Users get familiar installation, upgrade, command discovery, host, and authentication flows.
 - The `gh qw` namespace clearly identifies the tool as part of a GitHub CLI workflow.
-- Private repository access uses the explicitly resolved `gh` account.
-- Ambiguous or broken authentication state fails before any network side effect.
+- Private repository access uses the same authentication users configure for gh.
+- Concurrent operations do not mutate shared account selection or maintain a parallel cache.
 
 ### Negative
 
@@ -66,8 +63,8 @@ accounts or prompt.
 - Releases must follow GitHub CLI extension naming and asset conventions.
 - `get` cannot clone `file://` repositories, and network operations are limited to GitHub hosts
   known to `gh`.
-- Multi-account selection can require an interactive choice, and the account cache is additional
-  local operational state.
+- Users must configure the active account or environment before invoking gh-qw when the default
+  account lacks access.
 
 ### Neutral
 

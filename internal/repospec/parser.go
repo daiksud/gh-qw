@@ -53,6 +53,8 @@ type IdentityResolver func() (host, username string, err error)
 
 // Options controls repository parsing.
 type Options struct {
+	// DefaultHost selects the host for owner/repository shorthand; empty uses github.com.
+	DefaultHost     string
 	SSH             bool
 	Roots           []string
 	WorkingDir      string
@@ -348,7 +350,11 @@ func (p parser) parsePlain() (Spec, error) {
 		}
 		owner = username
 	case 2:
-		auth, err = parseAuthority(defaultHost)
+		host := p.options.DefaultHost
+		if host == "" {
+			host = defaultHost
+		}
+		auth, err = parseAuthority(host)
 		if err != nil {
 			return Spec{}, err
 		}

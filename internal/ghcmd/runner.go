@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"strings"
 
 	"github.com/daiksud/gh-qw/internal/procio"
 )
@@ -22,8 +21,7 @@ type commandContextFunc func(context.Context, string, ...string) *exec.Cmd
 // streams, and the inherited environment. A gh subprocess never receives the
 // calling process's standard input; its own standard input is always the
 // null device, so it can never block a caller waiting on a terminal that
-// never reaches EOF. Interactive confirmation (see internal/ghauth,
-// internal/cmd rm/migrate) opens the controlling terminal directly instead
+// never reaches EOF. Interactive confirmation (see internal/cmd rm/migrate) opens the controlling terminal directly instead
 // of going through gh's standard input.
 //
 // When Stdout or Stderr resolves to an *os.File (see procio.PassthroughFile),
@@ -50,34 +48,6 @@ func NewRunner() *Runner {
 		Stdout:     os.Stdout,
 		Stderr:     os.Stderr,
 	}
-}
-
-// WithToken returns a copy of r whose subprocess environment authenticates
-// as token instead of gh's own active account, by setting GH_TOKEN and
-// removing any existing GH_TOKEN or GITHUB_TOKEN entry. The base
-// environment is r.Env if already set, otherwise the current process
-// environment, so unrelated inherited variables (PATH, HOME, and so on) are
-// preserved. An empty token returns r unchanged, deferring to gh's own
-// ambient authentication.
-func (r Runner) WithToken(token string) Runner {
-	if token == "" {
-		return r
-	}
-
-	base := r.Env
-	if base == nil {
-		base = os.Environ()
-	}
-	env := make([]string, 0, len(base)+1)
-	for _, entry := range base {
-		key, _, _ := strings.Cut(entry, "=")
-		if key == "GH_TOKEN" || key == "GITHUB_TOKEN" {
-			continue
-		}
-		env = append(env, entry)
-	}
-	r.Env = append(env, "GH_TOKEN="+token)
-	return r
 }
 
 // CommandError describes a gh process failure. Error deliberately omits
@@ -158,10 +128,8 @@ func (r *Runner) runDir(ctx context.Context, dir string, args ...string) error {
 	return nil
 }
 
-// Output executes gh in the current directory and captures stdout, using
-// the configured standard streams for stdin and stderr. This is used for
-// host-scoped gh subcommands (such as `gh auth status`/`gh auth token` in
-// internal/ghauth) that are not tied to a repository's working directory.
+// Output executes gh in the current directory and captures stdout.
+// Stderr uses the configured stream and stdin reads from the null device.
 func (r *Runner) Output(ctx context.Context, args ...string) ([]byte, error) {
 	return r.outputDir(ctx, "", args...)
 }

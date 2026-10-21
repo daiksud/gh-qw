@@ -11,11 +11,10 @@ import (
 const (
 	ConfigHome = "XDG_CONFIG_HOME"
 	DataHome   = "XDG_DATA_HOME"
-	CacheHome  = "XDG_CACHE_HOME"
 )
 
 // BaseDir resolves an XDG base directory: the value of variable (one of
-// ConfigHome, DataHome, or CacheHome) when it is set to an absolute path,
+// ConfigHome or DataHome) when it is set to an absolute path,
 // otherwise homeDir joined with fallback's path components. Nil lookupEnv or
 // homeDir use the operating-system defaults (os.LookupEnv, os.UserHomeDir).
 //

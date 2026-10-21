@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"sort"
 	"strings"
 
 	"github.com/cli/go-gh/v2/pkg/api"
@@ -23,7 +22,6 @@ type restClient interface {
 // Client provides the GitHub authentication and API operations used by gh-qw.
 type Client struct {
 	hostOverride func() string
-	knownHosts   func() []string
 	tokenForHost func(string) (string, string)
 	newREST      func(string, string) (restClient, error)
 }
@@ -50,7 +48,6 @@ func NewClient() *Client {
 		hostOverride: func() string {
 			return os.Getenv("GH_HOST")
 		},
-		knownHosts:   auth.KnownHosts,
 		tokenForHost: auth.TokenForHost,
 		newREST: func(host, token string) (restClient, error) {
 			return api.NewRESTClient(api.ClientOptions{
@@ -99,13 +96,9 @@ func (c *Client) ResolveIdentity(ctx context.Context) (Identity, error) {
 	return Identity{Host: host, Login: login}, nil
 }
 
-// DefaultBranch returns the default branch for a repository on an explicit
-// GitHub host. When tokenOverride is non-empty, it is used to authenticate
-// the request instead of the token gh has stored for host; this lets a
-// caller target a specific gh-authenticated account for a repository whose
-// owner differs from gh's active account (see internal/ghauth). When it is
-// empty, the client uses gh's token for host.
-func (c *Client) DefaultBranch(ctx context.Context, host, owner, repo, tokenOverride string) (string, error) {
+// DefaultBranch returns the default branch using gh's authentication for the
+// explicit repository host.
+func (c *Client) DefaultBranch(ctx context.Context, host, owner, repo string) (string, error) {
 	host = normalizeHost(host)
 	owner = strings.TrimSpace(owner)
 	repo = strings.TrimSpace(repo)
@@ -115,10 +108,7 @@ func (c *Client) DefaultBranch(ctx context.Context, host, owner, repo, tokenOver
 		return "", fmt.Errorf("lookup default branch for %q: host, owner, and repository are required", identity)
 	}
 
-	token := tokenOverride
-	if token == "" {
-		token, _ = c.tokenForHost(host)
-	}
+	token, _ := c.tokenForHost(host)
 	if token == "" {
 		return "", fmt.Errorf("lookup default branch for %q: authentication token not found for host %q", identity, host)
 	}
@@ -144,66 +134,19 @@ func (c *Client) DefaultBranch(ctx context.Context, host, owner, repo, tokenOver
 	return branch, nil
 }
 
-type authenticatedHost struct {
-	host  string
-	token string
-}
-
 func (c *Client) resolveHost() (string, string, error) {
-	if override := normalizeHost(c.hostOverride()); override != "" {
-		token, _ := c.tokenForHost(override)
-		if token == "" {
-			return "", "", newIdentityError(
-				"cannot resolve authenticated GitHub user for %q: no authentication token found; run \"gh auth login --hostname %s\" or specify <owner>/<repo>",
-				override, override,
-			)
-		}
-		return override, token, nil
+	host := normalizeHost(c.hostOverride())
+	if host == "" {
+		host = githubHost
 	}
-
-	if token, _ := c.tokenForHost(githubHost); token != "" {
-		return githubHost, token, nil
-	}
-
-	seen := map[string]struct{}{githubHost: {}}
-	hosts := make([]authenticatedHost, 0)
-	for _, candidate := range c.knownHosts() {
-		host := normalizeHost(candidate)
-		if host == "" {
-			continue
-		}
-		if _, ok := seen[host]; ok {
-			continue
-		}
-		seen[host] = struct{}{}
-
-		token, _ := c.tokenForHost(host)
-		if token != "" {
-			hosts = append(hosts, authenticatedHost{host: host, token: token})
-		}
-	}
-
-	sort.Slice(hosts, func(i, j int) bool {
-		return hosts[i].host < hosts[j].host
-	})
-
-	switch len(hosts) {
-	case 0:
+	token, _ := c.tokenForHost(host)
+	if token == "" {
 		return "", "", newIdentityError(
-			"cannot resolve authenticated GitHub user: no authenticated host found; run \"gh auth login\" or specify <owner>/<repo>",
-		)
-	case 1:
-		return hosts[0].host, hosts[0].token, nil
-	default:
-		names := make([]string, len(hosts))
-		for i, host := range hosts {
-			names[i] = host.host
-		}
-		return "", "", newIdentityError(
-			"cannot resolve authenticated GitHub user: multiple authenticated hosts found (%s); set GH_HOST or specify <owner>/<repo>",
-			strings.Join(names, ", "),
+			"cannot resolve authenticated GitHub user for %q: no authentication token found; run \"gh auth login --hostname %s\" or specify <owner>/<repo>",
+			host, host,
 		)
 	}
+	return host, token, nil
 }
 
 func normalizeHost(host string) string {

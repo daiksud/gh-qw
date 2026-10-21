@@ -229,29 +229,13 @@ normal `gh-qw` operation.
 
 ## Account cache
 
-`get` and `worktree add` cache the gh account selected for each `<host>/<owner>` (see
-[gh account selection](../cli/#gh-account-selection)). A valid cache entry avoids listing all
-accounts again, while the cached account's token is still validated before use.
+The former account-selection cache is retired. `gh-qw` no longer reads, creates, updates, or
+deletes `$XDG_CACHE_HOME/ghqw/accounts.json` (or `~/.cache/ghqw/accounts.json` when the former XDG
+setting was absent, empty, or relative). Existing files, including malformed files, have no
+effect on operations. You can remove them manually; no cache migration is required.
 
-The cache file location is:
-
-- `$XDG_CACHE_HOME/ghqw/accounts.json`, when `XDG_CACHE_HOME` is set to an absolute path; otherwise
-- `~/.cache/ghqw/accounts.json`.
-
-The account cache, the [configuration file](#configuration-file), and the
-[worktree root](#worktree-root) all follow the same absolute-only XDG rule, but under different
-variables: the cache is machine-written operational state produced by resolution, so it uses
-`XDG_CACHE_HOME`, distinct from the user-authored configuration file's `XDG_CONFIG_HOME` and the
-worktree data root's `XDG_DATA_HOME`.
-
-The file is JSON, holds only `<host>/<owner>` to gh login mappings — never a token or other
-secret — and is written with restrictive permissions (`0700` directory, `0600` file) on POSIX
-platforms. A missing file means no choices have been cached. An unreadable or malformed file, an
-invalid schema, or a failed cache update is an account-resolution error and prevents the network
-operation. A cached login whose token is no longer available is removed before account listing
-continues; failure to persist that removal is also an error. Delete the file to forget every
-cached choice; delete or edit an entry to change one repository owner's cached account, keeping
-the JSON schema valid.
+Choose gh's active account or standard token environment variables as described in
+[gh account selection](../cli/#gh-account-selection).
 
 ## Relevant environment inherited from `gh` and Git
 
@@ -259,8 +243,7 @@ the JSON schema valid.
 `GHQW_CONFIG`, `GHQW_HOST`, `GHQW_LOOK`, or VCS-selection variable.
 
 Every `gh` or Git subprocess `gh-qw` runs inherits the calling process's complete environment
-unless a specific variable is deliberately overridden (currently only `GH_TOKEN`, when automatic
-account selection resolves one — see [gh account selection](../cli/#gh-account-selection)).
+without authentication-specific overrides.
 `gh-qw` never clears or restricts the rest of the environment before spawning `gh` or Git, so any
 variable either of them already documents — including the families below — reaches them exactly as
 it would running standalone.
@@ -270,12 +253,12 @@ Standard tool variables can still affect the external services used by a command
 | Variable or family | Effect |
 | --- | --- |
 | `HOME` and the platform's user-profile settings | Affect operating-system home resolution and therefore `~`, and therefore the fallback location of every XDG-based path below when its respective XDG variable is unset, empty, or relative. |
-| `XDG_CONFIG_HOME` | Relocates the [configuration file](#configuration-file) when set to an absolute path; it does not affect the worktree root or the account cache. |
-| `XDG_DATA_HOME` | Relocates the default [worktree root](#worktree-root) when set to an absolute path; it does not affect the configuration file or the account cache, and it has no effect when `GHQW_WORKTREE_ROOT` or `worktree_root` is set. |
-| `XDG_CACHE_HOME` | Relocates the [account cache](#account-cache) used by `get` and `worktree add`; it does not affect the configuration file or the repository/worktree roots. |
-| `GH_HOST` | Selects the `gh` authentication host for bare `<repo>` completion and host API calls when no explicit host is present. |
-| `GH_TOKEN`, `GITHUB_TOKEN` | When set, skip `get`'s and `worktree add`'s automatic gh [account selection](../cli/#gh-account-selection) entirely; that token authenticates every network operation, exactly as it would without `gh-qw`. |
-| `GH_ENTERPRISE_TOKEN`, `GITHUB_ENTERPRISE_TOKEN` | May supply standard GitHub CLI/API authentication for the selected host. |
+| `XDG_CONFIG_HOME` | Relocates the [configuration file](#configuration-file) when set to an absolute path; it does not affect the worktree root. |
+| `XDG_DATA_HOME` | Relocates the default [worktree root](#worktree-root) when set to an absolute path; it does not affect the configuration file, and it has no effect when `GHQW_WORKTREE_ROOT` or `worktree_root` is set. |
+| `XDG_CACHE_HOME` | Does not configure any gh-qw cache; the former [account cache](#account-cache) is ignored. |
+| `GH_HOST` | Selects the host for bare `<repo>` and hostless `owner/repo` input. An explicit URL or host takes precedence; the default is `github.com`. |
+| `GH_TOKEN`, `GITHUB_TOKEN` | Reach gh unchanged; gh applies its standard GitHub.com token precedence and host rules. |
+| `GH_ENTERPRISE_TOKEN`, `GITHUB_ENTERPRISE_TOKEN` | Reach gh unchanged; gh applies its standard GitHub Enterprise token precedence and host rules. |
 | `GH_CONFIG_DIR` | May relocate GitHub CLI's own authentication/configuration state; it does not relocate `gh-qw` configuration. |
 | `GIT_SSH`, `GIT_SSH_COMMAND`, `GIT_ASKPASS`, `SSH_ASKPASS`, `GIT_TERMINAL_PROMPT` | Affect Git transport and credential prompting when inherited by Git subprocesses. |
 | Git credential helpers and standard Git config-location variables | Continue to affect Git itself, but never define `gh-qw` roots or identity rules. |

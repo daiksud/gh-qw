@@ -363,6 +363,37 @@ func TestCLIRepositoryAndWorktreeLifecycle(t *testing.T) {
 	assertPathMissing(t, migrateDestination)
 }
 
+func TestCLIGetUsesGhWithoutAccountPreflight(t *testing.T) {
+	fixture := newCLIFixture(t)
+	env := fixture.envWithPathPrepended(fixture.buildFakeGh(t))
+	cache := filepath.Join(fixture.home, "xdg-cache", "ghqw", "accounts.json")
+	if err := os.MkdirAll(filepath.Dir(cache), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const sentinel = "legacy account cache is deliberately invalid\n"
+	if err := os.WriteFile(cache, []byte(sentinel), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"get", "acme/serial"},
+		{"get", "--parallel", "acme/parallel", "other/widget"},
+		{"get", "--update", "acme/serial"},
+	} {
+		result := fixture.runCLIWithEnv(t, env, args...)
+		assertStatus(t, result, 0)
+		if strings.Contains(strings.Join(args, " "), "--update") {
+			assertContains(t, result.stderr, "fake gh: synchronized acme/serial")
+		}
+	}
+	for _, repo := range []string{"acme/serial", "acme/parallel", "other/widget"} {
+		assertPathExists(t, filepath.Join(fixture.repository, "github.com", filepath.FromSlash(repo), ".git"))
+	}
+	data, err := os.ReadFile(cache)
+	if err != nil || string(data) != sentinel {
+		t.Fatalf("legacy account cache changed: %q, %v", data, err)
+	}
+}
+
 // TestCLIGetDoesNotBlockOnAnOpenCallerStandardInput verifies that `gh qw get`
 // completes without waiting for EOF from the calling process. The test keeps
 // gh-qw's standard input connected to an open pipe and uses a fake gh on PATH
@@ -531,41 +562,42 @@ func newCLIFixture(t *testing.T) *cliFixture {
 	return fixture
 }
 
-// isolatedEnvironment strips the inherited process environment down to a
-// deterministic baseline, then sets fixture-scoped replacements below. It
-// blocks GH_TOKEN and GITHUB_TOKEN so the host machine's own gh
-// authentication (if any) can never bypass the account-resolution scenarios
-// these tests construct explicitly.
+// isolatedEnvironment removes inherited GitHub authentication and host settings
+// before installing fixture-scoped paths. Tests add explicit environment values
+// only when those values are part of the contract under test.
 func isolatedEnvironment(fixture *cliFixture) []string {
 	blocked := map[string]struct{}{
-		"EMAIL":               {},
-		"GH_CONFIG_DIR":       {},
-		"GH_TOKEN":            {},
-		"GHQ_ROOT":            {},
-		"GHQW_HERDR":          {},
-		"GHQW_ROOT":           {},
-		"GHQW_WORKTREE_ROOT":  {},
-		"GITHUB_TOKEN":        {},
-		"GIT_ALLOW_PROTOCOL":  {},
-		"GIT_AUTHOR_EMAIL":    {},
-		"GIT_AUTHOR_NAME":     {},
-		"GIT_COMMITTER_EMAIL": {},
-		"GIT_COMMITTER_NAME":  {},
-		"GIT_CONFIG_COUNT":    {},
-		"GIT_CONFIG_GLOBAL":   {},
-		"GIT_CONFIG_NOSYSTEM": {},
-		"GIT_CONFIG_SYSTEM":   {},
-		"GIT_DIR":             {},
-		"HERDR_ENV":           {},
-		"GIT_TERMINAL_PROMPT": {},
-		"GIT_WORK_TREE":       {},
-		"HOME":                {},
-		"LANG":                {},
-		"LC_ALL":              {},
-		"NO_COLOR":            {},
-		"XDG_CACHE_HOME":      {},
-		"XDG_CONFIG_HOME":     {},
-		"XDG_DATA_HOME":       {},
+		"EMAIL":                   {},
+		"GH_CONFIG_DIR":           {},
+		"GH_HOST":                 {},
+		"GH_ENTERPRISE_TOKEN":     {},
+		"GITHUB_ENTERPRISE_TOKEN": {},
+		"GH_TOKEN":                {},
+		"GHQ_ROOT":                {},
+		"GHQW_HERDR":              {},
+		"GHQW_ROOT":               {},
+		"GHQW_WORKTREE_ROOT":      {},
+		"GITHUB_TOKEN":            {},
+		"GIT_ALLOW_PROTOCOL":      {},
+		"GIT_AUTHOR_EMAIL":        {},
+		"GIT_AUTHOR_NAME":         {},
+		"GIT_COMMITTER_EMAIL":     {},
+		"GIT_COMMITTER_NAME":      {},
+		"GIT_CONFIG_COUNT":        {},
+		"GIT_CONFIG_GLOBAL":       {},
+		"GIT_CONFIG_NOSYSTEM":     {},
+		"GIT_CONFIG_SYSTEM":       {},
+		"GIT_DIR":                 {},
+		"HERDR_ENV":               {},
+		"GIT_TERMINAL_PROMPT":     {},
+		"GIT_WORK_TREE":           {},
+		"HOME":                    {},
+		"LANG":                    {},
+		"LC_ALL":                  {},
+		"NO_COLOR":                {},
+		"XDG_CACHE_HOME":          {},
+		"XDG_CONFIG_HOME":         {},
+		"XDG_DATA_HOME":           {},
 	}
 	environment := make([]string, 0, len(os.Environ())+24)
 	for _, entry := range os.Environ() {
@@ -648,19 +680,9 @@ func (fixture *cliFixture) cloneMain(t *testing.T, remoteURL, mainPath string) {
 	fixture.runGit(t, "", "clone", "--quiet", remoteURL, mainPath)
 }
 
-// fakeGhSource is a minimal stand-in for the real `gh` executable, built by
-// buildFakeGh. It only implements enough of `gh repo clone` and `gh auth
-// status`/`gh auth token` to let a real `gh qw get` invocation run end-to-end
-// without a real GitHub host or gh authentication, keeping
-// TestCLIGetDoesNotBlockOnAnOpenCallerStandardInput local and network-free
-// like the rest of this suite. `repo clone <url> <dest> ...` creates an
-// ordinary one-commit Git repository at <dest>; `auth status --json hosts`
-// reports exactly one successfully authenticated "acme" account on
-// github.com, and `auth token --user acme ...` returns a fixed fake token
-// for it, so gh-qw's account resolution (internal/ghauth) deterministically
-// selects that sole account for the "acme/widget" repository this test
-// requests, regardless of what gh accounts, if any, happen to be configured
-// on the machine running this test.
+// fakeGhSource delegates authentication entirely to the external command boundary.
+// It accepts clone and sync only; any auth preflight or mutation fails the test.
+// Clone creates a local Git repository, keeping the CLI tests network-free.
 const fakeGhSource = `package main
 
 import (
@@ -676,28 +698,12 @@ func main() {
 	switch {
 	case len(args) >= 2 && args[0] == "repo" && args[1] == "clone":
 		cloneRepo(args[2:])
-	case len(args) >= 2 && args[0] == "auth" && args[1] == "status":
-		fmt.Fprintln(os.Stdout, "{\"hosts\":{\"github.com\":[{\"state\":\"success\",\"active\":true,\"login\":\"acme\"}]}}")
-	case len(args) >= 2 && args[0] == "auth" && args[1] == "token":
-		authToken(args[2:])
+	case len(args) == 4 && args[0] == "repo" && args[1] == "sync" && args[2] == "--source":
+		fmt.Fprintln(os.Stderr, "fake gh: synchronized "+args[3])
 	default:
 		fmt.Fprintf(os.Stderr, "fake gh: unsupported invocation %q\n", strings.Join(args, " "))
 		os.Exit(1)
 	}
-}
-
-func authToken(args []string) {
-	login := ""
-	for index, value := range args {
-		if value == "--user" && index+1 < len(args) {
-			login = args[index+1]
-		}
-	}
-	if login != "acme" {
-		fmt.Fprintf(os.Stderr, "fake gh: no token available for user %q\n", login)
-		os.Exit(1)
-	}
-	fmt.Fprintln(os.Stdout, "gho_fake_e2e_token")
 }
 
 func cloneRepo(args []string) {

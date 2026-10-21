@@ -13,7 +13,6 @@ import (
 	"sync"
 
 	"github.com/daiksud/gh-qw/internal/ghapi"
-	"github.com/daiksud/gh-qw/internal/ghauth"
 	"github.com/daiksud/gh-qw/internal/ghcmd"
 	"github.com/daiksud/gh-qw/internal/local"
 	"github.com/daiksud/gh-qw/internal/procio"
@@ -129,12 +128,9 @@ type GetGitOperations interface {
 	RepoSync(context.Context, string, ghcmd.SyncOptions) error
 }
 
-// GetGitFactory creates Git operations with command-scoped streams. When
-// token is non-empty, the returned GetGitOperations authenticates gh
-// subprocesses as that account instead of gh's own active account (see
-// internal/ghauth). The gh subprocess never receives the caller's own
-// standard input; see ghcmd.Runner.
-type GetGitFactory func(stdout, stderr io.Writer, token string) GetGitOperations
+// GetGitFactory creates gh operations with command-scoped streams and the
+// standard gh environment. The subprocess never receives the caller's stdin.
+type GetGitFactory func(stdout, stderr io.Writer) GetGitOperations
 
 // GetDiscoverFunc discovers ordinary main repositories below configured roots.
 type GetDiscoverFunc func(context.Context, []string) (local.DiscoveryResult, error)
@@ -151,7 +147,6 @@ type GetTerminalDetector func(io.Reader) bool
 type GetDependencies struct {
 	RootResolver     RootResolver
 	GitFactory       GetGitFactory
-	AccountResolver  AccountResolver
 	MkdirAll         func(string, fs.FileMode) error
 	Discover         GetDiscoverFunc
 	IdentityResolver GetIdentityResolver
@@ -177,7 +172,6 @@ type getFlags struct {
 type getResolvedDependencies struct {
 	rootResolver     RootResolver
 	gitFactory       GetGitFactory
-	accountResolver  AccountResolver
 	mkdirAll         func(string, fs.FileMode) error
 	discover         GetDiscoverFunc
 	identityResolver GetIdentityResolver
@@ -197,11 +191,10 @@ type getParsedItem struct {
 }
 
 type getParallelJob struct {
-	item       getParsedItem
-	state      *getTarget
-	resolution ghauth.Resolution
-	wait       <-chan struct{}
-	done       chan struct{}
+	item  getParsedItem
+	state *getTarget
+	wait  <-chan struct{}
+	done  chan struct{}
 }
 
 type getParallelResult struct {
@@ -358,23 +351,13 @@ func getResolveDependencies(
 	}
 	gitFactory := deps.GitFactory
 	if gitFactory == nil {
-		gitFactory = func(stdout, stderr io.Writer, token string) GetGitOperations {
+		gitFactory = func(stdout, stderr io.Writer) GetGitOperations {
 			runner := ghcmd.Runner{
 				Stdout: stdout,
 				Stderr: stderr,
-			}.WithToken(token)
+			}
 			return &runner
 		}
-	}
-	accountResolver := deps.AccountResolver
-	if accountResolver == nil {
-		accountResolver = ghauth.NewResolver(ghauth.ResolverOptions{
-			Runner:     ghcmd.NewRunner(),
-			Cache:      ghauth.NewCache(),
-			Stdin:      stdin,
-			Stderr:     stderr,
-			IsTerminal: isTerminal,
-		})
 	}
 	mkdirAll := deps.MkdirAll
 	if mkdirAll == nil {
@@ -394,7 +377,6 @@ func getResolveDependencies(
 	return getResolvedDependencies{
 		rootResolver:     rootResolver,
 		gitFactory:       gitFactory,
-		accountResolver:  accountResolver,
 		mkdirAll:         mkdirAll,
 		discover:         discover,
 		identityResolver: identityResolver,
@@ -431,17 +413,6 @@ func getRunOrdered(
 		if err != nil {
 			return fmt.Errorf("prepare repository %q: %w", input, err)
 		}
-		// Resolve the gh account only when a network operation will
-		// actually happen (a new clone, or an existing checkout with
-		// --update); an already-satisfied get never lists gh accounts or
-		// prompts.
-		var resolution ghauth.Resolution
-		if !state.exists || flags.update {
-			resolution, err = getResolveAccount(ctx, deps.accountResolver, spec.Host, spec.Owner)
-			if err != nil {
-				return fmt.Errorf("get %q: %w", input, err)
-			}
-		}
 		path, err := getAcquire(
 			ctx,
 			spec,
@@ -449,7 +420,6 @@ func getRunOrdered(
 			flags,
 			filter,
 			deps,
-			resolution,
 			stderr,
 		)
 		if err != nil {
@@ -506,16 +476,6 @@ func getRunParallel(
 	states := getInitialTargetStates(discovery.Repositories)
 	previous := make(map[string]<-chan struct{})
 	jobs := make([]getParallelJob, 0, len(parsed))
-	// Resolve every distinct host/owner's gh account once, before spawning
-	// any worker, and only for items that will actually perform a network
-	// operation (a new clone, or an existing checkout with --update).
-	// Resolving up front (rather than inside each worker goroutine) keeps
-	// any interactive account-selection prompt (see internal/ghauth)
-	// single-threaded and deterministic instead of racing concurrent
-	// workers for the controlling terminal; skipping it entirely for an
-	// already-satisfied item matches get's non-parallel behavior.
-	resolutions := make(map[string]ghauth.Resolution)
-	resolutionErrors := make(map[string]error)
 	for _, item := range parsed {
 		state, err := getResolveTarget(states, item.spec, roots[0])
 		if err != nil {
@@ -526,40 +486,12 @@ func getRunParallel(
 			continue
 		}
 
-		if !state.exists || flags.update {
-			key := strings.ToLower(item.spec.Host) + "/" + strings.ToLower(item.spec.Owner)
-			resolution, resolved := resolutions[key]
-			resolutionErr, failed := resolutionErrors[key]
-			if !resolved && !failed {
-				resolution, resolutionErr = getResolveAccount(
-					ctx,
-					deps.accountResolver,
-					item.spec.Host,
-					item.spec.Owner,
-				)
-				if resolutionErr != nil {
-					resolutionErrors[key] = resolutionErr
-				} else {
-					resolutions[key] = resolution
-				}
-			}
-			if resolutionErr != nil {
-				aggregate.runtimeErrors = append(
-					aggregate.runtimeErrors,
-					fmt.Errorf("get %q: %w", item.input, resolutionErr),
-				)
-				continue
-			}
-		}
-
-		key := strings.ToLower(item.spec.Host) + "/" + strings.ToLower(item.spec.Owner)
 		done := make(chan struct{})
 		jobs = append(jobs, getParallelJob{
-			item:       item,
-			state:      state,
-			resolution: resolutions[key],
-			wait:       previous[item.spec.Identity],
-			done:       done,
+			item:  item,
+			state: state,
+			wait:  previous[item.spec.Identity],
+			done:  done,
 		})
 		previous[item.spec.Identity] = done
 	}
@@ -595,7 +527,6 @@ func getRunParallel(
 				flags,
 				filter,
 				deps,
-				job.resolution,
 				stderr,
 			)
 			<-semaphore
@@ -635,9 +566,10 @@ func getParseRepository(
 	deps getResolvedDependencies,
 ) (repospec.Spec, error) {
 	return repospec.Parse(input, repospec.Options{
-		SSH:        ssh,
-		Roots:      roots,
-		WorkingDir: deps.workingDir,
+		DefaultHost: os.Getenv("GH_HOST"),
+		SSH:         ssh,
+		Roots:       roots,
+		WorkingDir:  deps.workingDir,
 		// get clones through `gh repo clone`, which never accepts a file://
 		// URL, so file:// input is rejected here rather than failing later
 		// as an opaque gh error.
@@ -650,18 +582,6 @@ func getParseRepository(
 			return identity.Host, identity.Login, nil
 		},
 	})
-}
-
-// getResolveAccount determines which gh account to use for host/owner.
-func getResolveAccount(
-	ctx context.Context,
-	resolver AccountResolver,
-	host, owner string,
-) (ghauth.Resolution, error) {
-	if resolver == nil {
-		return ghauth.Resolution{}, errors.New("resolve gh account: resolver is required")
-	}
-	return resolver.Resolve(ctx, host, owner)
 }
 
 func getInitialTargetStates(repositories []local.Repository) map[string]*getTarget {
@@ -716,7 +636,6 @@ func getAcquire(
 	flags getFlags,
 	filter ghcmd.PartialFilter,
 	deps getResolvedDependencies,
-	resolution ghauth.Resolution,
 	stderr io.Writer,
 ) (string, error) {
 	if err := ctx.Err(); err != nil {
@@ -739,7 +658,7 @@ func getAcquire(
 			return "", fmt.Errorf("revalidate existing repository containment: %w", err)
 		}
 
-		git, err := getGitOperations(deps.gitFactory, stderr, flags.silent || flags.parallel, resolution.Token)
+		git, err := getGitOperations(deps.gitFactory, stderr, flags.silent || flags.parallel)
 		if err != nil {
 			return "", err
 		}
@@ -747,7 +666,7 @@ func getAcquire(
 			Source: state.repository.Owner + "/" + state.repository.Repo,
 		})
 		if err != nil {
-			return "", getPreserveSilentGhError(wrapAccountFailureHint(err, resolution), stderr, flags.silent || flags.parallel)
+			return "", getPreserveSilentGhError(err, stderr, flags.silent || flags.parallel)
 		}
 		state.repository.Path = path
 		return getAbsolutePath(path)
@@ -785,7 +704,7 @@ func getAcquire(
 	if spec.Branch != "" {
 		branch = spec.Branch
 	}
-	git, err := getGitOperations(deps.gitFactory, stderr, flags.silent || flags.parallel, resolution.Token)
+	git, err := getGitOperations(deps.gitFactory, stderr, flags.silent || flags.parallel)
 	if err != nil {
 		return "", err
 	}
@@ -798,7 +717,7 @@ func getAcquire(
 		Filter:      filter,
 	})
 	if err != nil {
-		return "", getPreserveSilentGhError(wrapAccountFailureHint(err, resolution), stderr, flags.silent || flags.parallel)
+		return "", getPreserveSilentGhError(err, stderr, flags.silent || flags.parallel)
 	}
 
 	state.exists = true
@@ -820,13 +739,12 @@ func getGitOperations(
 	factory GetGitFactory,
 	stderr io.Writer,
 	silent bool,
-	token string,
 ) (GetGitOperations, error) {
 	progress := stderr
 	if silent {
 		progress = io.Discard
 	}
-	git := factory(progress, progress, token)
+	git := factory(progress, progress)
 	if git == nil {
 		return nil, errors.New("create Git operations: factory returned nil")
 	}

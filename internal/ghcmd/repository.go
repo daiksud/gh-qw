@@ -105,11 +105,6 @@ type SyncOptions struct {
 	// Branch selects the branch to synchronize. An empty Branch synchronizes
 	// gh's resolved default branch.
 	Branch string
-	// Token, when non-empty, scopes the gh subprocess to authenticate as
-	// that account instead of gh's own active account (see internal/ghauth),
-	// by setting GH_TOKEN in its environment. It never becomes a command
-	// argument.
-	Token string
 }
 
 // RepoSync fast-forwards the repository checked out in dir from Source using
@@ -120,12 +115,7 @@ func (r *Runner) RepoSync(ctx context.Context, dir string, options SyncOptions) 
 	if err != nil {
 		return err
 	}
-	runner := r
-	if options.Token != "" {
-		scoped := runner.WithToken(options.Token)
-		runner = &scoped
-	}
-	return runner.runDir(ctx, dir, args...)
+	return r.runDir(ctx, dir, args...)
 }
 
 func repoSyncArgs(options SyncOptions) ([]string, error) {

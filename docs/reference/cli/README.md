@@ -63,31 +63,23 @@ precedence if any item has an invalid specification; otherwise any runtime failu
 
 ### gh account selection
 
-`get` and `worktree add` are the only commands that perform network-capable Git or GitHub API
-operations, and both delegate them to `gh` (`gh repo clone`, `gh repo sync`, and the REST API used
-to look up a repository's default branch). In an environment authenticated as multiple gh
-accounts, whichever account `gh` considers active is not necessarily the one with access to a
-given repository. Before each such operation, `gh-qw` resolves which account to use for the
-repository's `<owner>`:
+Network operations use the active account configured in `gh` for the selected host and
+[gh's standard environment variables](https://cli.github.com/manual/gh_help_environment).
+`gh-qw` passes the caller's environment unchanged to clone and sync. It does not match accounts
+to repository owners, list accounts, prompt for an account, inject a token, or run authentication
+preflight checks before clone or sync. Local operations, help/version, and worktrees created from
+existing branches do not query authentication.
 
-1. If the process environment sets `GH_TOKEN` or `GITHUB_TOKEN`, that explicit credential is used
-   and automatic selection is skipped.
-2. Otherwise, a cached choice for `<host>/<owner>` is used only when its login and token are
-   valid.
-3. Otherwise, every gh-authenticated account for the host is listed. Exactly one login matching
-   `<owner>` case-insensitively is selected.
-4. Otherwise, exactly one authenticated account is selected.
-5. Otherwise, a controlling terminal is required to choose from the accounts interactively.
+In multi-account environments, configure the desired account yourself with
+[`gh auth switch --hostname HOST --user LOGIN`](https://cli.github.com/manual/gh_auth_switch)
+before invoking `gh-qw`, or supply gh's standard token environment variables. `gh-qw` never
+switches accounts or changes gh's shared settings during serial or concurrent operations.
 
-The selected login is cached before the network operation. If a cached login no longer has a
-usable token, its mapping is removed and resolution continues from account listing. An unreadable
-or malformed cache, failed stale-entry removal, account-listing or selected-token lookup failure,
-cache-write failure, no available account, non-interactive ambiguity, or cancelled prompt is an
-error. Resolution finishes before any clone, synchronization, or API request starts; `gh-qw`
-never defers an unresolved choice to whichever account `gh` currently considers active.
-
-A failure from `gh` after this resolution includes a hint naming the account gh-qw used, except
-when step 1 applied — an explicit token's account is never inspected or reported.
+This replaces the former owner-matching selection policy. The active account may differ from
+an earlier cached choice. The [old account cache](../configuration/#account-cache) is no longer
+read or written; it can be removed manually. Users relying on automatic Enterprise host
+inference must provide an explicit host or `GH_HOST`. Bare-name completion and hostless
+`owner/repo` input use `GH_HOST` when set, otherwise `github.com`.
 
 ### Migrating Herdr integrations
 
@@ -115,7 +107,7 @@ after owner and repository is invalid. A linked worktree adds `@<slot>` to the m
 | Input | Interpretation |
 | --- | --- |
 | `<repo>` | Complete with the authenticated user and host selected through `gh`. |
-| `<owner>/<repo>` | `https://github.com/<owner>/<repo>`. |
+| `<owner>/<repo>` | For `get`/`clone`, HTTPS on `GH_HOST` when set, otherwise `github.com`. Explicit URLs and host-prefixed forms override `GH_HOST`. |
 | `<host>[:<port>]/<owner>/<repo>` | HTTPS on the explicit host and optional port. |
 | `http://<host>/<owner>/<repo>[.git]` | Explicit HTTP URL. |
 | `https://<host>/<owner>/<repo>[.git]` | Explicit HTTPS URL. |
@@ -174,12 +166,11 @@ authority instead uses exactly `file://<host>/<owner>/<repo>[.git]`; a deeper pa
 information, or port is invalid. `list` and `migrate` resolve this form as described here; `get`
 rejects it (see above).
 
-For bare `<repo>` input, `GH_HOST`, when set, selects the authentication host. Otherwise
-an authenticated `github.com` account is preferred; if none exists, exactly one authenticated
-other host must be available. The login for the selected account supplies `<owner>`. Missing
-authentication, a missing login, or multiple remaining hosts is a specification error; `gh-qw`
-asks for an explicit `<owner>/<repo>` or `<host>/<owner>/<repo>` instead. No
-`ghq.user`, `ghq.completeUser`, or `ghq.defaultHost` setting is read.
+For bare `<repo>` input, `GH_HOST`, when set, selects the authentication host; otherwise the
+host is `github.com`. `gh-qw` does not enumerate authenticated hosts or infer an Enterprise host.
+The login from the selected host supplies `<owner>`. Missing authentication or a missing login is
+a specification error; use an explicit `<owner>/<repo>` or `<host>/<owner>/<repo>` instead.
+No `ghq.user`, `ghq.completeUser`, or `ghq.defaultHost` setting is read.
 
 `-p` changes an HTTPS or shorthand clone transport to
 `ssh://git@<host>/<owner>/<repo>` unless an HTTP(S) URL already provides a user. It leaves
@@ -187,6 +178,9 @@ an explicit SSH transport unchanged and does not change canonical identity. SCP-
 input is normalized to its equivalent `ssh://` URL regardless of `-p`.
 
 ### Local repository selectors
+
+Local discovery and migration retain their existing path and identity rules; `GH_HOST` does
+not reinterpret local repository identities.
 
 Commands that select an existing repository accept the forms shown in their usage:
 

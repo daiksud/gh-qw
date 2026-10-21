@@ -18,12 +18,12 @@ func TestRunnerOutputExecutesInTheCurrentDirectory(t *testing.T) {
 	runner.Stdout = &bytes.Buffer{}
 	runner.Stderr = &bytes.Buffer{}
 
-	if _, err := runner.Output(context.Background(), "auth", "status"); err != nil {
+	if _, err := runner.Output(context.Background(), "api", "user"); err != nil {
 		t.Fatalf("Output() error = %v", err)
 	}
 
 	command := recorder.last(t)
-	wantArgs := []string{"auth", "status"}
+	wantArgs := []string{"api", "user"}
 	if !slicesEqual(command.args, wantArgs) {
 		t.Fatalf("args = %#v, want %#v", command.args, wantArgs)
 	}
@@ -95,7 +95,7 @@ func TestRunnerNeverConnectsCommandToCallerStandardInput(t *testing.T) {
 	runner.Stdout = &bytes.Buffer{}
 	runner.Stderr = &bytes.Buffer{}
 
-	if _, err := runner.Output(context.Background(), "auth", "status"); err != nil {
+	if _, err := runner.Output(context.Background(), "api", "user"); err != nil {
 		t.Fatalf("Output() error = %v", err)
 	}
 
@@ -127,7 +127,7 @@ func TestRunnerDoesNotBlockOnALiveCallerStandardInput(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		_, err := runner.Output(context.Background(), "auth", "status")
+		_, err := runner.Output(context.Background(), "api", "user")
 		done <- err
 	}()
 
@@ -388,75 +388,5 @@ func TestRunnerWrapsExecutableStartFailure(t *testing.T) {
 	}
 	if got := err.Error(); got != "gh command could not be started" {
 		t.Fatalf("error text = %q", got)
-	}
-}
-
-func TestRunnerWithTokenSetsGHTokenAndRemovesExistingTokenEntries(t *testing.T) {
-	runner := Runner{Env: []string{
-		"PATH=/usr/bin",
-		"GH_TOKEN=stale-gh-token",
-		"GITHUB_TOKEN=stale-github-token",
-		"HOME=/home/x",
-	}}
-
-	updated := runner.WithToken("gho_fresh")
-
-	want := []string{"PATH=/usr/bin", "HOME=/home/x", "GH_TOKEN=gho_fresh"}
-	if !slicesEqual(updated.Env, want) {
-		t.Fatalf("Env = %#v, want %#v", updated.Env, want)
-	}
-	if len(runner.Env) != 4 {
-		t.Fatalf("original Runner.Env was mutated: %#v", runner.Env)
-	}
-}
-
-func TestRunnerWithTokenDefaultsToProcessEnvironmentWhenEnvIsNil(t *testing.T) {
-	runner := Runner{}
-
-	updated := runner.WithToken("gho_fresh")
-
-	found := false
-	for _, entry := range updated.Env {
-		if entry == "GH_TOKEN=gho_fresh" {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("Env = %#v, want GH_TOKEN=gho_fresh present", updated.Env)
-	}
-	if len(updated.Env) < len(os.Environ()) {
-		t.Fatalf("Env has %d entries, want at least the process environment's %d", len(updated.Env), len(os.Environ()))
-	}
-}
-
-func TestRunnerWithTokenIsNoOpForEmptyToken(t *testing.T) {
-	runner := Runner{Env: []string{"PATH=/usr/bin"}}
-
-	updated := runner.WithToken("")
-
-	if !slicesEqual(updated.Env, runner.Env) {
-		t.Fatalf("Env = %#v, want unchanged %#v for an empty token", updated.Env, runner.Env)
-	}
-}
-
-func TestRunnerWithTokenInjectsGHTokenIntoTheSpawnedCommand(t *testing.T) {
-	runner, recorder := newHelperRunner(t, "success")
-	runner.Stdout = &bytes.Buffer{}
-	runner.Stderr = &bytes.Buffer{}
-	scoped := runner.WithToken("gho_scoped")
-
-	if err := scoped.RepoSync(context.Background(), t.TempDir(), SyncOptions{Source: "acme/widget"}); err != nil {
-		t.Fatalf("RepoSync() error = %v", err)
-	}
-
-	command := recorder.last(t)
-	found := false
-	for _, entry := range command.cmd.Env {
-		if entry == "GH_TOKEN=gho_scoped" {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("spawned command Env = %#v, want GH_TOKEN=gho_scoped", command.cmd.Env)
 	}
 }
