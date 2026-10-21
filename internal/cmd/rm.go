@@ -147,27 +147,7 @@ type removePlan struct {
 	linked []removeLinkedTarget
 }
 
-type removeUsageError struct {
-	err error
-}
-
-func (err *removeUsageError) Error() string {
-	if err == nil || err.err == nil {
-		return repospec.ErrUsage.Error()
-	}
-	return err.err.Error()
-}
-
-func (err *removeUsageError) Unwrap() error {
-	if err == nil {
-		return nil
-	}
-	return err.err
-}
-
-func (err *removeUsageError) Is(target error) bool {
-	return target == repospec.ErrUsage
-}
+type removeUsageError = repositoryUsageError
 
 // NewRemoveCommand returns the command that safely removes one managed linked
 // worktree or a complete main repository and all of its linked worktrees.
@@ -1140,7 +1120,7 @@ func removeWriteWarnings(writer io.Writer, warnings []local.Warning) error {
 			warning.Err,
 		)
 	}
-	return removeWriteAll(writer, output.Bytes())
+	return commandWriteAll(writer, output.Bytes())
 }
 
 func removeWritePlan(writer io.Writer, plan removePlan) error {
@@ -1160,31 +1140,14 @@ func removeWritePlan(writer io.Writer, plan removePlan) error {
 			removeOutputPath(plan.MainDirectory.Path),
 		)
 	}
-	return removeWriteAll(writer, output.Bytes())
+	return commandWriteAll(writer, output.Bytes())
 }
 
 func removeWriteProgress(writer io.Writer, operation, path string) error {
-	return removeWriteAll(
+	return commandWriteAll(
 		writer,
 		[]byte(fmt.Sprintf("%s %s\n", operation, removeOutputPath(path))),
 	)
-}
-
-func removeWriteAll(writer io.Writer, data []byte) error {
-	for len(data) > 0 {
-		written, err := writer.Write(data)
-		if written < 0 || written > len(data) {
-			return io.ErrShortWrite
-		}
-		data = data[written:]
-		if err != nil {
-			return err
-		}
-		if written == 0 {
-			return io.ErrShortWrite
-		}
-	}
-	return nil
 }
 
 func removeConfirm(
@@ -1202,7 +1165,7 @@ func removeConfirm(
 	}
 	defer terminal.Close()
 
-	if err := removeWriteAll(output, []byte(prompt)); err != nil {
+	if err := commandWriteAll(output, []byte(prompt)); err != nil {
 		return false, err
 	}
 	response, err := bufio.NewReader(terminal).ReadString('\n')

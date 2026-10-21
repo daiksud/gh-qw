@@ -42,17 +42,7 @@ type listEntry struct {
 	path     string
 }
 
-type listUsageError struct {
-	message string
-}
-
-func (err *listUsageError) Error() string {
-	return err.message
-}
-
-func (err *listUsageError) Is(target error) bool {
-	return target == repospec.ErrUsage
-}
+type listUsageError = repositoryUsageError
 
 // NewListCommand returns the command that lists discovered repositories and
 // their registered worktrees.
@@ -88,7 +78,7 @@ func NewListCommand(deps ListDependencies) *cobra.Command {
 				command.Context(),
 				roots.RepositoryRoots,
 			)
-			if err := listEmitWarnings(command.ErrOrStderr(), discovery.Warnings); err != nil {
+			if err := commandWriteWarnings(command.ErrOrStderr(), discovery.Warnings); err != nil {
 				return fmt.Errorf("write discovery warnings: %w", err)
 			}
 			if discoveryErr != nil {
@@ -122,7 +112,7 @@ func NewListCommand(deps ListDependencies) *cobra.Command {
 			}
 			sort.Strings(lines)
 
-			if err := listWriteAll(command.OutOrStdout(), listRenderLines(lines)); err != nil {
+			if err := commandWriteAll(command.OutOrStdout(), listRenderLines(lines)); err != nil {
 				return err
 			}
 			return nil
@@ -461,18 +451,6 @@ func listIdentityCandidates(entry listEntry) []string {
 	}
 }
 
-func listEmitWarnings(writer io.Writer, warnings []local.Warning) error {
-	if len(warnings) == 0 {
-		return nil
-	}
-
-	var builder strings.Builder
-	for _, warning := range warnings {
-		fmt.Fprintf(&builder, "gh-qw: warning: %s\n", warning.Error())
-	}
-	return listWriteAll(writer, []byte(builder.String()))
-}
-
 func listRenderLines(lines []string) []byte {
 	if len(lines) == 0 {
 		return nil
@@ -480,19 +458,3 @@ func listRenderLines(lines []string) []byte {
 	return []byte(strings.Join(lines, "\n") + "\n")
 }
 
-func listWriteAll(writer io.Writer, data []byte) error {
-	for len(data) > 0 {
-		written, err := writer.Write(data)
-		if written < 0 || written > len(data) {
-			return io.ErrShortWrite
-		}
-		data = data[written:]
-		if err != nil {
-			return err
-		}
-		if written == 0 {
-			return io.ErrShortWrite
-		}
-	}
-	return nil
-}
