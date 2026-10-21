@@ -1,4 +1,4 @@
-// Package removal provides shared observations for managed removal operations.
+// Package removal provides shared observations and execution for managed removal operations.
 package removal
 
 import (
@@ -14,6 +14,11 @@ import (
 
 // ErrSafety reports a runtime safety refusal.
 var ErrSafety = errors.New("remove safety refusal")
+
+var (
+	errSymlink      = errors.New("path is a symbolic link")
+	errNotDirectory = errors.New("path is not a directory")
+)
 
 // Filesystem supplies required read-only object observation seams.
 type Filesystem struct {
@@ -62,12 +67,12 @@ func CaptureNode(
 		return Node{}, err
 	}
 	if info.Mode()&fs.ModeSymlink != 0 {
-		return Node{}, errors.New("path is a symbolic link")
+		return Node{}, errSymlink
 	}
 	switch kind {
 	case Directory:
 		if !info.IsDir() {
-			return Node{}, errors.New("path is not a directory")
+			return Node{}, errNotDirectory
 		}
 	case RegularFile:
 		if !info.Mode().IsRegular() {
