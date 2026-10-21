@@ -257,7 +257,7 @@ func worktreeRemoveGoneBuildPlan(
 		if _, attached := attachedBranches[upstream.Branch]; !attached {
 			continue
 		}
-		if err := local.ValidateBranch(upstream.Branch); err != nil {
+		if err := local.ValidateBranch(ctx, upstream.Branch); err != nil {
 			return worktreeRemoveGonePlan{}, fmt.Errorf(
 				"inspect branch upstreams for %q: invalid branch %q: %w",
 				repository.Identity,
@@ -670,7 +670,7 @@ func worktreeRemoveGoneRevalidateEntry(
 	if err != nil {
 		return worktreeRemoveGoneShared(fmt.Errorf("enumerate registered worktrees: %w", err))
 	}
-	worktree, err := local.FindRegisteredLinkedWorktree(worktrees, planned.worktree.Slot)
+	worktree, err := local.FindRegisteredLinkedWorktree(ctx, worktrees, planned.worktree.Slot)
 	if err != nil {
 		return err
 	}

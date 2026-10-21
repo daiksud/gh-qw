@@ -52,7 +52,7 @@ func TestRemoveParseSelectionExactFormsAndFirstDelimiter(t *testing.T) {
 		t.Run(test.input, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := removeParseSelection(test.input)
+			got, err := removeParseSelection(context.Background(), test.input)
 			if err != nil {
 				t.Fatalf("removeParseSelection() error = %v", err)
 			}
@@ -78,7 +78,7 @@ func TestRemoveParseSelectionExactFormsAndFirstDelimiter(t *testing.T) {
 		t.Run("invalid-"+input, func(t *testing.T) {
 			t.Parallel()
 
-			if _, err := removeParseSelection(input); err == nil {
+			if _, err := removeParseSelection(context.Background(), input); err == nil {
 				t.Fatalf("removeParseSelection(%q) error = nil", input)
 			}
 		})

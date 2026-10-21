@@ -23,7 +23,11 @@ func TestIdentityErrorRemainsDiscoverableThroughRepositoryUsageError(t *testing.
 		t.Fatalf("ResolveIdentity() error = %T %v, want *IdentityError", identityErr, identityErr)
 	}
 
-	_, err := repospec.Parse("widget", repospec.Options{
+	parsed, err := repospec.Parse("widget")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = parsed.Resolve(context.Background(), repospec.Options{
 		ResolveIdentity: func() (string, string, error) {
 			return "", "", identityErr
 		},

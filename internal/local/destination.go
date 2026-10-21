@@ -1,6 +1,7 @@
 package local
 
 import (
+	"context"
 	"errors"
 	"io/fs"
 	"path/filepath"
@@ -17,6 +18,7 @@ type DestinationOptions struct {
 // registered identities and existing filesystem prefix collisions. It returns
 // the physical destination without creating it.
 func ValidateWorktreeDestination(
+	ctx context.Context,
 	worktreeRoot string,
 	repository Repository,
 	slot string,
@@ -33,11 +35,12 @@ func ValidateWorktreeDestination(
 	if err := ValidateRepository(repository); err != nil {
 		return "", err
 	}
-	if err := ValidateSlotAvailable(worktrees, slot); err != nil {
+	if err := ValidateSlotAvailable(ctx, worktrees, slot); err != nil {
 		return "", err
 	}
 
 	destination, err := WorktreePath(
+		ctx,
 		worktreeRoot,
 		repository.Host,
 		repository.Owner,

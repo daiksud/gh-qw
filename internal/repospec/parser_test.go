@@ -1,6 +1,7 @@
 package repospec
 
 import (
+	"context"
 	"errors"
 	"net/url"
 	"os"
@@ -11,7 +12,7 @@ import (
 	"testing"
 )
 
-func TestParseRepositoryForms(t *testing.T) {
+func TestResolveRepositoryForms(t *testing.T) {
 	authenticated := func() (string, string, error) {
 		return "GHE.Example.COM:8443", "AuthUser", nil
 	}
@@ -29,179 +30,127 @@ func TestParseRepositoryForms(t *testing.T) {
 				ResolveIdentity: authenticated,
 			},
 			want: Spec{
-				CanonicalURL: "https://ghe.example.com:8443/AuthUser/Project",
-				CloneURL:     "https://ghe.example.com:8443/AuthUser/Project.git",
-				Identity:     "ghe.example.com/AuthUser/Project",
-				Host:         "ghe.example.com",
-				Owner:        "AuthUser",
-				Repo:         "Project",
-				Branch:       "feature/parser",
+				CloneURL: "https://ghe.example.com:8443/AuthUser/Project.git",
+				Identity: Identity{Host: "ghe.example.com", Owner: "AuthUser", Repo: "Project"},
+				Branch:   "feature/parser",
 			},
 		},
 		{
 			name:  "owner and repository default to GitHub",
 			input: "Acme/Project",
 			want: Spec{
-				CanonicalURL: "https://github.com/Acme/Project",
-				CloneURL:     "https://github.com/Acme/Project",
-				Identity:     "github.com/Acme/Project",
-				Host:         "github.com",
-				Owner:        "Acme",
-				Repo:         "Project",
+				CloneURL: "https://github.com/Acme/Project",
+				Identity: Identity{Host: "github.com", Owner: "Acme", Repo: "Project"},
 			},
 		},
 		{
 			name:  "safe owner and repository punctuation is preserved",
 			input: "Acme-Team/Project_name.v2",
 			want: Spec{
-				CanonicalURL: "https://github.com/Acme-Team/Project_name.v2",
-				CloneURL:     "https://github.com/Acme-Team/Project_name.v2",
-				Identity:     "github.com/Acme-Team/Project_name.v2",
-				Host:         "github.com",
-				Owner:        "Acme-Team",
-				Repo:         "Project_name.v2",
+				CloneURL: "https://github.com/Acme-Team/Project_name.v2",
+				Identity: Identity{Host: "github.com", Owner: "Acme-Team", Repo: "Project_name.v2"},
 			},
 		},
 		{
 			name:  "enterprise host is lowercased",
 			input: "GIT.Example.COM/Acme/Project.git",
 			want: Spec{
-				CanonicalURL: "https://git.example.com/Acme/Project",
-				CloneURL:     "https://git.example.com/Acme/Project.git",
-				Identity:     "git.example.com/Acme/Project",
-				Host:         "git.example.com",
-				Owner:        "Acme",
-				Repo:         "Project",
+				CloneURL: "https://git.example.com/Acme/Project.git",
+				Identity: Identity{Host: "git.example.com", Owner: "Acme", Repo: "Project"},
 			},
 		},
 		{
 			name:  "host shorthand retains port in URLs",
 			input: "GIT.Example.COM:8443/Acme/Project",
 			want: Spec{
-				CanonicalURL: "https://git.example.com:8443/Acme/Project",
-				CloneURL:     "https://git.example.com:8443/Acme/Project",
-				Identity:     "git.example.com/Acme/Project",
-				Host:         "git.example.com",
-				Owner:        "Acme",
-				Repo:         "Project",
+				CloneURL: "https://git.example.com:8443/Acme/Project",
+				Identity: Identity{Host: "git.example.com", Owner: "Acme", Repo: "Project"},
 			},
 		},
 		{
 			name:  "HTTPS URL preserves clone suffix and slash branch",
 			input: "https://GHE.Example.COM/Org/Repo.git@release/v2",
 			want: Spec{
-				CanonicalURL: "https://ghe.example.com/Org/Repo",
-				CloneURL:     "https://ghe.example.com/Org/Repo.git",
-				Identity:     "ghe.example.com/Org/Repo",
-				Host:         "ghe.example.com",
-				Owner:        "Org",
-				Repo:         "Repo",
-				Branch:       "release/v2",
+				CloneURL: "https://ghe.example.com/Org/Repo.git",
+				Identity: Identity{Host: "ghe.example.com", Owner: "Org", Repo: "Repo"},
+				Branch:   "release/v2",
 			},
 		},
 		{
 			name:  "HTTP URL remains HTTP for cloning",
 			input: "http://git.example.com/Org/Repo",
 			want: Spec{
-				CanonicalURL: "https://git.example.com/Org/Repo",
-				CloneURL:     "http://git.example.com/Org/Repo",
-				Identity:     "git.example.com/Org/Repo",
-				Host:         "git.example.com",
-				Owner:        "Org",
-				Repo:         "Repo",
+				CloneURL: "http://git.example.com/Org/Repo",
+				Identity: Identity{Host: "git.example.com", Owner: "Org", Repo: "Repo"},
 			},
 		},
 		{
 			name:  "SSH URL keeps user and port",
 			input: "ssh://deploy@GHE.Example.COM:2222/Org/Repo.git",
 			want: Spec{
-				CanonicalURL: "https://ghe.example.com:2222/Org/Repo",
-				CloneURL:     "ssh://deploy@ghe.example.com:2222/Org/Repo.git",
-				Identity:     "ghe.example.com/Org/Repo",
-				Host:         "ghe.example.com",
-				Owner:        "Org",
-				Repo:         "Repo",
+				CloneURL: "ssh://deploy@ghe.example.com:2222/Org/Repo.git",
+				Identity: Identity{Host: "ghe.example.com", Owner: "Org", Repo: "Repo"},
 			},
 		},
 		{
 			name:  "SSH authority at sign is not a branch",
 			input: "ssh://git@github.com/Org/Repo",
 			want: Spec{
-				CanonicalURL: "https://github.com/Org/Repo",
-				CloneURL:     "ssh://git@github.com/Org/Repo",
-				Identity:     "github.com/Org/Repo",
-				Host:         "github.com",
-				Owner:        "Org",
-				Repo:         "Repo",
+				CloneURL: "ssh://git@github.com/Org/Repo",
+				Identity: Identity{Host: "github.com", Owner: "Org", Repo: "Repo"},
 			},
 		},
 		{
 			name:  "scp-like URL with user",
 			input: "deploy@GHE.Example.COM:Org/Repo.git@topic/one",
 			want: Spec{
-				CanonicalURL: "https://ghe.example.com/Org/Repo",
-				CloneURL:     "ssh://deploy@ghe.example.com/Org/Repo.git",
-				Identity:     "ghe.example.com/Org/Repo",
-				Host:         "ghe.example.com",
-				Owner:        "Org",
-				Repo:         "Repo",
-				Branch:       "topic/one",
+				CloneURL: "ssh://deploy@ghe.example.com/Org/Repo.git",
+				Identity: Identity{Host: "ghe.example.com", Owner: "Org", Repo: "Repo"},
+				Branch:   "topic/one",
 			},
 		},
 		{
 			name:  "scp-like URL without user and with root path",
 			input: "GHE.Example.COM:/Org/Repo",
 			want: Spec{
-				CanonicalURL: "https://ghe.example.com/Org/Repo",
-				CloneURL:     "ssh://ghe.example.com/Org/Repo",
-				Identity:     "ghe.example.com/Org/Repo",
-				Host:         "ghe.example.com",
-				Owner:        "Org",
-				Repo:         "Repo",
+				CloneURL: "ssh://ghe.example.com/Org/Repo",
+				Identity: Identity{Host: "ghe.example.com", Owner: "Org", Repo: "Repo"},
 			},
 		},
 		{
 			name:  "file URL with repository host authority",
 			input: "file://GHE.Example.COM/Org/Repo.git@topic",
 			want: Spec{
-				CanonicalURL: "https://ghe.example.com/Org/Repo",
-				CloneURL:     "file://ghe.example.com/Org/Repo.git",
-				Identity:     "ghe.example.com/Org/Repo",
-				Host:         "ghe.example.com",
-				Owner:        "Org",
-				Repo:         "Repo",
-				Branch:       "topic",
+				CloneURL: "file://ghe.example.com/Org/Repo.git",
+				Identity: Identity{Host: "ghe.example.com", Owner: "Org", Repo: "Repo"},
+				Branch:   "topic",
 			},
 		},
 		{
 			name:  "branch may contain another at sign",
 			input: "Org/Repo@topic@two",
 			want: Spec{
-				CanonicalURL: "https://github.com/Org/Repo",
-				CloneURL:     "https://github.com/Org/Repo",
-				Identity:     "github.com/Org/Repo",
-				Host:         "github.com",
-				Owner:        "Org",
-				Repo:         "Repo",
-				Branch:       "topic@two",
+				CloneURL: "https://github.com/Org/Repo",
+				Identity: Identity{Host: "github.com", Owner: "Org", Repo: "Repo"},
+				Branch:   "topic@two",
 			},
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			got, err := Parse(test.input, test.options)
+			got, err := parseAndResolve(test.input, test.options)
 			if err != nil {
-				t.Fatalf("Parse(%q) error = %v", test.input, err)
+				t.Fatalf("parseAndResolve(%q) error = %v", test.input, err)
 			}
 			if !reflect.DeepEqual(got, test.want) {
-				t.Fatalf("Parse(%q)\ngot:  %#v\nwant: %#v", test.input, got, test.want)
+				t.Fatalf("parseAndResolve(%q)\ngot:  %#v\nwant: %#v", test.input, got, test.want)
 			}
 		})
 	}
 }
 
-func TestParseSSHOption(t *testing.T) {
+func TestResolveSSHOption(t *testing.T) {
 	tests := []struct {
 		name      string
 		input     string
@@ -231,9 +180,9 @@ func TestParseSSHOption(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			got, err := Parse(test.input, Options{SSH: true})
+			got, err := parseAndResolve(test.input, Options{SSH: true})
 			if err != nil {
-				t.Fatalf("Parse(%q) error = %v", test.input, err)
+				t.Fatalf("parseAndResolve(%q) error = %v", test.input, err)
 			}
 			if got.CloneURL != test.wantClone {
 				t.Fatalf("CloneURL = %q, want %q", got.CloneURL, test.wantClone)
@@ -242,7 +191,7 @@ func TestParseSSHOption(t *testing.T) {
 	}
 }
 
-func TestParseRelativeRepository(t *testing.T) {
+func TestResolveRelativeRepository(t *testing.T) {
 	base := t.TempDir()
 	root := filepath.Join(base, "repos")
 	workingDir := filepath.Join(root, "GitHub.COM", "Acme", "Current")
@@ -250,7 +199,7 @@ func TestParseRelativeRepository(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := Parse("../Target.git@feature/parser", Options{
+	got, err := parseAndResolve("../Target.git@feature/parser", Options{
 		Roots:      []string{root},
 		WorkingDir: workingDir,
 	})
@@ -258,19 +207,15 @@ func TestParseRelativeRepository(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := Spec{
-		CanonicalURL: "https://github.com/Acme/Target",
-		CloneURL:     "https://github.com/Acme/Target.git",
-		Identity:     "github.com/Acme/Target",
-		Host:         "github.com",
-		Owner:        "Acme",
-		Repo:         "Target",
-		Branch:       "feature/parser",
+		CloneURL: "https://github.com/Acme/Target.git",
+		Identity: Identity{Host: "github.com", Owner: "Acme", Repo: "Target"},
+		Branch:   "feature/parser",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("relative Parse\ngot:  %#v\nwant: %#v", got, want)
 	}
 
-	got, err = Parse(".", Options{
+	got, err = parseAndResolve(".", Options{
 		SSH:        true,
 		Roots:      []string{root},
 		WorkingDir: workingDir,
@@ -278,13 +223,13 @@ func TestParseRelativeRepository(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Identity != "github.com/Acme/Current" ||
+	if got.Identity.String() != "github.com/Acme/Current" ||
 		got.CloneURL != "ssh://git@github.com/Acme/Current" {
-		t.Fatalf("Parse(.) = %#v", got)
+		t.Fatalf("parseAndResolve(.) = %#v", got)
 	}
 }
 
-func TestParseLocalFileURL(t *testing.T) {
+func TestResolveLocalFileURL(t *testing.T) {
 	base := t.TempDir()
 	root := filepath.Join(base, "repos@work with space")
 	repository := filepath.Join(root, "GitHub.COM", "Acme", "Repo.git")
@@ -297,7 +242,7 @@ func TestParseLocalFileURL(t *testing.T) {
 		inputPath = "/" + inputPath
 	}
 	input := (&url.URL{Scheme: "file", Path: inputPath}).String()
-	got, err := Parse(input, Options{Roots: []string{root}})
+	got, err := parseAndResolve(input, Options{Roots: []string{root}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -307,11 +252,10 @@ func TestParseLocalFileURL(t *testing.T) {
 		clonePath = "/" + clonePath
 	}
 	wantClone := (&url.URL{Scheme: "file", Path: clonePath}).String()
-	if got.CanonicalURL != "https://github.com/Acme/Repo" ||
-		got.CloneURL != wantClone ||
-		got.Identity != "github.com/Acme/Repo" ||
+	if got.CloneURL != wantClone ||
+		got.Identity.String() != "github.com/Acme/Repo" ||
 		got.Branch != "release/v1" {
-		t.Fatalf("Parse(%q) = %#v, want clone %q", input, got, wantClone)
+		t.Fatalf("parseAndResolve(%q) = %#v, want clone %q", input, got, wantClone)
 	}
 }
 
@@ -358,7 +302,7 @@ func TestRelativePathContainment(t *testing.T) {
 
 func TestBareRepositoryResolverErrorsAreUsageErrors(t *testing.T) {
 	resolverErr := errors.New("multiple authenticated hosts")
-	_, err := Parse("Repo", Options{
+	_, err := parseAndResolve("Repo", Options{
 		ResolveIdentity: func() (string, string, error) {
 			return "", "", resolverErr
 		},
@@ -378,7 +322,7 @@ func TestBareRepositoryResolverErrorsAreUsageErrors(t *testing.T) {
 	}
 }
 
-func TestParseRejectsInvalidSpecifications(t *testing.T) {
+func TestResolveRejectsInvalidSpecifications(t *testing.T) {
 	identity := func() (string, string, error) {
 		return "github.com", "Acme", nil
 	}
@@ -442,17 +386,6 @@ func TestParseRejectsInvalidSpecifications(t *testing.T) {
 		{name: "scp missing owner", input: "example.com:Repo"},
 		{name: "scp extra path", input: "example.com:One/Two/Three"},
 		{name: "empty branch", input: "Org/Repo@"},
-		{name: "branch starts with slash", input: "Org/Repo@/topic"},
-		{name: "branch ends with slash", input: "Org/Repo@topic/"},
-		{name: "branch empty component", input: "Org/Repo@topic//one"},
-		{name: "branch dot component", input: "Org/Repo@topic/./one"},
-		{name: "branch dot dot", input: "Org/Repo@topic/../one"},
-		{name: "branch double dot", input: "Org/Repo@topic..one"},
-		{name: "branch reflog syntax", input: "Org/Repo@topic@{one"},
-		{name: "branch lock suffix", input: "Org/Repo@topic.lock"},
-		{name: "branch hidden component", input: "Org/Repo@topic/.hidden"},
-		{name: "branch starts with dash", input: "Org/Repo@-topic"},
-		{name: "branch space", input: "Org/Repo@topic one"},
 		{name: "URL empty branch", input: "https://example.com/Org/Repo@"},
 		{name: "file URL has user", input: "file://user@example.com/Org/Repo"},
 		{name: "file URL has port", input: "file://example.com:1234/Org/Repo"},
@@ -499,15 +432,15 @@ func TestIdentityResolverIsOnlyUsedForBareRepositories(t *testing.T) {
 		"https://example.com/Org/Repo",
 		"git@example.com:Org/Repo",
 	} {
-		if _, err := Parse(input, Options{ResolveIdentity: resolver}); err != nil {
-			t.Fatalf("Parse(%q) error = %v", input, err)
+		if _, err := parseAndResolve(input, Options{ResolveIdentity: resolver}); err != nil {
+			t.Fatalf("parseAndResolve(%q) error = %v", input, err)
 		}
 	}
 	if calls != 0 {
 		t.Fatalf("resolver calls = %d, want 0", calls)
 	}
 
-	if _, err := Parse("Repo", Options{ResolveIdentity: resolver}); err != nil {
+	if _, err := parseAndResolve("Repo", Options{ResolveIdentity: resolver}); err != nil {
 		t.Fatal(err)
 	}
 	if calls != 1 {
@@ -517,23 +450,23 @@ func TestIdentityResolverIsOnlyUsedForBareRepositories(t *testing.T) {
 
 func assertUsageError(t *testing.T, input string, options Options) {
 	t.Helper()
-	_, err := Parse(input, options)
+	_, err := parseAndResolve(input, options)
 	if err == nil {
-		t.Fatalf("Parse(%q) succeeded", input)
+		t.Fatalf("parseAndResolve(%q) succeeded", input)
 	}
 	var usageErr *UsageError
 	if !errors.As(err, &usageErr) {
-		t.Fatalf("Parse(%q) error %T does not match *UsageError: %v", input, err, err)
+		t.Fatalf("parseAndResolve(%q) error %T does not match *UsageError: %v", input, err, err)
 	}
 	if !errors.Is(err, ErrUsage) {
-		t.Fatalf("errors.Is(Parse(%q), ErrUsage) = false: %v", input, err)
+		t.Fatalf("errors.Is(parseAndResolve(%q), ErrUsage) = false: %v", input, err)
 	}
 	if !strings.Contains(err.Error(), "invalid repository specification") {
-		t.Fatalf("Parse(%q) error = %q", input, err)
+		t.Fatalf("parseAndResolve(%q) error = %q", input, err)
 	}
 }
 
-func TestParseRejectsFileSchemeWhenConfigured(t *testing.T) {
+func TestResolveRejectsFileSchemeWhenConfigured(t *testing.T) {
 	base := t.TempDir()
 	root := filepath.Join(base, "repos")
 	repository := filepath.Join(root, "GitHub.COM", "Acme", "Repo.git")
@@ -559,14 +492,22 @@ func TestParseRejectsFileSchemeWhenConfigured(t *testing.T) {
 	}
 }
 
-func TestParseAllowsFileSchemeByDefault(t *testing.T) {
+func TestResolveAllowsFileSchemeByDefault(t *testing.T) {
 	// get is the only caller that sets RejectFileScheme; list and migrate
 	// support file:// input with the default options.
-	got, err := Parse("file://ghe.example.com/Org/Repo.git", Options{})
+	got, err := parseAndResolve("file://ghe.example.com/Org/Repo.git", Options{})
 	if err != nil {
-		t.Fatalf("Parse() error = %v, want file:// accepted when RejectFileScheme is unset", err)
+		t.Fatalf("parseAndResolve() error = %v, want file:// accepted when RejectFileScheme is unset", err)
 	}
 	if got.CloneURL != "file://ghe.example.com/Org/Repo.git" {
 		t.Fatalf("CloneURL = %q, want the file:// URL preserved", got.CloneURL)
 	}
+}
+
+func parseAndResolve(input string, options Options) (Spec, error) {
+	parsed, err := Parse(input)
+	if err != nil {
+		return Spec{}, err
+	}
+	return parsed.Resolve(context.Background(), options)
 }

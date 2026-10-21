@@ -60,10 +60,6 @@ func ValidateWorktreeAssociation(
 			Reason:     "worktree parent does not match the selected repository",
 		}
 	}
-	if err := ValidateBranch(worktree.Slot); err != nil {
-		return err
-	}
-
 	filesystem := newFilesystem(option.Filesystem)
 	git := option.Git
 	if git == nil {
@@ -71,6 +67,7 @@ func ValidateWorktreeAssociation(
 	}
 
 	expectedPath, err := WorktreePath(
+		ctx,
 		worktreeRoot,
 		repository.Host,
 		repository.Owner,
@@ -185,7 +182,7 @@ func ResolveManagedWorktree(
 	if err != nil {
 		return Worktree{}, err
 	}
-	worktree, err := FindRegisteredLinkedWorktree(worktrees, slot)
+	worktree, err := FindRegisteredLinkedWorktree(ctx, worktrees, slot)
 	if err != nil {
 		return Worktree{}, err
 	}

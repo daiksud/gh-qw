@@ -12,6 +12,36 @@ import (
 	"github.com/daiksud/gh-qw/internal/gitcmd"
 )
 
+func TestManagedSlotSurvivesBranchSwitchAndDetachedCheckout(t *testing.T) {
+	base := physicalTempDir(t)
+	repository := testRepository(t, filepath.Join(base, "repositories"), "github.com/acme/widget", 0)
+	initTestRepository(t, repository.Path)
+	worktreeRoot := filepath.Join(base, "worktrees")
+	const slot = "review/123"
+	path, err := WorktreePath(context.Background(), worktreeRoot, repository.Host, repository.Owner, repository.Repo, slot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	addTestWorktree(t, repository.Path, path, "-b", "original")
+	runGit(t, path, "checkout", "-q", "-b", "switched/branch")
+
+	worktree, err := ResolveManagedWorktree(context.Background(), repository, worktreeRoot, slot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if worktree.Slot != slot || worktree.Branch != "switched/branch" || worktree.Path != path {
+		t.Fatalf("switched worktree conflates branch and slot: %#v", worktree)
+	}
+	runGit(t, path, "checkout", "-q", "--detach")
+	worktree, err = ResolveManagedWorktree(context.Background(), repository, worktreeRoot, slot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if worktree.Slot != slot || worktree.Branch != "" || !worktree.Detached || worktree.Path != path {
+		t.Fatalf("detached worktree lost its slot: %#v", worktree)
+	}
+}
+
 func TestEnumerateWorktreesRealGitAndCurrentDirectory(t *testing.T) {
 	base := physicalTempDir(t)
 	repositoryRoot := filepath.Join(base, "repositories")
@@ -27,6 +57,7 @@ func TestEnumerateWorktreesRealGitAndCurrentDirectory(t *testing.T) {
 	initTestRepository(t, repository.Path)
 
 	managedPath, err := WorktreePath(
+		context.Background(),
 		worktreeRoot,
 		repository.Host,
 		repository.Owner,
@@ -50,6 +81,7 @@ func TestEnumerateWorktreesRealGitAndCurrentDirectory(t *testing.T) {
 	addTestWorktree(t, repository.Path, externalDetached, "--detach")
 
 	prunablePath, err := WorktreePath(
+		context.Background(),
 		worktreeRoot,
 		repository.Host,
 		repository.Owner,
@@ -100,7 +132,7 @@ func TestEnumerateWorktreesRealGitAndCurrentDirectory(t *testing.T) {
 		t.Fatalf("prunable record = %#v", bySlot["stale/slot"])
 	}
 
-	managed, err := FindRegisteredLinkedWorktree(worktrees, "feature/x")
+	managed, err := FindRegisteredLinkedWorktree(context.Background(), worktrees, "feature/x")
 	if err != nil {
 		t.Fatalf("FindRegisteredLinkedWorktree() error = %v", err)
 	}
@@ -352,6 +384,7 @@ func TestValidateWorktreeAssociationRejectsForeignCommonDirectory(t *testing.T) 
 	initTestRepository(t, foreignMain)
 
 	foreignPath, err := WorktreePath(
+		context.Background(),
 		worktreeRoot,
 		repository.Host,
 		repository.Owner,
@@ -386,16 +419,16 @@ func TestFindLinkedWorktreeZeroOneMany(t *testing.T) {
 		{Main: true, Identity: "github.com/acme/widget"},
 		{Slot: "feature/x", Path: "/one"},
 	}
-	got, err := FindLinkedWorktree(records, "feature/x")
+	got, err := FindLinkedWorktree(context.Background(), records, "feature/x")
 	if err != nil || got.Path != "/one" {
 		t.Fatalf("FindLinkedWorktree(one) = %#v, %v", got, err)
 	}
-	if _, err := FindLinkedWorktree(records, "missing"); !errors.Is(err, ErrWorktreeNotFound) {
+	if _, err := FindLinkedWorktree(context.Background(), records, "missing"); !errors.Is(err, ErrWorktreeNotFound) {
 		t.Fatalf("FindLinkedWorktree(zero) error = %v", err)
 	}
 
 	records = append(records, Worktree{Slot: "feature/x", Path: "/two"})
-	if _, err := FindLinkedWorktree(records, "feature/x"); !errors.Is(err, ErrWorktreeAmbiguous) {
+	if _, err := FindLinkedWorktree(context.Background(), records, "feature/x"); !errors.Is(err, ErrWorktreeAmbiguous) {
 		t.Fatalf("FindLinkedWorktree(many) error = %v", err)
 	}
 }

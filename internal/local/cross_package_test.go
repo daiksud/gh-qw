@@ -1,6 +1,7 @@
 package local_test
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -34,35 +35,39 @@ func TestRepositorySpecificationsRoundTripThroughDeterministicMainPath(t *testin
 
 	for _, input := range inputs {
 		t.Run(input, func(t *testing.T) {
-			spec, err := repospec.Parse(input, repospec.Options{})
+			parsed, err := repospec.Parse(input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			spec, err := parsed.Resolve(context.Background(), repospec.Options{})
 			if err != nil {
 				t.Fatalf("Parse(%q) error = %v", input, err)
 			}
-			if spec.Identity != identity {
-				t.Fatalf("Parse(%q) identity = %q, want %q", input, spec.Identity, identity)
+			if spec.Identity.String() != identity {
+				t.Fatalf("Parse(%q) identity = %q, want %q", input, spec.Identity.String(), identity)
 			}
 
 			path, err := local.MainPath(rootPath, spec.Host, spec.Owner, spec.Repo)
 			if err != nil {
-				t.Fatalf("MainPath(%q) error = %v", spec.Identity, err)
+				t.Fatalf("MainPath(%q) error = %v", spec.Identity.String(), err)
 			}
 			if path != wantPath {
-				t.Fatalf("MainPath(%q) = %q, want %q", spec.Identity, path, wantPath)
+				t.Fatalf("MainPath(%q) = %q, want %q", spec.Identity.String(), path, wantPath)
 			}
 
-			parts, err := local.ParseIdentity(spec.Identity)
+			parts, err := local.ParseIdentity(spec.Identity.String())
 			if err != nil {
-				t.Fatalf("ParseIdentity(%q) error = %v", spec.Identity, err)
+				t.Fatalf("ParseIdentity(%q) error = %v", spec.Identity.String(), err)
 			}
 			if parts.Host != spec.Host || parts.Owner != spec.Owner || parts.Repo != spec.Repo {
-				t.Fatalf("ParseIdentity(%q) = %#v, want parser components %#v", spec.Identity, parts, spec)
+				t.Fatalf("ParseIdentity(%q) = %#v, want parser components %#v", spec.Identity.String(), parts, spec)
 			}
-			normalized, err := local.NormalizeIdentityForOutput(spec.Identity)
+			normalized, err := local.NormalizeIdentityForOutput(spec.Identity.String())
 			if err != nil {
-				t.Fatalf("NormalizeIdentityForOutput(%q) error = %v", spec.Identity, err)
+				t.Fatalf("NormalizeIdentityForOutput(%q) error = %v", spec.Identity.String(), err)
 			}
 			if normalized != identity {
-				t.Fatalf("NormalizeIdentityForOutput(%q) = %q, want %q", spec.Identity, normalized, identity)
+				t.Fatalf("NormalizeIdentityForOutput(%q) = %q, want %q", spec.Identity.String(), normalized, identity)
 			}
 		})
 	}
@@ -70,15 +75,19 @@ func TestRepositorySpecificationsRoundTripThroughDeterministicMainPath(t *testin
 	if err := os.MkdirAll(wantPath, 0o755); err != nil {
 		t.Fatalf("MkdirAll(%q) error = %v", wantPath, err)
 	}
-	roundTrip, err := repospec.Parse(".", repospec.Options{
+	parsed, err := repospec.Parse(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	roundTrip, err := parsed.Resolve(context.Background(), repospec.Options{
 		Roots:      []string{rootPath},
 		WorkingDir: wantPath,
 	})
 	if err != nil {
 		t.Fatalf("Parse(.) from deterministic path error = %v", err)
 	}
-	if roundTrip.Identity != identity {
-		t.Fatalf("Parse(.) identity = %q, want %q", roundTrip.Identity, identity)
+	if roundTrip.Identity.String() != identity {
+		t.Fatalf("Parse(.) identity = %q, want %q", roundTrip.Identity.String(), identity)
 	}
 }
 
@@ -114,6 +123,7 @@ func TestResolvedWorktreeRootContainsSlashSlotsAndRejectsRuntimeSymlinkEscape(t 
 	}
 
 	path, err := local.WorktreePath(
+		context.Background(),
 		resolved.WorktreeRoot,
 		"github.com",
 		"acme",
@@ -156,6 +166,7 @@ func TestResolvedWorktreeRootContainsSlashSlotsAndRejectsRuntimeSymlinkEscape(t 
 	}
 
 	_, err = local.WorktreePath(
+		context.Background(),
 		resolved.WorktreeRoot,
 		"github.com",
 		"acme",

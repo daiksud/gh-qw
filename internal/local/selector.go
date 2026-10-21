@@ -3,6 +3,8 @@ package local
 import (
 	"fmt"
 	"strings"
+
+	"github.com/daiksud/gh-qw/internal/repospec"
 )
 
 // Selector is one exact local repository selector.
@@ -40,26 +42,27 @@ func ParseSelector(value string) (Selector, error) {
 	components := strings.Split(value, "/")
 	switch len(components) {
 	case 1:
-		parts, err := ParseIdentity("github.com/gh-qw/" + components[0])
-		if err != nil {
-			return fail(parserReason(err))
+		if err := repospec.ValidateRepository(components[0]); err != nil {
+			return fail(err.Error())
 		}
-		return Selector{Raw: value, Repo: parts.Repo, Depth: 1}, nil
+		return Selector{Raw: value, Repo: components[0], Depth: 1}, nil
 	case 2:
-		parts, err := ParseIdentity("github.com/" + value)
-		if err != nil {
-			return fail(parserReason(err))
+		if err := repospec.ValidateOwner(components[0]); err != nil {
+			return fail(err.Error())
+		}
+		if err := repospec.ValidateRepository(components[1]); err != nil {
+			return fail(err.Error())
 		}
 		return Selector{
 			Raw:   value,
-			Owner: parts.Owner,
-			Repo:  parts.Repo,
+			Owner: components[0],
+			Repo:  components[1],
 			Depth: 2,
 		}, nil
 	case 3:
 		parts, err := ParseIdentity(value)
 		if err != nil {
-			return fail(parserReason(err))
+			return fail(err.Error())
 		}
 		return Selector{
 			Raw:   value,
@@ -141,7 +144,7 @@ func FindEarliestIdentity(repositories []Repository, identity string) (Repositor
 		return Repository{}, false, err
 	}
 	for _, repository := range repositories {
-		if repository.Identity == parts.Identity {
+		if repository.Identity == parts.String() {
 			return repository, true, nil
 		}
 	}
