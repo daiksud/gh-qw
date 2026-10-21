@@ -10,7 +10,7 @@ timestamp: 2026-08-09
 # Versioning reference
 
 This page is the normative contract for what counts as `gh-qw`'s public API, how a release version
-number is chosen, and how branch names, commit types, and labels drive that choice. It follows
+number is chosen, and how reviewed pull request labels drive that choice. It follows
 [Semantic Versioning 2.0.0](https://semver.org/) and [Conventional Commits][conventional-commits],
 using the commit types defined by [`@commitlint/config-conventional`][commitlint-conventional]. See
 [ADR-0010](../../development/adr/0010-public-api-and-semantic-versioning/) and
@@ -71,9 +71,8 @@ different version, the resulting version is `v0.3.0` (see
 
 `gh-qw` remains `0.y.z` under this policy even across a backward-incompatible change: that change
 bumps MINOR rather than MAJOR. Declaring `1.0.0` is a deliberate, separate decision that this
-automatic mechanism never makes by itself. The tag verification job currently rejects any tag with
-a nonzero major when the previous release is `0.y.z`; the graduation decision must update that
-guard before the first `1.0.0` tag. Once the project is past that transition, the job applies the
+automatic mechanism never makes by itself. A nonzero major version requires a deliberate graduation decision and a separate
+policy/implementation update. Once the project is past that transition, the release workflow applies the
 ordinary MAJOR, MINOR, and PATCH rules.
 
 > [!IMPORTANT]
@@ -81,126 +80,74 @@ ordinary MAJOR, MINOR, and PATCH rules.
 > fixed with a new version, never by replacing a tag, rebuilding its assets, or rewriting its
 > release notes.
 
-## Conventional Commits and branch naming
+## Conventional Commits and review
 
-Every commit uses a [Conventional Commits][conventional-commits] header, and every ordinary pull
-request branch starts with its commits' type as a prefix, so the type is visible before the branch
-is even opened. Types follow [`@commitlint/config-conventional`][commitlint-conventional]:
+PR titles and commit headers use [Conventional Commits][conventional-commits] types
+from [`@commitlint/config-conventional`][commitlint-conventional]:
+`feat`, `fix`, `perf`, `revert`, `docs`, `refactor`, `style`,
+`test`, `build`, `ci`, and `chore`.
 
-| Type | Meaning | Branch prefix |
-| --- | --- | --- |
-| `feat` | A new feature | `feat/*` |
-| `fix` | A bug fix | `fix/*` |
-| `perf` | A code change that improves performance | `perf/*` |
-| `revert` | Reverts a previous commit | `revert/*` |
-| `docs` | Documentation only changes | `docs/*` |
-| `refactor` | A code change that neither fixes a bug nor adds a feature | `refactor/*` |
-| `style` | Changes that do not affect the meaning of the code | `style/*` |
-| `test` | Adding missing tests or correcting existing tests | `test/*` |
-| `build` | Changes to the build system or external dependencies | `build/*` |
-| `ci` | Changes to CI configuration files and scripts | `ci/*` |
-| `chore` | Other changes that don't modify `src` or test files | `chore/*` |
+Branch names are unrestricted and do not determine labels or release versions.
+Authors and reviewers choose PR types and labels according to changes to the
+[public API](#public-api). A feature or fix in CI or tests does not itself
+constitute a `feat` or `fix` release of gh-qw. During review, titles and
+labels may be corrected without renaming the branch.
 
 ### Breaking changes and deprecations
 
-Angular's own commit convention, which `@commitlint/config-conventional` follows, has no dedicated
-type for a breaking change or a deprecation. Both are declared in a commit **footer** instead, on
-top of whichever type actually describes the change. For the three supported composable types,
-put the matching exception prefix before the type:
-
-```text
-feat(list): remove --old-flag
-
-BREAKING CHANGE: <summary>
-
-<description and migration instructions>
-```
-
-```text
-feat(get): mark --legacy-mode for removal
-
-DEPRECATED: <what is deprecated>
-
-<description and recommended update path>
-```
-
-Label automation (below) only ever inspects branch names and changed file paths, never commit
-footers. So each of these footers gets a composable branch-name exception, keeping its effect
-visible without parsing commit text:
-
-| Footer | Branch prefix | Label |
-| --- | --- | --- |
-| `BREAKING CHANGE:` | `breaking-change/{feat,perf,fix}/*` | `BREAKING CHANGE` + type |
-| `DEPRECATED:` | `deprecated/{feat,perf,fix}/*` | `DEPRECATED` + type |
-
-A pull request using either prefix must carry the matching footer in at least one of its commits.
-The type segment is mandatory, and the two exception prefixes cannot be combined. Bare exception
-prefixes and combinations with other types do not receive a version-affecting label.
+Declare a breaking public API change with a `BREAKING CHANGE:` footer and a
+deprecation with `DEPRECATED:`. Apply the corresponding label alongside the
+chosen type and preserve the impact and migration guidance in the final
+squash commit. Neither requires a special branch prefix, and both can
+accompany any appropriate type.
 
 ## Labels
 
-Every label besides the two footer exceptions above shares its name exactly with a Conventional
-Commits type, so there is only one vocabulary to remember across commits, branches, and labels. A
-merged pull request's labels drive both the generated release notes and the tag version check
-below.
+PR labels drive version selection and generated release notes. Their names,
+colors, and descriptions are declared in
+[repository settings](../repository-settings/).
 
-### Branch-derived labels
+### Reviewed version-affecting labels
 
-Only six labels ever affect the computed version, and they are applied **only** from the pull
-request's head branch name, never from changed file paths:
-
-| Label | `0.y.z` impact | `x.y.z` (`x > 0`) impact |
+| Label | `0.y.z` impact | After `1.0.0` |
 | --- | --- | --- |
 | `BREAKING CHANGE` | MINOR | MAJOR |
 | `DEPRECATED` | MINOR | MINOR |
-| `feat` | MINOR | MINOR |
-| `perf` | MINOR | MINOR |
-| `fix` | PATCH | PATCH |
-| `revert` | PATCH | PATCH |
+| `feat`, `perf` | MINOR | MINOR |
+| `fix`, `revert` | PATCH | PATCH |
 
-A `breaking-change/{feat,perf,fix}/*` branch receives both `BREAKING CHANGE` and its type label;
-`BREAKING CHANGE` wins when release notes choose a category and when the tag check computes the
-next version. It selects MINOR during `0.y.z` and MAJOR after `1.0.0`, regardless of the
-accompanying type. A `deprecated/{feat,perf,fix}/*` branch likewise receives `DEPRECATED` and its
-type label; the deprecation selects MINOR in both versioning ranges.
+Authors and reviewers add, remove, and correct these labels manually. The
+highest tier among the PRs included in a release determines the next
+version. `BREAKING CHANGE` wins over an accompanying type. Automation never
+infers these six labels from branch names, PR titles, commits, or paths.
 
 ### Path-derived labels
 
-The remaining seven labels (`docs`, `refactor`, `style`, `test`, `build`, `ci`, `chore`) can also be
-applied automatically from the paths a pull request changes, in addition to matching its branch
-name. Path rules never touch the six branch-derived labels above, so a path match can never
-introduce ambiguity into the version computation.
+The labeler automatically adds `docs`, `test`, `build`, and `ci` only
+when **all changed files** fall within one corresponding path category. The
+exact file patterns live in
+[the labeler configuration](https://github.com/daiksud/gh-qw/blob/main/.github/labeler.yml).
+Mixed changes remain classified by reviewers; `refactor`, `style`, and
+`chore` are also manual. Path labels do not affect versions by themselves.
+
+Label synchronization is add-only (`sync-labels: false`), so manual labels
+are not removed by automation. A matching path label may be added again on
+a subsequent push. Authors and reviewers remove stale path labels after
+a PR's changed files evolve.
 
 ### Dependabot pull requests
 
-`.github/dependabot.yml` assigns no labels of its own (`labels: []` on every ecosystem); a
-dependency-update pull request is labeled exactly like any other, through `labeler.yml`. Its branch
-name and commit/PR title both start with a Conventional Commits type — `build` for the `gomod` and
-`npm` ecosystems, `ci` for `github-actions` — so the branch-name rule and the path rule agree on the
-same label, and the title itself (`build(deps): bump ...`, `ci(deps): bump ...`) is Conventional
-Commits-compliant. Since `build` and `ci` are both path-derived, never branch-derived-and-
-version-affecting, a dependency update can never affect the computed release version.
+Dependabot explicitly assigns `build` to Go and npm updates and `ci` to
+GitHub Actions updates. Conventional Commit prefixes remain in generated
+titles; Dependabot's branch names have no classification meaning. Authors
+and reviewers add version-affecting labels if a dependency change actually
+modifies gh-qw's user-visible behavior.
 
 ### Label colors
 
-Label color encodes both the SemVer tier and whether a label affects the version. The labels
-themselves — their exact colors and descriptions — are defined once, in
-[`.github/settings.yml`](https://github.com/daiksud/gh-qw/blob/main/.github/settings.yml) (see the
-[repository settings reference](../repository-settings/)); this section explains the rationale
-behind that scheme, not the literal values:
-
-- **`BREAKING CHANGE`** uses solid red — the MAJOR tier after `1.0.0`, held to MINOR while the
-  project is `0.y.z`.
-- **`DEPRECATED`** uses solid yellow, deliberately outside the red/green/blue tiers below: it is a
-  footer-driven exception rather than a real Conventional Commits type, and yellow marks it as an
-  exception at a glance. Its version impact is MINOR in both ranges.
-- **`feat`** and **`perf`** use two shades of green (the MINOR tier in both ranges), with `feat` the
-  darker of the two.
-- **`fix`** and **`revert`** use two shades of blue (the PATCH tier), with `fix` the darker of the
-  two.
-- The seven [path-derived labels](#path-derived-labels) use purple, teal, and gray tones outside
-  red, green, yellow, and blue entirely, so a version-impacting label is always identifiable by hue
-  alone.
+`BREAKING CHANGE` is red, `DEPRECATED` yellow, `feat` and `perf` green,
+and `fix` and `revert` blue. Non-version labels use other colors; the
+precise values live in the repository settings manifest.
 
 ## Release notes
 
@@ -219,27 +166,35 @@ pull request's first matching category wins):
 No pull request is excluded from generated notes: every merge is visible in the release it ships
 in.
 
-## Tag version enforcement
+## Manual release workflow
 
-Pushing a `v<major>.<minor>.<patch>` tag runs a verification job before any release artifact is
-built:
+Start the Release workflow from `main`:
 
-1. it resolves the nearest reachable earlier version tag;
-2. it resolves every pull request merged since that tag through its squash-merge commit, and
-   collects their [branch-derived labels](#branch-derived-labels);
-3. it computes the expected next version from those labels using the
-   [`0.y.z` policy](#versioning-during-major-version-zero) above when the previous release is
-   `0.y.z`, or ordinary SemVer rules after `1.0.0`; and
-4. it compares that expected version against the pushed tag.
+```console
+$ gh workflow run release.yml --ref main
+```
 
-The job fails the workflow, and no release is created, when:
+The workflow accepts no version input, and tag pushes do not trigger it.
+The selected commit SHA is fixed for version preparation, CI, binary
+builds, and publishing even if `main` advances.
 
-- the pushed tag does not equal the computed version; or
-- the previous release is `0.y.z` and the pushed tag has a nonzero major version, including
-  `v1.0.0`; or
-- no pull request merged since the last release carries a branch-derived label.
+1. Find the latest **published stable** GitHub Release and its tag.
+   Unpublished or failed tags do not select the baseline.
+2. Resolve commits between that tag and the selected commit, find PRs merged
+   to `main`, and collect their reviewed version-affecting labels.
+3. Compute the next version using the policy above. Abort when the baseline
+   or its ancestry cannot be resolved, an API call fails, or there are no
+   version-affecting PR labels.
+4. Run the full reusable CI workflow and build all five platform binaries
+   against the selected commit. A failure creates no tag.
+5. Only after those checks succeed, create the computed tag and GitHub
+   Release, attach binaries, and generate notes from the previous release.
 
-There is no override. A `1.0.0` graduation must be decided separately and the guard must be
-updated before its tag is pushed. A release that should not have happened is never edited or
-re-tagged (see [the immutability rule above](#versioning-during-major-version-zero)); the next
-correct tag is pushed instead.
+The workflow fails if an existing tag points at another commit, or if the
+published baseline changes while it is running. Existing tags are not
+moved, and published releases and assets are never replaced. The final
+GitHub API operations are not atomic; an interrupted publication may
+leave a tag or draft release. Inspect remote state before retrying.
+
+The workflow translates reviewed classification into a version; it
+cannot itself decide the semantic impact of source changes.

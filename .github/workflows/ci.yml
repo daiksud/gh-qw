@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
@@ -141,6 +142,16 @@ jobs:
         # docs/reference/repository-settings/ and ADR-0012 for why.
         run: gh infra validate .github/settings.yml
 
+  release-tests:
+    name: Test release preparation
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Run release preparation tests
+        run: bash .github/scripts/prepare-release.test.sh
+
   gate:
     name: CI success
     if: always()
@@ -150,6 +161,7 @@ jobs:
       - race
       - docs
       - settings
+      - release-tests
     # The aggregate gate is a lightweight status-only job.
     runs-on: ubuntu-slim
     timeout-minutes: 5
@@ -161,7 +173,8 @@ jobs:
             needs.test.result != 'success' ||
             needs.race.result != 'success' ||
             needs.docs.result != 'success' ||
-            needs.settings.result != 'success'
+            needs.settings.result != 'success' ||
+            needs.release-tests.result != 'success'
           }}
         run: |
           echo "One or more required CI jobs did not succeed."
@@ -170,6 +183,7 @@ jobs:
           echo "race=${{ needs.race.result }}"
           echo "docs=${{ needs.docs.result }}"
           echo "settings=${{ needs.settings.result }}"
+          echo "release-tests=${{ needs.release-tests.result }}"
           exit 1
 
       - name: Report successful CI gate

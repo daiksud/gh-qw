@@ -1,7 +1,7 @@
 ---
 type: adr
 title: "ADR-0011: Name release labels after Conventional Commits types"
-description: "Replace GitHub's default labels with a Conventional Commits-named vocabulary applied automatically from branch names and paths."
+description: "Use reviewed Conventional Commit labels and supplemental path-based labels independent of branch names."
 resource: gh-qw
 tags: [gh-qw, adr, adr-0011, commits, release-notes, labels]
 timestamp: 2026-08-06
@@ -25,58 +25,57 @@ untyped triage labels), none of which are Conventional Commits types. `.github/r
 categories never matched a label any pull request actually had, so every release note entry fell
 into "Other Changes" regardless of what it contained.
 
-[ADR-0010](../0010-public-api-and-semantic-versioning/) also requires that a release's version be
-mechanically computable from the pull requests merged since the last tag, which in turn requires a
-label vocabulary applied deterministically — not by hand — and unambiguous about whether a given
-label affects the version.
+[ADR-0010](../0010-public-api-and-semantic-versioning/) requires
+explicit labels to compute the next release version from merged PRs.
+Branch names are chosen before reviewers know the full semantic impact.
+Editing release labels and PR types must not require renaming a branch.
 
 ## Decision
 
-Except for two footer-driven exceptions, every label shares its name exactly with a Conventional
-Commits type from `@commitlint/config-conventional`. `BREAKING CHANGE` and `DEPRECATED` are the
-exceptions: Angular's commit convention has no dedicated type for either, declaring them instead in
-a commit footer on top of whichever type describes the actual change, so they get a matching
-branch-name exception instead.
+PR titles, commit headers, and type labels use the Conventional Commits
+vocabulary from `@commitlint/config-conventional`. `BREAKING CHANGE`
+and `DEPRECATED` supplement type labels with compatibility information.
+Their impact and migration explanations are retained in final squash
+commit footers.
 
-Labels are applied by `actions/labeler` with `sync-labels: true`, from two independent sources:
+Authors and reviewers assign and edit the six version-affecting labels:
+`BREAKING CHANGE`, `DEPRECATED`, `feat`, `perf`, `fix`, and `revert`.
+Reviewers check that the title type and labels reflect actual impact
+on gh-qw users. CI features or fixes use maintenance types rather than
+pretending to add features or fix bugs in the distributed tool.
 
-1. The six version-affecting labels (`BREAKING CHANGE`, `DEPRECATED`, `feat`, `perf`, `fix`,
-   `revert`) are matched **only** against the pull request's head branch name. The branch name is
-   the one signal available before a single commit is written, and the one signal ADR-0010's tag
-   verification job can also recompute independently from each merge commit's associated pull
-   request.
-2. The remaining labels (`docs`, `refactor`, `style`, `test`, `build`, `ci`, `chore`) are
-   additionally matched against changed file paths. Path rules are barred from ever touching a
-   version-affecting label, so a path match can never introduce ambiguity into version computation.
+Branch names have **no required type prefix** and do not determine any
+label or version. The labeler automatically adds only the supplemental
+`docs`, `test`, `build`, and `ci` labels from file paths when every
+changed file falls into that category. `sync-labels: false` ensures it
+does not remove manually reviewed labels. Reviewers remove obsolete
+path labels when a PR's scope changes. `refactor`, `style`, and
+`chore` also remain manual classifications.
 
-`.github/release.yml` is re-categorized to this label set. GitHub's default `enhancement`, `bug`,
-and `documentation` labels are removed, since they now duplicate `feat`, `fix`, and `docs` and their
-prior presence caused the original category mismatch. The exhaustive label table, color scheme, and
-path globs live in the [versioning reference](../../../reference/versioning/#labels), which this
-ADR does not duplicate.
+Dependabot assigns initial `build` or `ci` labels and matching title
+prefixes but does not configure branch naming. Its changes are
+reclassified as needed during review. Release notes and version
+calculation use the reviewed PR labels, not branch names. See the
+[versioning reference](../../../reference/versioning/) and
+[labeler configuration](https://github.com/daiksud/gh-qw/blob/main/.github/labeler.yml)
+for the complete mapping.
 
 ## Consequences
 
 ### Positive
 
-- Release notes categorize correctly: every merged pull request's label now matches one of
-  `.github/release.yml`'s categories.
-- The same label vocabulary serves release notes, human triage, and ADR-0010's automated version
-  computation without maintaining a second mapping.
-- `sync-labels` keeps a pull request's version-affecting label in step automatically if its branch
-  is renamed before merge.
+- A mistaken type or release label is corrected without creating a new PR.
+- One vocabulary covers PR titles, labels, and release notes.
+- Simple file-only changes are classified automatically without guessing
+  whether a code change is a feature, fix, or refactor.
+- Labeler runs never remove manual classifications.
 
 ### Negative
 
-- A contributor must name their branch with the correct Conventional Commits prefix (or one of the
-  two footer exceptions) for the intended label, and therefore the intended version impact, to
-  apply.
-- A pull request opened from a misnamed branch needs a rename, not a manual label edit: `sync-labels`
-  only trusts the branch name for version-affecting labels, so a hand-added label is removed on the
-  next sync.
+- Authors and reviewers must spot missing or incorrect semantic labels.
+- Stale automatically added labels are removed manually after scope changes.
+- Labels can change after merge, so check them before a manual release.
 
 ### Neutral
 
-- This ADR does not restate the full label-to-category mapping, color scheme, or path-glob rules;
-  see the [versioning reference](../../../reference/versioning/#labels) for the current, exhaustive
-  table.
+- Version tiers and release-note categories remain unchanged.
