@@ -7,16 +7,7 @@ import (
 	"strings"
 )
 
-// TrackingMode controls upstream tracking for a newly created branch.
-type TrackingMode uint8
-
-const (
-	TrackingDefault TrackingMode = iota
-	TrackingEnabled
-	TrackingDisabled
-)
-
-// WorktreeAddOptions controls git worktree add.
+// WorktreeAddOptions describes the native git worktree add invocation.
 type WorktreeAddOptions struct {
 	Path        string
 	Commitish   string
@@ -25,7 +16,6 @@ type WorktreeAddOptions struct {
 	Detach      bool
 	Orphan      bool
 	Force       bool
-	Tracking    TrackingMode
 }
 
 // WorktreeAdd creates a linked worktree from the repository in dir.
@@ -33,6 +23,39 @@ func (r *Runner) WorktreeAdd(ctx context.Context, dir string, options WorktreeAd
 	args, err := worktreeAddArgs(options)
 	if err != nil {
 		return err
+	}
+	// Creating the named branch first avoids native worktree add -b/-B
+	// remote guessing replacing the requested branch when a start point
+	// only exists on a remote. Git still owns revision resolution, upstream
+	// tracking, and checked-out branch protection.
+	branch := options.NewBranch
+	reset := false
+	if options.ResetBranch != "" {
+		branch = options.ResetBranch
+		reset = true
+	}
+	if branch != "" && !options.Orphan {
+		branchArgs := []string{"branch"}
+		if reset {
+			branchArgs = append(branchArgs, "--force")
+		}
+		branchArgs = append(branchArgs, "--", branch)
+		if options.Commitish != "" {
+			branchArgs = append(branchArgs, options.Commitish)
+		}
+		if err := r.RunDir(ctx, dir, branchArgs...); err != nil {
+			return fmt.Errorf("create or reset Git branch %q: %w", branch, err)
+		}
+		args, err = worktreeAddArgs(WorktreeAddOptions{
+			Path: options.Path, Commitish: branch, Force: options.Force,
+		})
+		if err != nil {
+			return err
+		}
+		if err := r.RunDir(ctx, dir, args...); err != nil {
+			return fmt.Errorf("Git branch %q was created or reset, but worktree creation failed (branch left intact): %w", branch, err)
+		}
+		return nil
 	}
 	return r.RunDir(ctx, dir, args...)
 }
@@ -50,14 +73,6 @@ func worktreeAddArgs(options WorktreeAddOptions) ([]string, error) {
 	if options.Orphan && options.Commitish != "" {
 		return nil, fmt.Errorf("git worktree add: orphan mode cannot use a commit-ish")
 	}
-	switch options.Tracking {
-	case TrackingDefault, TrackingEnabled, TrackingDisabled:
-	default:
-		return nil, fmt.Errorf("git worktree add: unsupported tracking mode")
-	}
-	if options.Detach && options.Tracking != TrackingDefault {
-		return nil, fmt.Errorf("git worktree add: detached worktrees cannot configure tracking")
-	}
 
 	args := []string{"worktree", "add"}
 	if options.Force {
@@ -74,12 +89,6 @@ func worktreeAddArgs(options WorktreeAddOptions) ([]string, error) {
 	}
 	if options.ResetBranch != "" {
 		args = append(args, "-B", options.ResetBranch)
-	}
-	switch options.Tracking {
-	case TrackingEnabled:
-		args = append(args, "--track")
-	case TrackingDisabled:
-		args = append(args, "--no-track")
 	}
 	args = append(args, "--", options.Path)
 	if options.Commitish != "" {

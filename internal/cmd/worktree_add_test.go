@@ -24,117 +24,71 @@ import (
 
 func TestNewWorktreeAddCommandAutomaticResolution(t *testing.T) {
 	tests := []struct {
-		name          string
-		args          []string
-		configure     func(*worktreeAddFixture)
-		wantOptions   gitcmd.WorktreeAddOptions
-		wantAPICalls  int
-		wantSyncs     []ghcmd.SyncOptions
-		wantRevisions []string
+		name string
+		args []string
+		configure func(*worktreeAddFixture)
+		wantOptions gitcmd.WorktreeAddOptions
+		wantAPICalls int
+		wantSyncs []ghcmd.SyncOptions
 	}{
 		{
-			name: "attaches existing local branch and ignores commit-ish",
-			args: []string{"feature/local", "missing-ignored"},
-			configure: func(fixture *worktreeAddFixture) {
-				fixture.git.localBranches["feature/local"] = true
-			},
-			wantOptions: gitcmd.WorktreeAddOptions{
-				Commitish: "feature/local",
-			},
+			name: "attaches existing local branch and ignores explicit commit-ish",
+			args: []string{"feature/local", "ignored"},
+			configure: func(f *worktreeAddFixture) { f.git.localBranches["feature/local"] = true },
+			wantOptions: gitcmd.WorktreeAddOptions{Commitish: "feature/local"},
 		},
 		{
-			name: "creates tracking branch from origin",
+			name: "delegates matching remote branches to Git",
 			args: []string{"feature/origin"},
-			configure: func(fixture *worktreeAddFixture) {
-				fixture.git.remoteBranches["origin/feature/origin"] = true
-			},
-			wantOptions: gitcmd.WorktreeAddOptions{
-				Commitish: "origin/feature/origin",
-				NewBranch: "feature/origin",
-				Tracking:  gitcmd.TrackingEnabled,
-			},
+			configure: func(f *worktreeAddFixture) { f.git.remoteBranches["origin/feature/origin"] = true },
+			wantOptions: gitcmd.WorktreeAddOptions{Commitish: "feature/origin"},
 		},
 		{
-			name: "creates tracking branch from sole other remote",
+			name: "delegates custom remotes to Git",
 			args: []string{"feature/upstream"},
-			configure: func(fixture *worktreeAddFixture) {
-				fixture.git.remotes = []string{"upstream"}
-				fixture.git.remoteBranches["upstream/feature/upstream"] = true
+			configure: func(f *worktreeAddFixture) {
+				f.git.remotes = []string{"upstream"}
+				f.git.remoteBranches["upstream/feature/upstream"] = true
 			},
-			wantOptions: gitcmd.WorktreeAddOptions{
-				Commitish: "upstream/feature/upstream",
-				NewBranch: "feature/upstream",
-				Tracking:  gitcmd.TrackingEnabled,
-			},
+			wantOptions: gitcmd.WorktreeAddOptions{Commitish: "feature/upstream"},
 		},
 		{
-			name: "creates branch from explicit commit-ish",
+			name: "delegates missing branches to Git without speculative API",
+			args: []string{"feature/missing"},
+			wantOptions: gitcmd.WorktreeAddOptions{Commitish: "feature/missing"},
+		},
+		{
+			name: "creates branch from explicit commit-ish through Git",
 			args: []string{"feature/explicit", "release-base"},
-			configure: func(fixture *worktreeAddFixture) {
-				fixture.git.revisions["release-base"] = true
-			},
-			wantOptions: gitcmd.WorktreeAddOptions{
-				Commitish: "release-base",
-				NewBranch: "feature/explicit",
-			},
-			wantRevisions: []string{"release-base"},
+			wantOptions: gitcmd.WorktreeAddOptions{Commitish: "release-base", NewBranch: "feature/explicit"},
 		},
 		{
-			name: "creates branch from local API default branch",
-			args: []string{"feature/api-local"},
-			configure: func(fixture *worktreeAddFixture) {
-				fixture.api.branch = "main"
-				fixture.git.localBranches["main"] = true
-			},
-			wantOptions: gitcmd.WorktreeAddOptions{
-				Commitish: "main",
-				NewBranch: "feature/api-local",
-			},
+			name: "explicit new branch starts at local GitHub default",
+			args: []string{"-b", "feature/api-local"},
+			configure: func(f *worktreeAddFixture) { f.git.localBranches["main"] = true },
+			wantOptions: gitcmd.WorktreeAddOptions{Commitish: "refs/heads/main", NewBranch: "feature/api-local"},
 			wantAPICalls: 1,
 		},
 		{
-			name: "creates branch from existing API default remote ref",
-			args: []string{"feature/api-remote"},
-			configure: func(fixture *worktreeAddFixture) {
-				fixture.api.branch = "main"
-				fixture.git.remoteBranches["origin/main"] = true
-			},
-			wantOptions: gitcmd.WorktreeAddOptions{
-				Commitish: "origin/main",
-				NewBranch: "feature/api-remote",
-			},
+			name: "explicit new branch synchronizes missing local default",
+			args: []string{"-b", "feature/api-sync"},
+			configure: func(f *worktreeAddFixture) { f.gh.syncCreatesLocalBranch = true },
+			wantOptions: gitcmd.WorktreeAddOptions{Commitish: "refs/heads/main", NewBranch: "feature/api-sync"},
 			wantAPICalls: 1,
-		},
-		{
-			name: "syncs missing API default branch",
-			args: []string{"feature/api-fetch"},
-			configure: func(fixture *worktreeAddFixture) {
-				fixture.api.branch = "main"
-				fixture.gh.syncCreatesRemoteBranch = true
-			},
-			wantOptions: gitcmd.WorktreeAddOptions{
-				Commitish: "origin/main",
-				NewBranch: "feature/api-fetch",
-			},
-			wantAPICalls: 1,
-			wantSyncs: []ghcmd.SyncOptions{{
-				Host:   "github.com",
-				Source: "acme/widget",
-				Branch: "main",
-			}},
+			wantSyncs: []ghcmd.SyncOptions{{Host: "github.com", Source: "acme/widget", Branch: "main"}},
 		},
 	}
-
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			branch := test.args[0]
+			branch := test.args[len(test.args)-1]
+			if len(test.args) == 2 && test.args[0] != "-b" {
+				branch = test.args[0]
+			}
 			fixture := worktreeAddNewFixture(t, branch)
 			if test.configure != nil {
 				test.configure(fixture)
 			}
-
-			err := fixture.worktreeAddExecute(test.args...)
-			if err != nil {
+			if err := fixture.worktreeAddExecute(test.args...); err != nil {
 				t.Fatalf("Execute() error = %v", err)
 			}
 			if len(fixture.git.adds) != 1 {
@@ -146,16 +100,13 @@ func TestNewWorktreeAddCommandAutomaticResolution(t *testing.T) {
 				t.Fatalf("WorktreeAdd options = %#v, want %#v", got, want)
 			}
 			if fixture.api.calls != test.wantAPICalls {
-				t.Fatalf("DefaultBranch() calls = %d, want %d", fixture.api.calls, test.wantAPICalls)
+				t.Fatalf("DefaultBranch calls = %d, want %d", fixture.api.calls, test.wantAPICalls)
 			}
-			if got := fixture.gh.syncs; !reflect.DeepEqual(got, test.wantSyncs) {
-				t.Fatalf("Sync options = %#v, want %#v", got, test.wantSyncs)
+			if !reflect.DeepEqual(fixture.gh.syncs, test.wantSyncs) {
+				t.Fatalf("RepoSync calls = %#v, want %#v", fixture.gh.syncs, test.wantSyncs)
 			}
-			if got := fixture.git.revisionQueries; !reflect.DeepEqual(got, test.wantRevisions) {
-				t.Fatalf("RevisionExists queries = %#v, want %#v", got, test.wantRevisions)
-			}
-			if got, want := fixture.stdout.String(), filepath.ToSlash(fixture.destination)+"\n"; got != want {
-				t.Fatalf("stdout = %q, want %q", got, want)
+			if len(fixture.git.revisionQueries) != 0 || len(fixture.git.remoteBranchQueries) != 0 {
+				t.Fatalf("manual revision or remote probing survived: %v, %v", fixture.git.revisionQueries, fixture.git.remoteBranchQueries)
 			}
 		})
 	}
@@ -165,8 +116,8 @@ func TestNewWorktreeAddCommandFetchesDefaultBranchThroughAPIAndSync(t *testing.T
 	t.Setenv("GH_HOST", "ambient.example.com")
 	fixture := worktreeAddNewFixture(t, "feature/api-fetch")
 	fixture.api.branch = "main"
-	fixture.gh.syncCreatesRemoteBranch = true
-	if err := fixture.worktreeAddExecute("feature/api-fetch"); err != nil {
+	fixture.gh.syncCreatesLocalBranch = true
+	if err := fixture.worktreeAddExecute("-b", "feature/api-fetch"); err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
 	if fixture.api.calls != 1 || len(fixture.gh.syncs) != 1 {
@@ -368,58 +319,23 @@ func TestNewWorktreeAddCommandModeValidation(t *testing.T) {
 	}
 }
 
-func TestNewWorktreeAddCommandNewBranchFailsWhenLocalExists(t *testing.T) {
-	fixture := worktreeAddNewFixture(t, "feature/existing")
-	fixture.git.localBranches["feature/existing"] = true
-	fixture.git.revisions["base"] = true
-
-	err := fixture.worktreeAddExecute("-b", "feature/existing", "base")
-	if err == nil || !strings.Contains(err.Error(), "already exists") {
-		t.Fatalf("Execute() error = %v, want existing branch error", err)
-	}
-	if len(fixture.git.adds) != 0 {
-		t.Fatalf("WorktreeAdd() calls = %d, want 0", len(fixture.git.adds))
-	}
-	if len(fixture.git.revisionQueries) != 0 {
-		t.Fatalf("commit-ish was consulted after existing -b branch: %#v", fixture.git.revisionQueries)
-	}
-}
-
-func TestNewWorktreeAddCommandRejectsRemoteAmbiguity(t *testing.T) {
+func TestNewWorktreeAddCommandLeavesRemoteChoiceToGit(t *testing.T) {
 	fixture := worktreeAddNewFixture(t, "feature/shared")
-	fixture.git.remotes = []string{"upstream", "fork"}
-	fixture.git.remoteBranches["upstream/feature/shared"] = true
-	fixture.git.remoteBranches["fork/feature/shared"] = true
-	fixture.git.revisions["explicit-ignored"] = true
-
-	err := fixture.worktreeAddExecute("feature/shared", "explicit-ignored")
-	if err == nil || !strings.Contains(err.Error(), "ambiguous across remotes: fork, upstream") {
-		t.Fatalf("Execute() error = %v, want sorted remote ambiguity", err)
-	}
-	if fixture.api.calls != 0 {
-		t.Fatalf("DefaultBranch() calls = %d, want 0", fixture.api.calls)
-	}
-	if len(fixture.git.revisionQueries) != 0 {
-		t.Fatalf("explicit commit-ish was consulted: %#v", fixture.git.revisionQueries)
-	}
-	if len(fixture.git.adds) != 0 {
-		t.Fatalf("WorktreeAdd() calls = %d, want 0", len(fixture.git.adds))
-	}
-}
-
-func TestNewWorktreeAddCommandOriginWinsRemoteAmbiguity(t *testing.T) {
-	fixture := worktreeAddNewFixture(t, "feature/shared")
-	fixture.git.remotes = []string{"origin", "upstream", "fork"}
+	fixture.git.remotes = []string{"origin", "fork"}
 	fixture.git.remoteBranches["origin/feature/shared"] = true
-	fixture.git.remoteBranches["upstream/feature/shared"] = true
 	fixture.git.remoteBranches["fork/feature/shared"] = true
-
 	if err := fixture.worktreeAddExecute("feature/shared"); err != nil {
-		t.Fatalf("Execute() error = %v", err)
+		t.Fatal(err)
 	}
-	if got, want := fixture.git.adds[0].options.Commitish, "origin/feature/shared"; got != want {
-		t.Fatalf("Commitish = %q, want %q", got, want)
+	if got := fixture.git.adds[0].options.Commitish; got != "feature/shared" {
+		t.Fatalf("native worktree add operand = %q, want feature/shared", got)
 	}
+	if fixture.api.calls != 0 || len(fixture.gh.syncs) != 0 ||
+		len(fixture.git.remoteBranchQueries) != 0 {
+		t.Fatal("gh-qw attempted to select remotes or call GitHub")
+	}
+	// Git's ambiguous-remotes and checkout.defaultRemote behavior is covered
+	// by real-Git tests, not replicated in this fake.
 }
 
 func TestNewWorktreeAddCommandAPIAndSyncFailures(t *testing.T) {
@@ -442,11 +358,6 @@ func TestNewWorktreeAddCommandAPIAndSyncFailures(t *testing.T) {
 			},
 			want: "invalid default branch",
 		},
-		{
-			name: "multiple fetch remotes without origin",
-			configure: func(fixture *worktreeAddFixture) {
-				fixture.git.remotes = []string{"fork", "upstream"}
-			},
 			want: "multiple remotes and no origin",
 		},
 		{
@@ -459,7 +370,7 @@ func TestNewWorktreeAddCommandAPIAndSyncFailures(t *testing.T) {
 		{
 			name:      "sync did not create ref",
 			configure: func(fixture *worktreeAddFixture) {},
-			want:      "without creating the remote-tracking ref",
+			want:      "did not materialize local default branch",
 		},
 	}
 
@@ -469,7 +380,7 @@ func TestNewWorktreeAddCommandAPIAndSyncFailures(t *testing.T) {
 			fixture.api.branch = "main"
 			test.configure(fixture)
 
-			err := fixture.worktreeAddExecute("feature/api-failure")
+			err := fixture.worktreeAddExecute("-b", "feature/api-failure")
 			if err == nil || !strings.Contains(err.Error(), test.want) {
 				t.Fatalf("Execute() error = %v, want containing %q", err, test.want)
 			}
@@ -1223,7 +1134,7 @@ type worktreeAddGh struct {
 	git *worktreeAddGit
 
 	syncErr                 error
-	syncCreatesRemoteBranch bool
+	syncCreatesLocalBranch bool
 
 	syncs []ghcmd.SyncOptions
 }
@@ -1237,10 +1148,10 @@ func (gh *worktreeAddGh) RepoSync(
 	if gh.syncErr != nil {
 		return gh.syncErr
 	}
-	if gh.syncCreatesRemoteBranch {
+	if gh.syncCreatesLocalBranch {
 		// Every exercised scenario resolves to the "origin" remote; keep the
 		// simulation simple rather than reimplementing worktreeAddSyncRemote.
-		gh.git.remoteBranches["origin/"+options.Branch] = true
+		gh.git.localBranches[options.Branch] = true
 	}
 	return nil
 }

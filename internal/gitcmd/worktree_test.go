@@ -163,35 +163,29 @@ func TestWorktreeListReportsParseAndGitErrors(t *testing.T) {
 	})
 }
 
-func TestWorktreeAddArgumentOrdering(t *testing.T) {
+func TestWorktreeAddCreatesBranchWithNativeGitBeforeWorktree(t *testing.T) {
 	runner, recorder := newHelperRunner(t, "success")
 	runner.Stdout = &bytes.Buffer{}
 	runner.Stderr = &bytes.Buffer{}
 	dir := t.TempDir()
-
 	err := runner.WorktreeAdd(context.Background(), dir, WorktreeAddOptions{
-		Path:      "/worktrees/feature/x",
-		Commitish: "origin/feature/x",
-		NewBranch: "feature/x",
-		Force:     true,
-		Tracking:  TrackingEnabled,
+		Path: "/worktrees/feature/x", Commitish: "origin/feature/x",
+		NewBranch: "feature/x", Force: true,
 	})
 	if err != nil {
-		t.Fatalf("WorktreeAdd() error = %v", err)
+		t.Fatal(err)
 	}
-
-	want := []string{
-		"worktree",
-		"add",
-		"--force",
-		"-b", "feature/x",
-		"--track",
-		"--",
-		"/worktrees/feature/x",
-		"origin/feature/x",
+	want := [][]string{
+		{"branch", "--", "feature/x", "origin/feature/x"},
+		{"worktree", "add", "--force", "--", "/worktrees/feature/x", "feature/x"},
 	}
-	if got := recorder.last(t).args; !slicesEqual(got, want) {
-		t.Fatalf("args = %#v, want %#v", got, want)
+	if len(recorder.commands) != len(want) {
+		t.Fatalf("commands = %#v, want %#v", recorder.commands, want)
+	}
+	for i, call := range recorder.commands {
+		if !slicesEqual(call.args, want[i]) || call.cmd.Dir != dir {
+			t.Fatalf("command %d = %v in %q, want %v in %q", i, call.args, call.cmd.Dir, want[i], dir)
+		}
 	}
 }
 
@@ -199,64 +193,98 @@ func TestWorktreeAddSupportsResetDetachAndOrphanModes(t *testing.T) {
 	tests := []struct {
 		name    string
 		options WorktreeAddOptions
-		want    []string
+		want    [][]string
 	}{
 		{
 			name: "reset branch",
 			options: WorktreeAddOptions{
-				Path:        "/worktrees/reset",
-				Commitish:   "main",
-				ResetBranch: "reset",
-				Tracking:    TrackingDisabled,
+				Path: "/worktrees/reset", Commitish: "main", ResetBranch: "reset",
 			},
-			want: []string{
-				"worktree", "add",
-				"-B", "reset",
-				"--no-track",
-				"--", "/worktrees/reset", "main",
+			want: [][]string{
+				{"branch", "--force", "--", "reset", "main"},
+				{"worktree", "add", "--", "/worktrees/reset", "reset"},
 			},
 		},
 		{
 			name: "detached",
-			options: WorktreeAddOptions{
-				Path:      "/worktrees/detached",
-				Commitish: "HEAD~1",
-				Detach:    true,
-			},
-			want: []string{
-				"worktree", "add",
-				"--detach",
-				"--", "/worktrees/detached", "HEAD~1",
-			},
+			options: WorktreeAddOptions{Path: "/worktrees/detached", Commitish: "HEAD~1", Detach: true},
+			want: [][]string{{"worktree", "add", "--detach", "--", "/worktrees/detached", "HEAD~1"}},
 		},
 		{
 			name: "orphan",
-			options: WorktreeAddOptions{
-				Path:      "/worktrees/orphan",
-				NewBranch: "orphan",
-				Orphan:    true,
-			},
-			want: []string{
-				"worktree", "add",
-				"--orphan",
-				"-b", "orphan",
-				"--", "/worktrees/orphan",
-			},
+			options: WorktreeAddOptions{Path: "/worktrees/orphan", NewBranch: "orphan", Orphan: true},
+			want: [][]string{{"worktree", "add", "--orphan", "-b", "orphan", "--", "/worktrees/orphan"}},
 		},
 	}
-
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			runner, recorder := newHelperRunner(t, "success")
 			runner.Stdout = &bytes.Buffer{}
 			runner.Stderr = &bytes.Buffer{}
 			if err := runner.WorktreeAdd(context.Background(), t.TempDir(), test.options); err != nil {
-				t.Fatalf("WorktreeAdd() error = %v", err)
+				t.Fatal(err)
 			}
-			if got := recorder.last(t).args; !slicesEqual(got, test.want) {
-				t.Fatalf("args = %#v, want %#v", got, test.want)
+			if len(recorder.commands) != len(test.want) {
+				t.Fatalf("executed %d commands, want %d", len(recorder.commands), len(test.want))
+			}
+			for i, call := range recorder.commands {
+				if !slicesEqual(call.args, test.want[i]) {
+					t.Fatalf("command %d = %v, want %v", i, call.args, test.want[i])
+				}
 			}
 		})
+	}
+}
+
+func TestWorktreeAddUsesNativeRemoteAmbiguityAndDefaultRemote(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git unavailable")
+	}
+	repo := t.TempDir()
+	gitcmdRunRealGit(t, repo, "init", "-b", "main")
+	gitcmdRunRealGit(t, repo, "commit", "--allow-empty", "-m", "initial")
+	head := strings.TrimSpace(gitcmdRunRealGit(t, repo, "rev-parse", "HEAD"))
+	for _, remote := range []string{"origin", "fork"} {
+		gitcmdRunRealGit(t, repo, "remote", "add", remote, filepath.Join(repo, "missing-"+remote))
+		gitcmdRunRealGit(t, repo, "update-ref", "refs/remotes/"+remote+"/topic", head)
+	}
+	runner := &Runner{Executable: "git", Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}}
+	ambiguous := filepath.Join(t.TempDir(), "ambiguous")
+	if err := runner.WorktreeAdd(context.Background(), repo, WorktreeAddOptions{
+		Path: ambiguous, Commitish: "topic",
+	}); err == nil {
+		t.Fatal("ambiguous remotes succeeded without checkout.defaultRemote")
+	}
+	if _, err := os.Lstat(ambiguous); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("ambiguous worktree path exists: %v", err)
+	}
+	gitcmdRunRealGit(t, repo, "config", "checkout.defaultRemote", "fork")
+	dest := filepath.Join(t.TempDir(), "topic")
+	if err := runner.WorktreeAdd(context.Background(), repo, WorktreeAddOptions{
+		Path: dest, Commitish: "topic",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(gitcmdRunRealGit(t, dest, "config", "--get", "branch.topic.remote")); got != "fork" {
+		t.Fatalf("tracking remote = %q, want fork", got)
+	}
+}
+
+func TestWorktreeAddLeavesCreatedBranchWhenCheckoutFails(t *testing.T) {
+	repo := t.TempDir()
+	gitcmdRunRealGit(t, repo, "init", "-b", "main")
+	gitcmdRunRealGit(t, repo, "commit", "--allow-empty", "-m", "initial")
+	// The destination is the existing repository: Git must reject creating a
+	// worktree there, while the preceding native branch step is preserved.
+	runner := &Runner{Executable: "git", Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}}
+	err := runner.WorktreeAdd(context.Background(), repo, WorktreeAddOptions{
+		Path: repo, NewBranch: "kept", Commitish: "main",
+	})
+	if err == nil || !strings.Contains(err.Error(), "left intact") {
+		t.Fatalf("WorktreeAdd error = %v", err)
+	}
+	if got := strings.TrimSpace(gitcmdRunRealGit(t, repo, "branch", "--list", "kept")); got != "kept" {
+		t.Fatalf("created branch was lost: %q", got)
 	}
 }
 
@@ -266,9 +294,7 @@ func TestWorktreeAddRejectsConflictingOptions(t *testing.T) {
 		{Path: "/worktree", NewBranch: "new", ResetBranch: "reset"},
 		{Path: "/worktree", Detach: true, NewBranch: "new"},
 		{Path: "/worktree", Detach: true, Orphan: true},
-		{Path: "/worktree", Detach: true, Tracking: TrackingEnabled},
 		{Path: "/worktree", Orphan: true, Commitish: "main"},
-		{Path: "/worktree", Tracking: TrackingMode(99)},
 	}
 	for _, options := range tests {
 		runner, recorder := newHelperRunner(t, "success")
