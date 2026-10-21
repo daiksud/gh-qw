@@ -51,12 +51,15 @@ github.com/cli/cli
 github.com/cli/cli@feature/docs
 ```
 
-Pick an entry interactively with the external `fzf` and jump to it by wiring a small shell
-function, since `gh-qw` itself only ever prints the selected path:
+Print absolute paths for use in your own shell:
 
-```sh
-qwcd() { local dir; dir=$(gh qw list --fzf) || return; cd "$dir"; }
+```console
+$ gh qw list --full-path --exact cli/cli
+/Users/alice/ghqw/github.com/cli/cli
 ```
+
+Existing shell functions using the removed `--fzf` flag must be updated; see the
+[migration guidance](docs/reference/cli/README.md#migrating-shell-functions).
 
 Inside a Herdr-managed pane, `--herdr` opens and focuses a Herdr workspace for a new linked
 worktree, and closes it again on removal:
@@ -71,7 +74,7 @@ $ gh qw worktree add --herdr feature/docs
 | Command | Purpose |
 | --- | --- |
 | `gh qw get` / `gh qw clone` | Clone a missing repository or update an existing one. |
-| `gh qw list` | List repositories and, with `--worktree`, linked worktrees; `--fzf` selects one interactively. |
+| `gh qw list` | List repositories and, with `--worktree`, linked worktrees. |
 | `gh qw root` | Print configured repository roots. |
 | `gh qw rm` | Remove a repository or an `@branch` linked worktree safely; `--herdr` closes its Herdr workspace. |
 | `gh qw migrate` | Migrate GitHub repositories from a ghq layout. |

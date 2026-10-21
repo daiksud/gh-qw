@@ -3,15 +3,13 @@ package cmd
 import "testing"
 
 func TestExitCodeReturnsSilentStatusVerbatim(t *testing.T) {
-	for _, status := range []int{1, 130} {
-		if got := ExitCode(newSilentStatusError(status)); got != status {
-			t.Fatalf("ExitCode(newSilentStatusError(%d)) = %d, want %d", status, got, status)
-		}
+	if got := ExitCode(newSilentStatusError(1)); got != 1 {
+		t.Fatalf("ExitCode(newSilentStatusError(1)) = %d, want 1", got)
 	}
 }
 
 func TestSilentStatusErrorSatisfiesError(t *testing.T) {
-	err := newSilentStatusError(130)
+	err := newSilentStatusError(1)
 	if err == nil {
 		t.Fatal("newSilentStatusError() = nil, want a non-nil error")
 	}

@@ -3,14 +3,8 @@ package cmd
 import "fmt"
 
 // silentStatusError reports a specific process exit status without
-// Execute's standard "gh-qw: <error>" diagnostic line. It exists for
-// conditions that already communicated themselves to the person another
-// way — for example, canceling an interactive `list --fzf` selection with
-// Esc or Ctrl-C, where fzf's own screen already cleared without a message,
-// or fzf reporting that no candidate matched the typed query — so gh-qw's
-// own diagnostic line would be redundant or misleading noise. Every other
-// command failure keeps using an ordinary error and the 0/1/2 convention
-// documented on ExitCode.
+// Execute's standard "gh-qw: <error>" diagnostic line. Bulk --gone removal
+// uses it after reporting its outcome to avoid a redundant error.
 type silentStatusError struct {
 	status int
 }

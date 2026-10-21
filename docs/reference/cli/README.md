@@ -33,7 +33,6 @@ level supports `-h`/`--help`; help exits successfully without performing an oper
 | `0` | The requested operation completed successfully. A documented skip, such as a bulk-migration collision, is non-fatal. |
 | `1` | A runtime operation failed or a safety check refused the operation. Examples include Git or API failure, an unreadable file, a destination collision, or a path-containment failure. |
 | `2` | Command syntax, a repository specification, configuration, or usage is invalid. Examples include an unknown flag, a missing argument, an invalid `--partial` value, an ambiguous selector, incompatible flags, or an explicit `--herdr` outside a Herdr-managed pane. |
-| `130` | Canceling the external `fzf` picker (Esc or Ctrl-C) during `list --fzf`. This reuses `fzf`'s own documented cancellation status; see [`list`](#list). |
 
 For a batch `get`, all started items may finish before the process exits. Status `2` takes
 precedence if any item has an invalid specification; otherwise any runtime failure produces status
@@ -95,10 +94,8 @@ when step 1 applied — an explicit token's account is never inspected or report
 `worktree add`, `worktree remove`, and `rm` (for an `@<branch>` linked-worktree target only)
 accept `--herdr` and `--no-herdr`, mutually exclusive flags that integrate with Herdr, a terminal-
 workspace manager for coding agents, through its own `herdr` executable resolved from `PATH`.
-`gh-qw` never launches a shell itself; it only runs `herdr` and reports the outcome, the same shape
-[`list --fzf`](#list) already uses for `fzf` (see
-[ADR-0009](../../development/adr/0009-interactive-selection-via-fzf/) and
-[ADR-0018](../../development/adr/0018-herdr-workspace-integration/)).
+`gh-qw` never launches a shell itself; it only runs `herdr` and reports the outcome
+(see [ADR-0018](../../development/adr/0018-herdr-workspace-integration/)).
 
 Enablement resolves once per invocation, in this order: an explicit `--herdr`/`--no-herdr` flag;
 otherwise a set `GHQW_HERDR` environment variable; otherwise the configuration file's `herdr` key
@@ -275,7 +272,7 @@ gh qw get --partial blobless https://github.example.com/acme/widget.git
 ## `list`
 
 ```text
-gh qw list [-e|--exact] [-p|--full-path] [--unique] [--worktree] [--fzf] [<query>]
+gh qw list [-e|--exact] [-p|--full-path] [--unique] [--worktree] [<query>]
 ```
 
 By default, `list` discovers ordinary Git main worktrees beneath every repository root and emits
@@ -322,24 +319,13 @@ For `--unique`, candidates are considered shortest first (`repository`,
 only if it uniquely identifies that selected entry; otherwise more leading components are kept.
 No matches is a successful command with empty `stdout`.
 
-### Interactive selection (`--fzf`)
+### Migrating shell functions
 
-`--fzf` feeds the same filtered, sorted canonical identities to the external `fzf` executable
-(resolved from `PATH`) for a person to pick exactly one, then writes only that entry's absolute
-path to `stdout`. `--full-path` and `--unique` are accepted alongside `--fzf` without error but
-have no effect, since `--fzf`'s output is always a path. `list` itself still never launches a
-shell or changes directory — see [ADR-0006](../../development/adr/0006-command-set-v1/) and
-[ADR-0009](../../development/adr/0009-interactive-selection-via-fzf/) — so a caller wires a small
-shell function to `cd` into the result:
-
-```sh
-qwcd() { local dir; dir=$(gh qw list --fzf) || return; cd "$dir"; }
-```
-
-No candidates exits successfully (status `0`) without starting `fzf`. Canceling `fzf` with Esc or
-Ctrl-C, or `fzf` finding no match for the typed query, exit with `fzf`'s own documented status (130
-or 1) and empty `stdout` and `stderr`. Any other selection failure, including `fzf` missing from
-`PATH`, is an ordinary error on `stderr` with status `1`.
+The former `--fzf` integration has been removed. `list --help` no longer advertises it, and
+passing `--fzf` produces the normal unknown-flag error with exit status `2`. Remove the flag
+from existing shell functions. Use `list --full-path` to obtain paths and compose selection
+in the caller's shell if needed. `gh-qw` does not provide a replacement picker or launch a shell.
+See [ADR-0009](../../development/adr/0009-interactive-selection-via-fzf/).
 
 The v1 command has no `--vcs` or `--bare` option.
 
