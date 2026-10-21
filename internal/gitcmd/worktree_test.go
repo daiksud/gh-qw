@@ -93,7 +93,7 @@ func TestParseWorktreeListRejectsMalformedKnownFields(t *testing.T) {
 		{name: "empty HEAD", input: "worktree /repo\x00HEAD\x00"},
 		{name: "empty branch", input: "worktree /repo\x00branch\x00"},
 		{
-			name:  "branch and detached",
+			name: "branch and detached",
 			input: "" +
 				"worktree /repo\x00" +
 				"branch refs/heads/main\x00" +
@@ -206,14 +206,14 @@ func TestWorktreeAddSupportsResetDetachAndOrphanModes(t *testing.T) {
 			},
 		},
 		{
-			name: "detached",
+			name:    "detached",
 			options: WorktreeAddOptions{Path: "/worktrees/detached", Commitish: "HEAD~1", Detach: true},
-			want: [][]string{{"worktree", "add", "--detach", "--", "/worktrees/detached", "HEAD~1"}},
+			want:    [][]string{{"worktree", "add", "--detach", "--", "/worktrees/detached", "HEAD~1"}},
 		},
 		{
-			name: "orphan",
+			name:    "orphan",
 			options: WorktreeAddOptions{Path: "/worktrees/orphan", NewBranch: "orphan", Orphan: true},
-			want: [][]string{{"worktree", "add", "--orphan", "-b", "orphan", "--", "/worktrees/orphan"}},
+			want:    [][]string{{"worktree", "add", "--orphan", "-b", "orphan", "--", "/worktrees/orphan"}},
 		},
 	}
 	for _, test := range tests {

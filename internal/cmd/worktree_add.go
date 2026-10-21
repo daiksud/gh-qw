@@ -160,7 +160,6 @@ type worktreeAddPlanner struct {
 	gh         WorktreeAddGh
 	api        WorktreeAddAPI
 	repository local.Repository
-
 }
 
 type worktreeAddUsageError struct {

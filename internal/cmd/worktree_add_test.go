@@ -44,9 +44,9 @@ func TestNewWorktreeAddCommandAutomaticResolution(t *testing.T) {
 			wantOptions: gitcmd.WorktreeAddOptions{Commitish: "feature/origin"},
 		},
 		{
-			name:        "delegates custom remotes to Git",
-			args:        []string{"feature/upstream"},
-			configure:   func(f *worktreeAddFixture) {
+			name: "delegates custom remotes to Git",
+			args: []string{"feature/upstream"},
+			configure: func(f *worktreeAddFixture) {
 				f.git.remotes = []string{"upstream"}
 				f.git.remoteBranches["upstream/feature/upstream"] = true
 			},
@@ -1131,7 +1131,7 @@ func (git *worktreeAddGit) RevisionExists(
 type worktreeAddGh struct {
 	git *worktreeAddGit
 
-	syncErr                 error
+	syncErr                error
 	syncCreatesLocalBranch bool
 
 	syncs []ghcmd.SyncOptions
