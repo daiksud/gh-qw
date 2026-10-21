@@ -11,6 +11,7 @@ import (
 
 	"github.com/daiksud/gh-qw/internal/gitcmd"
 	"github.com/daiksud/gh-qw/internal/local"
+	"github.com/daiksud/gh-qw/internal/physicalpath"
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
 )
 
@@ -480,7 +481,7 @@ func worktreeRemoveGoneCurrentPath(commandRuntime worktreeRemoveRuntime) (string
 }
 
 func worktreeRemoveGonePathContains(directory, path string) bool {
-	return removeSamePath(directory, path) || removePathStrictlyWithin(directory, path)
+	return physicalpath.SamePath(directory, path) || removePathStrictlyWithin(directory, path)
 }
 
 func worktreeRemoveGoneContainedRegistration(
@@ -493,8 +494,8 @@ func worktreeRemoveGoneContainedRegistration(
 		if !removePathStrictlyWithin(parent.Path, registration.path) {
 			continue
 		}
-		if !found || removePathKey(registration.path) < removePathKey(contained.path) ||
-			(removePathKey(registration.path) == removePathKey(contained.path) &&
+		if !found || physicalpath.Key(registration.path) < physicalpath.Key(contained.path) ||
+			(physicalpath.Key(registration.path) == physicalpath.Key(contained.path) &&
 				registration.repository < contained.repository) {
 			contained = registration
 			found = true
@@ -558,50 +559,19 @@ func worktreeRemoveGoneRegistrationPaths(
 		return nil, err
 	}
 	paths := []string{path}
-	if !removeSamePath(path, physical) {
+	if !physicalpath.SamePath(path, physical) {
 		paths = append(paths, physical)
 	}
 	return paths, nil
 }
 
-func worktreeRemoveGonePhysicalizeRegistration(
-	filesystem removeFilesystem,
-	path string,
-) (string, error) {
-	current := path
-	var missingSuffix []string
-	for {
-		missing, err := removePathMissing(filesystem, current)
-		if err != nil {
-			return "", fmt.Errorf("inspect path component %q: %w", current, err)
-		}
-		if !missing {
-			break
-		}
-
-		parent := filepath.Dir(current)
-		if removeSamePath(parent, current) {
-			return "", fmt.Errorf("find existing path ancestor for %q", path)
-		}
-		missingSuffix = append(missingSuffix, filepath.Base(current))
-		current = parent
-	}
-
-	physical, err := filesystem.evalSymlinks(current)
+func worktreeRemoveGonePhysicalizeRegistration(filesystem removeFilesystem, path string) (string, error) {
+	observer := physicalpath.Filesystem{Lstat: filesystem.lstat, EvalSymlinks: filesystem.evalSymlinks}
+	physical, err := observer.ResolveAbsolute(path)
 	if err != nil {
-		return "", fmt.Errorf("resolve symbolic links in %q: %w", current, err)
+		return "", fmt.Errorf("resolve registered path %q: %w", path, err)
 	}
-	if !filepath.IsAbs(physical) {
-		return "", fmt.Errorf("resolved registered path %q is not absolute", physical)
-	}
-	physical = filepath.Clean(physical)
-	for index := len(missingSuffix) - 1; index >= 0; index-- {
-		physical = filepath.Join(physical, missingSuffix[index])
-	}
-	if !filepath.IsAbs(physical) {
-		return "", fmt.Errorf("physical registered path %q is not absolute", physical)
-	}
-	return filepath.Clean(physical), nil
+	return physical, nil
 }
 
 func worktreeRemoveGoneHasKept(plan worktreeRemoveGonePlan) bool {
@@ -661,7 +631,7 @@ func worktreeRemoveGoneComparePlans(
 	before, after worktreeRemoveGonePlan,
 ) error {
 	if before.repository != after.repository ||
-		!removeSamePath(before.current, after.current) {
+		!physicalpath.SamePath(before.current, after.current) {
 		return fmt.Errorf("%w: repository, current directory, or configuration changed", ErrRemoveSafety)
 	}
 	if err := worktreeRemoveGoneCompareRepositories(
@@ -810,7 +780,7 @@ func worktreeRemoveGoneExecute(
 		}
 		stillRegistered := false
 		for _, worktree := range registered {
-			if removeSamePath(worktree.Path, entry.target.directory.path) {
+			if physicalpath.SamePath(worktree.Path, entry.target.directory.path) {
 				stillRegistered = true
 				break
 			}

@@ -15,6 +15,7 @@ import (
 
 	"github.com/daiksud/gh-qw/internal/gitcmd"
 	"github.com/daiksud/gh-qw/internal/local"
+	"github.com/daiksud/gh-qw/internal/physicalpath"
 	"github.com/daiksud/gh-qw/internal/repospec"
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
 )
@@ -904,7 +905,7 @@ func (git *removeTestGit) WorktreeRemove(
 		dir:     dir,
 		options: options,
 	})
-	if removeSamePath(options.Path, git.failPath) {
+	if physicalpath.SamePath(options.Path, git.failPath) {
 		return git.failErr
 	}
 	if err := os.RemoveAll(options.Path); err != nil {
@@ -912,7 +913,7 @@ func (git *removeTestGit) WorktreeRemove(
 	}
 	remaining := git.registered[:0]
 	for _, worktree := range git.registered {
-		if !removeSamePath(worktree.Path, options.Path) {
+		if !physicalpath.SamePath(worktree.Path, options.Path) {
 			remaining = append(remaining, worktree)
 		}
 	}
@@ -1054,7 +1055,7 @@ func (fixture *removeTestFixture) linkedRecord(slot string) *local.Worktree {
 
 func (fixture *removeTestFixture) registered(path string) bool {
 	for _, worktree := range fixture.git.registered {
-		if removeSamePath(worktree.Path, path) {
+		if physicalpath.SamePath(worktree.Path, path) {
 			return true
 		}
 	}

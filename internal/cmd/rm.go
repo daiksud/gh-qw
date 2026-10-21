@@ -18,6 +18,7 @@ import (
 	"github.com/daiksud/gh-qw/internal/fsidentity"
 	"github.com/daiksud/gh-qw/internal/gitcmd"
 	"github.com/daiksud/gh-qw/internal/local"
+	"github.com/daiksud/gh-qw/internal/physicalpath"
 	"github.com/daiksud/gh-qw/internal/repospec"
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
 	"github.com/spf13/cobra"
@@ -473,7 +474,7 @@ func removePrepareCommon(
 		)
 	}
 	configuredRoot := roots.RepositoryRoots[repository.RootIndex]
-	if !removeSamePath(repository.Root, configuredRoot) {
+	if !physicalpath.SamePath(repository.Root, configuredRoot) {
 		return removePlan{}, fmt.Errorf(
 			"%w: repository root changed from %q to %q",
 			ErrRemoveSafety,
@@ -526,7 +527,7 @@ func removePrepareCommon(
 		repository.Owner,
 		repository.Repo,
 	)
-	if !removeSamePath(repository.Path, expectedMain) {
+	if !physicalpath.SamePath(repository.Path, expectedMain) {
 		return removePlan{}, fmt.Errorf(
 			"%w: repository path %q is not the exact expected path %q",
 			ErrRemoveSafety,
@@ -543,7 +544,7 @@ func removePrepareCommon(
 	if err != nil {
 		return removePlan{}, fmt.Errorf("derive main repository path: %w", err)
 	}
-	if !removeSamePath(derivedMain, expectedMain) {
+	if !physicalpath.SamePath(derivedMain, expectedMain) {
 		return removePlan{}, fmt.Errorf(
 			"%w: expected repository path %q resolves to %q",
 			ErrRemoveSafety,
@@ -695,7 +696,7 @@ func removePreflightWhole(
 	seenSlots := make(map[string]string, len(linked))
 	seenPaths := make(map[string]string, len(linked))
 	for _, worktree := range linked {
-		slotKey := removePathKey(filepath.FromSlash(worktree.Slot))
+		slotKey := physicalpath.Key(filepath.FromSlash(worktree.Slot))
 		if previous, exists := seenSlots[slotKey]; exists {
 			return removePlan{}, fmt.Errorf(
 				"%w: linked slot %q is duplicated by %q and %q",
@@ -707,7 +708,7 @@ func removePreflightWhole(
 		}
 		seenSlots[slotKey] = worktree.Path
 
-		pathKey := removePathKey(worktree.Path)
+		pathKey := physicalpath.Key(worktree.Path)
 		if previous, exists := seenPaths[pathKey]; exists {
 			return removePlan{}, fmt.Errorf(
 				"%w: linked path %q is duplicated by %q",
@@ -848,8 +849,8 @@ func removePrepareLinkedTargetWithCleanliness(
 		plan.worktreeBase,
 		filepath.FromSlash(worktree.Slot),
 	)
-	if !removeSamePath(expectedPath, expectedLexical) ||
-		!removeSamePath(worktree.Path, expectedLexical) {
+	if !physicalpath.SamePath(expectedPath, expectedLexical) ||
+		!physicalpath.SamePath(worktree.Path, expectedLexical) {
 		return removeLinkedTarget{}, removeNode{}, fmt.Errorf(
 			"%w: linked worktree %q path %q is not the exact deterministic path %q",
 			ErrRemoveSafety,
@@ -976,7 +977,7 @@ func removeValidateMainRecord(
 			worktree.Identity,
 			repository.Identity,
 		)
-	case !removeSamePath(worktree.Path, repository.Path):
+	case !physicalpath.SamePath(worktree.Path, repository.Path):
 		return fmt.Errorf(
 			"%w: main worktree path %q does not match %q",
 			ErrRemoveSafety,
@@ -1094,8 +1095,8 @@ func removeValidateMainGitAssociation(
 	if err != nil {
 		return err
 	}
-	if !removeSamePath(topLevel, repositoryPath) ||
-		!removeSamePath(commonDir, gitPath) {
+	if !physicalpath.SamePath(topLevel, repositoryPath) ||
+		!physicalpath.SamePath(commonDir, gitPath) {
 		return fmt.Errorf(
 			"main Git association changed: top-level %q, common directory %q",
 			topLevel,
@@ -1145,7 +1146,7 @@ func removeExpectedWorktreeBase(
 	if err != nil {
 		return "", fmt.Errorf("derive worktree base: %w", err)
 	}
-	if !removeSamePath(derived, expected) {
+	if !physicalpath.SamePath(derived, expected) {
 		return "", fmt.Errorf(
 			"%w: expected worktree base %q resolves to %q",
 			ErrRemoveSafety,
@@ -1210,12 +1211,9 @@ func removeCaptureNode(
 		return removeNode{}, fmt.Errorf("path %q is outside boundary %q", path, boundary)
 	}
 
-	info, err := filesystem.lstat(path)
+	info, err := fsidentity.Capture(path, filesystem.lstat, filesystem.sameFile)
 	if err != nil {
 		return removeNode{}, err
-	}
-	if err := fsidentity.Prime(info, filesystem.sameFile); err != nil {
-		return removeNode{}, fmt.Errorf("capture filesystem identity: %w", err)
 	}
 	if info.Mode()&fs.ModeSymlink != 0 {
 		return removeNode{}, errors.New("path is a symbolic link")
@@ -1241,7 +1239,7 @@ func removeCaptureNode(
 		return removeNode{}, fmt.Errorf("resolved path %q is not absolute", physical)
 	}
 	physical = filepath.Clean(physical)
-	if !removeSamePath(physical, path) {
+	if !physicalpath.SamePath(physical, path) {
 		return removeNode{}, fmt.Errorf(
 			"path resolves through a symbolic link to %q",
 			physical,
@@ -1280,7 +1278,7 @@ func removeCaptureCleanupChain(
 ) ([]removeNode, error) {
 	boundary = filepath.Clean(boundary)
 	start = filepath.Clean(start)
-	if removeSamePath(start, boundary) {
+	if physicalpath.SamePath(start, boundary) {
 		return nil, nil
 	}
 	if !removePathStrictlyWithin(boundary, start) {
@@ -1288,7 +1286,7 @@ func removeCaptureCleanupChain(
 	}
 
 	var result []removeNode
-	for current := start; !removeSamePath(current, boundary); current = filepath.Dir(current) {
+	for current := start; !physicalpath.SamePath(current, boundary); current = filepath.Dir(current) {
 		if !removePathStrictlyWithin(boundary, current) {
 			return nil, fmt.Errorf(
 				"cleanup directory %q escaped boundary %q",
@@ -1319,16 +1317,16 @@ func removeComparePlans(
 		before.whole != after.whole ||
 		before.repository.Identity != after.repository.Identity ||
 		before.repository.RootIndex != after.repository.RootIndex ||
-		!removeSamePath(before.repository.Path, after.repository.Path) ||
-		!removeSamePath(before.repository.Root, after.repository.Root) {
+		!physicalpath.SamePath(before.repository.Path, after.repository.Path) ||
+		!physicalpath.SamePath(before.repository.Root, after.repository.Root) {
 		return fmt.Errorf("%w: selected repository or removal mode changed", ErrRemoveSafety)
 	}
 	if len(before.roots.RepositoryRoots) != len(after.roots.RepositoryRoots) ||
-		!removeSamePath(before.roots.WorktreeRoot, after.roots.WorktreeRoot) {
+		!physicalpath.SamePath(before.roots.WorktreeRoot, after.roots.WorktreeRoot) {
 		return fmt.Errorf("%w: configured roots changed", ErrRemoveSafety)
 	}
 	for index := range before.roots.RepositoryRoots {
-		if !removeSamePath(
+		if !physicalpath.SamePath(
 			before.roots.RepositoryRoots[index],
 			after.roots.RepositoryRoots[index],
 		) {
@@ -1356,7 +1354,7 @@ func removeComparePlans(
 		}
 	}
 
-	if !removeSamePath(before.worktreeBase, after.worktreeBase) ||
+	if !physicalpath.SamePath(before.worktreeBase, after.worktreeBase) ||
 		(before.worktreeBaseDir == nil) != (after.worktreeBaseDir == nil) {
 		return fmt.Errorf("%w: worktree base changed", ErrRemoveSafety)
 	}
@@ -1471,7 +1469,7 @@ func removeCompareNode(
 	before, after removeNode,
 	description string,
 ) error {
-	if before.kind != after.kind || !removeSamePath(before.path, after.path) {
+	if before.kind != after.kind || !physicalpath.SamePath(before.path, after.path) {
 		return fmt.Errorf("%w: %s path changed", ErrRemoveSafety, description)
 	}
 	if before.info == nil || after.info == nil ||
@@ -1490,7 +1488,7 @@ func removeSameWorktree(first, second local.Worktree) bool {
 	return first.Repository.Identity == second.Repository.Identity &&
 		first.Identity == second.Identity &&
 		first.Slot == second.Slot &&
-		removeSamePath(first.Path, second.Path) &&
+		physicalpath.SamePath(first.Path, second.Path) &&
 		first.HEAD == second.HEAD &&
 		first.Branch == second.Branch &&
 		first.Main == second.Main &&
@@ -1874,7 +1872,7 @@ func removeVerifyWorktreeUnregistered(
 		return err
 	}
 	for _, worktree := range worktrees {
-		if removeSamePath(worktree.Path, removedPath) {
+		if physicalpath.SamePath(worktree.Path, removedPath) {
 			return fmt.Errorf(
 				"Git still registers exact path %q",
 				removeOutputPath(removedPath),
@@ -1993,7 +1991,7 @@ func removeNewMutationState(plan removePlan) *removeMutationState {
 }
 
 func (state *removeMutationState) markRemoved(path string) {
-	state.removed[removePathKey(path)] = true
+	state.removed[physicalpath.Key(path)] = true
 }
 
 func (state *removeMutationState) observePath(
@@ -2014,7 +2012,7 @@ func (state *removeMutationState) failure(operation string, err error) error {
 	removed := make([]string, 0, len(state.planned))
 	remaining := make([]string, 0, len(state.planned))
 	for _, path := range state.planned {
-		if state.removed[removePathKey(path)] {
+		if state.removed[physicalpath.Key(path)] {
 			removed = append(removed, removeOutputPath(path))
 		} else {
 			remaining = append(remaining, removeOutputPath(path))
@@ -2151,35 +2149,13 @@ func removePathStrictlyWithin(boundary, candidate string) bool {
 	if boundary == "" || candidate == "" {
 		return false
 	}
-	relative, err := filepath.Rel(filepath.Clean(boundary), filepath.Clean(candidate))
-	if err != nil || relative == "." || filepath.IsAbs(relative) {
-		return false
-	}
-	return relative != ".." &&
-		!strings.HasPrefix(relative, ".."+string(filepath.Separator))
+	return physicalpath.StrictlyWithin(boundary, candidate)
 }
 
 func removePathsOverlap(first, second string) bool {
-	return removeSamePath(first, second) ||
+	return physicalpath.SamePath(first, second) ||
 		removePathStrictlyWithin(first, second) ||
 		removePathStrictlyWithin(second, first)
-}
-
-func removeSamePath(first, second string) bool {
-	first = filepath.Clean(first)
-	second = filepath.Clean(second)
-	if first == second {
-		return true
-	}
-	return runtime.GOOS == "windows" && strings.EqualFold(first, second)
-}
-
-func removePathKey(path string) string {
-	path = filepath.Clean(path)
-	if runtime.GOOS == "windows" {
-		return strings.ToLower(path)
-	}
-	return path
 }
 
 func removeOutputPath(path string) string {

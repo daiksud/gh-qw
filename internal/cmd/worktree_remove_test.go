@@ -16,6 +16,7 @@ import (
 
 	"github.com/daiksud/gh-qw/internal/gitcmd"
 	"github.com/daiksud/gh-qw/internal/local"
+	"github.com/daiksud/gh-qw/internal/physicalpath"
 	"github.com/daiksud/gh-qw/internal/repospec"
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
 	"github.com/spf13/cobra"
@@ -1371,8 +1372,8 @@ func TestNewWorktreeRemoveCommandGoneContinuesAfterGitFailure(t *testing.T) {
 	if got := ExitCode(err); got != 1 {
 		t.Fatalf("ExitCode(error=%v) = %d, want 1; stderr=%q", err, got, stderr.String())
 	}
-	if len(git.removals) != 2 || !removeSamePath(git.removals[0], paths[0]) ||
-		!removeSamePath(git.removals[1], paths[1]) {
+	if len(git.removals) != 2 || !physicalpath.SamePath(git.removals[0], paths[0]) ||
+		!physicalpath.SamePath(git.removals[1], paths[1]) {
 		t.Fatalf("WorktreeRemove paths = %#v, want %#v", git.removals, paths)
 	}
 	if _, err := os.Stat(paths[0]); err != nil {
@@ -1416,7 +1417,7 @@ func (git *worktreeRemoveFailingRunner) WorktreeRemove(
 	options gitcmd.WorktreeRemoveOptions,
 ) error {
 	git.removals = append(git.removals, options.Path)
-	if removeSamePath(options.Path, git.failPath) {
+	if physicalpath.SamePath(options.Path, git.failPath) {
 		return errors.New("simulated removal failure")
 	}
 	return git.Runner.WorktreeRemove(ctx, dir, options)
