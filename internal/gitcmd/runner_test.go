@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -68,65 +67,7 @@ func TestRunnerRunDirStreamsConfiguredIO(t *testing.T) {
 	}
 }
 
-// TestRunnerNeverConnectsCommandToCallerStandardInput guards the fix for a
-// gh-qw hang: exec.Cmd only avoids a background copy-to-pipe goroutine (and
-// the Wait call blocking on it until EOF) when Cmd.Stdin is nil or a
-// *os.File. Runner has no Stdin field to plumb a caller's reader through, so
-// this asserts the built command's Stdin stays nil however Runner is used.
-func TestRunnerNeverConnectsCommandToCallerStandardInput(t *testing.T) {
-	runner, recorder := newHelperRunner(t, "success")
-	runner.Stderr = &bytes.Buffer{}
 
-	if _, err := runner.Output(context.Background(), "status"); err != nil {
-		t.Fatalf("Output() error = %v", err)
-	}
-
-	command := recorder.last(t)
-	if command.cmd.Stdin != nil {
-		t.Fatalf("cmd.Stdin = %#v, want nil so git always reads from the null device", command.cmd.Stdin)
-	}
-}
-
-// TestRunnerDoesNotBlockOnALiveCallerStandardInput reproduces the
-// conditions that made a delegated `git`/`gh` invocation hang until Enter
-// was pressed: a calling process (a terminal) whose own standard input
-// never reaches EOF. Before Stdin was removed from Runner, wiring that
-// reader into cmd.Stdin (even indirectly through os.Stdin) made Wait block
-// on a copy goroutine that never saw EOF. With no Stdin field to wire it
-// through, git's own child process always gets the null device, so Wait
-// must return promptly even while the test process's os.Stdin is a pipe
-// deliberately left open.
-func TestRunnerDoesNotBlockOnALiveCallerStandardInput(t *testing.T) {
-	runner, _ := newHelperRunner(t, "success")
-	runner.Stderr = &bytes.Buffer{}
-
-	originalStdin := os.Stdin
-	reader, writer, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("Pipe() error = %v", err)
-	}
-	t.Cleanup(func() {
-		os.Stdin = originalStdin
-		_ = reader.Close()
-		_ = writer.Close()
-	})
-	os.Stdin = reader
-
-	done := make(chan error, 1)
-	go func() {
-		_, err := runner.Output(context.Background(), "status")
-		done <- err
-	}()
-
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("Output() error = %v", err)
-		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("Output() did not return; it blocked as if waiting on the caller's standard input")
-	}
-}
 
 func TestRunnerOutputPreservesFailureWithoutLeakingDetails(t *testing.T) {
 	runner, recorder := newHelperRunner(t, "output-fail")
@@ -185,123 +126,8 @@ func TestRunnerOutputPreservesFailureWithoutLeakingDetails(t *testing.T) {
 	}
 }
 
-// TestRunnerRunDirPassesThroughAnOSFileStderrDescriptor guards
-// procio.PassthroughFile detection in RunDir: when Stderr is an *os.File,
-// Git must inherit that file descriptor directly instead of writing
-// through a pipe, so it can detect a terminal and render interactive
-// progress and color.
-func TestRunnerRunDirPassesThroughAnOSFileStderrDescriptor(t *testing.T) {
-	runner, recorder := newHelperRunner(t, "stream")
-	runner.Stdout = &bytes.Buffer{}
-	reader, writer, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("Pipe() error = %v", err)
-	}
-	defer reader.Close()
-	runner.Stderr = writer
 
-	if err := runner.RunDir(context.Background(), "", "status", "--short"); err != nil {
-		t.Fatalf("RunDir() error = %v", err)
-	}
-	if err := writer.Close(); err != nil {
-		t.Fatalf("Close() error = %v", err)
-	}
 
-	command := recorder.last(t)
-	if command.cmd.Stderr != writer {
-		t.Fatalf(
-			"cmd.Stderr = %#v, want the same *os.File %#v so Git inherits the descriptor directly",
-			command.cmd.Stderr,
-			writer,
-		)
-	}
-
-	got, err := io.ReadAll(reader)
-	if err != nil {
-		t.Fatalf("ReadAll() error = %v", err)
-	}
-	if string(got) != "streamed-stderr" {
-		t.Fatalf("passed-through stderr = %q, want %q", got, "streamed-stderr")
-	}
-}
-
-func TestRunnerRunDirPassesThroughAnOSFileStdoutDescriptor(t *testing.T) {
-	runner, recorder := newHelperRunner(t, "stream")
-	runner.Stderr = &bytes.Buffer{}
-	reader, writer, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("Pipe() error = %v", err)
-	}
-	defer reader.Close()
-	runner.Stdout = writer
-
-	if err := runner.RunDir(context.Background(), "", "status", "--short"); err != nil {
-		t.Fatalf("RunDir() error = %v", err)
-	}
-	if err := writer.Close(); err != nil {
-		t.Fatalf("Close() error = %v", err)
-	}
-
-	command := recorder.last(t)
-	if command.cmd.Stdout != writer {
-		t.Fatalf(
-			"cmd.Stdout = %#v, want the same *os.File %#v so Git inherits the descriptor directly",
-			command.cmd.Stdout,
-			writer,
-		)
-	}
-
-	got, err := io.ReadAll(reader)
-	if err != nil {
-		t.Fatalf("ReadAll() error = %v", err)
-	}
-	const wantPrefix = "||" // empty stdin (null device) and empty GITCMD_TEST_VALUE
-	if !strings.HasPrefix(string(got), wantPrefix) {
-		t.Fatalf("passed-through stdout = %q, want prefix %q", got, wantPrefix)
-	}
-}
-
-// TestRunnerOutputDirStderrTailStaysEmptyWhenPassedThrough guards
-// CommandError.StderrOutput's documented behavior: once Git's stderr is
-// passed through directly to an *os.File, there is nothing left for the
-// bounded tail buffer to retain, since Git's diagnostic already reached
-// that file on its own.
-func TestRunnerOutputDirStderrTailStaysEmptyWhenPassedThrough(t *testing.T) {
-	runner, _ := newHelperRunner(t, "output-fail")
-	reader, writer, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("Pipe() error = %v", err)
-	}
-	defer reader.Close()
-	runner.Stderr = writer
-
-	output, err := runner.OutputDir(context.Background(), "", "ls-remote")
-	if closeErr := writer.Close(); closeErr != nil {
-		t.Fatalf("Close() error = %v", closeErr)
-	}
-	if string(output) != "captured-output" {
-		t.Fatalf("OutputDir() = %q, want %q", output, "captured-output")
-	}
-	if err == nil {
-		t.Fatal("OutputDir() error = nil, want failure")
-	}
-
-	var commandErr *CommandError
-	if !errors.As(err, &commandErr) {
-		t.Fatalf("error type = %T, want *CommandError", err)
-	}
-	if got := commandErr.StderrOutput(); len(got) != 0 {
-		t.Fatalf("StderrOutput() = %q, want empty because stderr was passed through directly", got)
-	}
-
-	got, readErr := io.ReadAll(reader)
-	if readErr != nil {
-		t.Fatalf("ReadAll() error = %v", readErr)
-	}
-	if string(got) != "stderr-super-secret" {
-		t.Fatalf("passed-through stderr = %q, want %q", got, "stderr-super-secret")
-	}
-}
 
 func TestRunnerReportsContextDeadline(t *testing.T) {
 	runner, _ := newHelperRunner(t, "wait")

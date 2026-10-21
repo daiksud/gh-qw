@@ -125,6 +125,40 @@ func TestExecuteDirectStderrHasNoTailOnFailure(t *testing.T) {
 	}
 }
 
+
+func TestExecuteDoesNotWaitForCallerStdinEOF(t *testing.T) {
+	original := os.Stdin
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		os.Stdin = original
+		reader.Close()
+		writer.Close()
+	}()
+	os.Stdin = reader
+
+	ctx := context.Background()
+	cmd := helper(ctx, t, "io")
+	done := make(chan error, 1)
+	go func() {
+		result, err := Execute(ctx, cmd, io.Discard, io.Discard, true)
+		if err == nil && string(result.Stdout) != "stdout:" {
+			err = errors.New("child read nonempty stdin instead of the null device")
+		}
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("execute with live caller stdin: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("child hung waiting for EOF on caller stdin")
+	}
+}
+
 func TestExecutePreservesContextAndNoErrorLeak(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
