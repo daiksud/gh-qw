@@ -1098,6 +1098,9 @@ func (fixture *removeTestFixture) dependencies() RemoveDependencies {
 		) (local.Worktree, error) {
 			for _, worktree := range fixture.currentWorktrees() {
 				if worktree.Slot == slot {
+					if fixture.associationErr != nil {
+						return local.Worktree{}, fixture.associationErr
+					}
 					return worktree, nil
 				}
 			}
