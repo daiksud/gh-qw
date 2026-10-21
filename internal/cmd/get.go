@@ -371,7 +371,7 @@ func getResolveDependencies(
 	}
 	identityResolver := deps.IdentityResolver
 	if identityResolver == nil {
-		identityResolver = ghapi.NewClient()
+		identityResolver = ghapi.NewClient(stderr)
 	}
 
 	return getResolvedDependencies{

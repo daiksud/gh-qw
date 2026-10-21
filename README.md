@@ -17,6 +17,10 @@ account cache, or switch the active account. See
 gh extension install daiksud/gh-qw
 ```
 
+Install Git and GitHub CLI with the [required external tool capabilities](docs/reference/compatibility/README.md#required-external-tool-capabilities).
+Authenticated-login and default-branch lookups run through `gh api`, using the selected host and
+gh's standard authentication.
+
 ## Layout
 
 Main worktrees are ordinary Git clones. Linked worktrees use a separate root:

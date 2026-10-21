@@ -32,6 +32,47 @@ func TestRunnerOutputExecutesInTheCurrentDirectory(t *testing.T) {
 	}
 }
 
+func TestRunnerResolvesGHPathLazilyAndPreservesExplicitExecutable(t *testing.T) {
+	t.Setenv("GH_PATH", "first-gh")
+	t.Setenv("PATH", t.TempDir())
+	runner, recorder := newHelperRunner(t, "success")
+	runner.Executable = ""
+	runner.Stderr = io.Discard
+	// Resolution must observe the environment at execution, not construction.
+	t.Setenv("GH_PATH", "selected-gh")
+	if _, err := runner.Output(context.Background(), "api", "user"); err != nil {
+		t.Fatal(err)
+	}
+	if got := recorder.last(t).executable; got != "selected-gh" {
+		t.Fatalf("executable = %q, want selected-gh", got)
+	}
+	runner.Executable = "explicit-gh"
+	if err := runner.runDir(context.Background(), "", "repo", "sync"); err != nil {
+		t.Fatal(err)
+	}
+	if got := recorder.last(t).executable; got != "explicit-gh" {
+		t.Fatalf("executable = %q, want explicit-gh", got)
+	}
+}
+
+func TestRunnerWrapsMissingPathExecutable(t *testing.T) {
+	t.Setenv("GH_PATH", "")
+	t.Setenv("PATH", t.TempDir())
+	runner := NewRunner()
+	for _, output := range []bool{false, true} {
+		var err error
+		if output {
+			_, err = runner.Output(context.Background(), "api", "user")
+		} else {
+			err = runner.runDir(context.Background(), "", "repo", "sync")
+		}
+		var commandErr *CommandError
+		if !errors.As(err, &commandErr) || !errors.Is(err, exec.ErrNotFound) || commandErr.ExitCode != -1 {
+			t.Fatalf("error = %v, want sanitized, unwrap-able executable lookup failure", err)
+		}
+	}
+}
+
 func TestRunnerRunDirStreamsConfiguredIO(t *testing.T) {
 	runner, recorder := newHelperRunner(t, "stream")
 	var stdout, stderr bytes.Buffer

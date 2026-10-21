@@ -305,7 +305,7 @@ func worktreeAddPrepareRuntime(dependencies WorktreeAddDependencies) worktreeAdd
 	}
 	apiClient := dependencies.API
 	if apiClient == nil {
-		apiClient = ghapi.NewClient()
+		apiClient = ghapi.NewClient(stderr)
 	}
 	if dependencies.Discover == nil {
 		dependencies.Discover = local.DiscoverRepositories

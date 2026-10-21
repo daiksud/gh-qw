@@ -4,29 +4,21 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/http"
 	"net/url"
 	"os"
 	"strings"
 
-	"github.com/cli/go-gh/v2/pkg/api"
-	"github.com/cli/go-gh/v2/pkg/auth"
+	"github.com/daiksud/gh-qw/internal/ghcmd"
 )
 
 const githubHost = "github.com"
 
-type restClient interface {
-	DoWithContext(context.Context, string, string, io.Reader, any) error
-}
-
-// Client provides the GitHub authentication and API operations used by gh-qw.
+// Client provides the GitHub API operations used by gh-qw through gh api.
 type Client struct {
-	hostOverride func() string
-	tokenForHost func(string) (string, string)
-	newREST      func(string, string) (restClient, error)
+	output func(context.Context, ...string) ([]byte, error)
 }
 
-// Identity is an authenticated GitHub account and its host.
+// Identity is an authenticated GitHub account and its selected host.
 type Identity struct {
 	Host  string
 	Login string
@@ -35,140 +27,75 @@ type Identity struct {
 // IdentityError means a repository owner could not be completed from gh
 // authentication. Callers should treat this as a usage error.
 type IdentityError struct {
-	message string
+	err error
 }
 
 func (e *IdentityError) Error() string {
-	return e.message
+	return e.err.Error()
 }
 
-// NewClient returns a Client backed by go-gh authentication and REST clients.
-func NewClient() *Client {
-	return &Client{
-		hostOverride: func() string {
-			return os.Getenv("GH_HOST")
-		},
-		tokenForHost: auth.TokenForHost,
-		newREST: func(host, token string) (restClient, error) {
-			return api.NewRESTClient(api.ClientOptions{
-				Host:         host,
-				AuthToken:    token,
-				LogIgnoreEnv: true,
-			})
-		},
-	}
+// Unwrap preserves the gh process failure and context cancellation, if any.
+func (e *IdentityError) Unwrap() error {
+	return e.err
 }
 
-// ResolveIdentity returns the authenticated login and host to use when
-// completing a repository name that has no owner.
+// NewClient returns a Client backed by the external gh executable. API response
+// output is captured; gh diagnostics go to stderr. A nil writer uses os.Stderr.
+// The executable is resolved only when an API operation runs.
+func NewClient(stderr io.Writer) *Client {
+	return &Client{output: (&ghcmd.Runner{Stderr: stderr}).Output}
+}
+
+// ResolveIdentity returns the authenticated login on GH_HOST or github.com when
+// completing a repository name that has no owner. gh owns authentication for the
+// selected host; stored accounts do not change gh-qw's shorthand host.
 func (c *Client) ResolveIdentity(ctx context.Context) (Identity, error) {
-	host, token, err := c.resolveHost()
+	host := strings.ToLower(strings.TrimSpace(os.Getenv("GH_HOST")))
+	if host == "" {
+		host = githubHost
+	}
+
+	output, err := c.output(ctx, "api", "--hostname", host, "user", "--jq", ".login // empty")
 	if err != nil {
-		return Identity{}, err
+		return Identity{}, &IdentityError{err: fmt.Errorf(
+			"cannot resolve authenticated GitHub user for %q: query current user: %w; specify <owner>/<repo>",
+			host, err,
+		)}
 	}
 
-	client, err := c.newREST(host, token)
-	if err != nil {
-		return Identity{}, newIdentityError(
-			"cannot resolve authenticated GitHub user for %q: create REST client: %s; specify <owner>/<repo>",
-			host, safeError(err, token),
-		)
-	}
-
-	var response struct {
-		Login string `json:"login"`
-	}
-	if err := client.DoWithContext(ctx, http.MethodGet, "user", nil, &response); err != nil {
-		return Identity{}, newIdentityError(
-			"cannot resolve authenticated GitHub user for %q: query current user: %s; specify <owner>/<repo>",
-			host, safeError(err, token),
-		)
-	}
-
-	login := strings.TrimSpace(response.Login)
+	login := strings.TrimSpace(string(output))
 	if login == "" {
-		return Identity{}, newIdentityError(
+		return Identity{}, &IdentityError{err: fmt.Errorf(
 			"cannot resolve authenticated GitHub user for %q: API response did not include a login; specify <owner>/<repo>",
 			host,
-		)
+		)}
 	}
 
 	return Identity{Host: host, Login: login}, nil
 }
 
-// DefaultBranch returns the default branch using gh's authentication for the
-// explicit repository host.
+// DefaultBranch returns the repository's REST default_branch using gh's
+// authentication for the explicit host, including for an empty repository.
 func (c *Client) DefaultBranch(ctx context.Context, host, owner, repo string) (string, error) {
-	host = normalizeHost(host)
+	host = strings.ToLower(strings.TrimSpace(host))
 	owner = strings.TrimSpace(owner)
 	repo = strings.TrimSpace(repo)
-	identity := repositoryIdentity(host, owner, repo)
+	identity := strings.Trim(strings.Join([]string{host, owner, repo}, "/"), "/")
 
 	if host == "" || owner == "" || repo == "" {
 		return "", fmt.Errorf("lookup default branch for %q: host, owner, and repository are required", identity)
 	}
 
-	token, _ := c.tokenForHost(host)
-	if token == "" {
-		return "", fmt.Errorf("lookup default branch for %q: authentication token not found for host %q", identity, host)
-	}
-
-	client, err := c.newREST(host, token)
-	if err != nil {
-		return "", fmt.Errorf("lookup default branch for %q: create REST client: %s", identity, safeError(err, token))
-	}
-
-	var response struct {
-		DefaultBranch string `json:"default_branch"`
-	}
 	path := fmt.Sprintf("repos/%s/%s", url.PathEscape(owner), url.PathEscape(repo))
-	if err := client.DoWithContext(ctx, http.MethodGet, path, nil, &response); err != nil {
-		return "", fmt.Errorf("lookup default branch for %q: GET repository: %s", identity, safeError(err, token))
+	output, err := c.output(ctx, "api", "--hostname", host, path, "--jq", ".default_branch // empty")
+	if err != nil {
+		return "", fmt.Errorf("lookup default branch for %q: GET repository: %w", identity, err)
 	}
 
-	branch := strings.TrimSpace(response.DefaultBranch)
+	branch := strings.TrimSpace(string(output))
 	if branch == "" {
 		return "", fmt.Errorf("lookup default branch for %q: API response did not include default_branch", identity)
 	}
 
 	return branch, nil
-}
-
-func (c *Client) resolveHost() (string, string, error) {
-	host := normalizeHost(c.hostOverride())
-	if host == "" {
-		host = githubHost
-	}
-	token, _ := c.tokenForHost(host)
-	if token == "" {
-		return "", "", newIdentityError(
-			"cannot resolve authenticated GitHub user for %q: no authentication token found; run \"gh auth login --hostname %s\" or specify <owner>/<repo>",
-			host, host,
-		)
-	}
-	return host, token, nil
-}
-
-func normalizeHost(host string) string {
-	host = strings.TrimSpace(host)
-	if host == "" {
-		return ""
-	}
-	return auth.NormalizeHostname(host)
-}
-
-func repositoryIdentity(host, owner, repo string) string {
-	return strings.Trim(strings.Join([]string{host, owner, repo}, "/"), "/")
-}
-
-func newIdentityError(format string, args ...any) *IdentityError {
-	return &IdentityError{message: fmt.Sprintf(format, args...)}
-}
-
-func safeError(err error, secret string) string {
-	message := err.Error()
-	if secret != "" {
-		message = strings.ReplaceAll(message, secret, "[REDACTED]")
-	}
-	return message
 }
