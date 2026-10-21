@@ -158,7 +158,7 @@ every root or with a deeper relative path is invalid.
 
 Before deriving a destination or comparing identities, `gh-qw`:
 
-1. requires `/` path separators, rejects ``, and parses SCP-like syntax as SSH;
+1. requires `/` path separators, rejects `\`, and parses SCP-like syntax as SSH;
 2. validates the host as DNS or IPv4, lowercases it, and rejects a trailing DNS dot or IPv6;
 3. excludes URL user information and port from the identity while retaining them for transport;
 4. requires exactly one owner and one repository component and rejects empty, escaped, or
@@ -554,8 +554,8 @@ Exactly one of `branch <short-branch>` or the value-less line `detached` appears
 An unborn worktree uses the all-zero object ID at the repository's object-format width.
 
 Every value is either an unquoted printable UTF-8 token or a double-quoted C-style string.
-Quoting is mandatory for an empty value or a value containing whitespace, ``, `"`, a control
-character, or a non-UTF-8 byte. Escapes are `\`, `\"`, `\n`, `\r`, `\t`, and `\xHH` for other
+Quoting is mandatory for an empty value or a value containing whitespace, `\`, `"`, a control
+character, or a non-UTF-8 byte. Escapes are `\\`, `\"`, `\n`, `\r`, `\t`, and `\xHH` for other
 bytes. Literal newlines never occur inside a record. Consumers must unescape quoted values once.
 
 Example:
