@@ -87,7 +87,7 @@ func testRepository(t *testing.T, rootPath, identity string, rootIndex int) Repo
 		t.Fatalf("MainPath(%q) error = %v", identity, err)
 	}
 	return Repository{
-		Identity:  parts.Identity,
+		Identity:  parts.String(),
 		Host:      parts.Host,
 		Owner:     parts.Owner,
 		Repo:      parts.Repo,

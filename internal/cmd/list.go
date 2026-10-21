@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -108,7 +109,10 @@ func NewListCommand(deps ListDependencies) *cobra.Command {
 
 			query := ""
 			if len(args) == 1 {
-				query = listCanonicalizeQuery(args[0], roots.RepositoryRoots)
+				query, err = listCanonicalizeQuery(command.Context(), args[0], roots.RepositoryRoots)
+				if err != nil {
+					return err
+				}
 			}
 			entries = listFilterEntries(entries, query, exact, includeWorktrees)
 
@@ -207,7 +211,7 @@ func listCollectEntries(
 
 		sawMain := false
 		for _, worktree := range worktrees {
-			entry, main, err := listWorktreeEntry(repository, worktree)
+			entry, main, err := listWorktreeEntry(ctx, repository, worktree)
 			if err != nil {
 				return nil, err
 			}
@@ -239,6 +243,7 @@ func listRepositoryEntry(repository local.Repository, path string) listEntry {
 }
 
 func listWorktreeEntry(
+	ctx context.Context,
 	repository local.Repository,
 	worktree local.Worktree,
 ) (listEntry, bool, error) {
@@ -269,7 +274,7 @@ func listWorktreeEntry(
 			repository.Identity,
 		)
 	}
-	if err := local.ValidateBranch(slot); err != nil {
+	if err := local.ValidateSlot(ctx, slot); err != nil {
 		return listEntry{}, false, fmt.Errorf(
 			"enumerate worktrees for %q: invalid slot %q: %w",
 			repository.Identity,
@@ -284,20 +289,27 @@ func listWorktreeEntry(
 	return entry, false, nil
 }
 
-func listCanonicalizeQuery(query string, roots []string) string {
+func listCanonicalizeQuery(ctx context.Context, query string, roots []string) (string, error) {
 	if !listSchemePattern.MatchString(query) && !listSCPLikePattern.MatchString(query) {
-		return query
+		return query, nil
 	}
 
-	spec, err := repospec.Parse(query, repospec.Options{Roots: roots})
+	parsed, err := repospec.Parse(query)
 	if err != nil {
-		return query
+		return query, nil
 	}
-	query = spec.Identity
+	spec, err := parsed.Resolve(ctx, repospec.Options{Roots: roots})
+	if err != nil {
+		if errors.Is(err, repospec.ErrUsage) {
+			return query, nil
+		}
+		return "", err
+	}
+	query = spec.Identity.String()
 	if spec.Branch != "" {
 		query += "@" + spec.Branch
 	}
-	return query
+	return query, nil
 }
 
 func listFilterEntries(

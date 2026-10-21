@@ -185,15 +185,15 @@ func NewRemoveCommand(dependencies RemoveDependencies) *cobra.Command {
 			if err := cobra.ExactArgs(1)(command, args); err != nil {
 				return removeNewUsageError(err)
 			}
-			if _, err := removeParseSelection(args[0]); err != nil {
-				return removeNewUsageError(err)
-			}
 			return nil
 		},
 		RunE: func(command *cobra.Command, args []string) error {
-			selection, err := removeParseSelection(args[0])
+			selection, err := removeParseSelection(command.Context(), args[0])
 			if err != nil {
-				return removeNewUsageError(err)
+				if errors.Is(err, local.ErrSelector) || errors.Is(err, local.ErrInvalidBranch) {
+					return removeNewUsageError(err)
+				}
+				return err
 			}
 
 			plan, err := removePreflight(
@@ -351,7 +351,7 @@ func removePrepareRuntime(dependencies RemoveDependencies) removeRuntime {
 	}
 }
 
-func removeParseSelection(argument string) (removeSelection, error) {
+func removeParseSelection(ctx context.Context, argument string) (removeSelection, error) {
 	selection := removeSelection{
 		raw:      argument,
 		selector: argument,
@@ -366,7 +366,7 @@ func removeParseSelection(argument string) (removeSelection, error) {
 		return removeSelection{}, err
 	}
 	if selection.linked {
-		if err := local.ValidateBranch(selection.slot); err != nil {
+		if err := local.ValidateSlot(ctx, selection.slot); err != nil {
 			return removeSelection{}, err
 		}
 	}
@@ -511,7 +511,7 @@ func removePreflightWhole(
 			plan.Repository.Identity,
 		)
 	}
-	if err := removeValidateMainRecord(plan.Repository, mainRecords[0]); err != nil {
+	if err := removeValidateMainRecord(ctx, plan.Repository, mainRecords[0]); err != nil {
 		return removePlan{}, err
 	}
 	plan.mainWorktree = mainRecords[0]
@@ -616,6 +616,7 @@ func removePreflightWhole(
 }
 
 func removeValidateMainRecord(
+	ctx context.Context,
 	repository local.Repository,
 	worktree local.Worktree,
 ) error {
@@ -670,13 +671,14 @@ func removeValidateMainRecord(
 	case worktree.Branch == "":
 		return fmt.Errorf("%w: main worktree has no branch", ErrRemoveSafety)
 	}
-	if err := local.ValidateBranch(worktree.Branch); err != nil {
-		return fmt.Errorf("%w: invalid main worktree branch: %v", ErrRemoveSafety, err)
+	if err := local.ValidateBranch(ctx, worktree.Branch); err != nil {
+		return fmt.Errorf("%w: validate main worktree branch: %w", ErrRemoveSafety, err)
 	}
 	return nil
 }
 
 func removeValidateLinkedRecord(
+	ctx context.Context,
 	repository local.Repository,
 	worktree local.Worktree,
 ) error {
@@ -742,11 +744,11 @@ func removeValidateLinkedRecord(
 			worktree.Slot,
 		)
 	}
-	if err := local.ValidateBranch(worktree.Slot); err != nil {
-		return fmt.Errorf("%w: invalid linked slot: %v", ErrRemoveSafety, err)
+	if err := local.ValidateSlot(ctx, worktree.Slot); err != nil {
+		return fmt.Errorf("%w: validate linked slot: %w", ErrRemoveSafety, err)
 	}
-	if err := local.ValidateBranch(worktree.Branch); err != nil {
-		return fmt.Errorf("%w: invalid linked branch: %v", ErrRemoveSafety, err)
+	if err := local.ValidateBranch(ctx, worktree.Branch); err != nil {
+		return fmt.Errorf("%w: validate linked branch: %w", ErrRemoveSafety, err)
 	}
 	return nil
 }
@@ -1017,7 +1019,7 @@ func removeRevalidateMainForDeletion(
 			len(worktrees),
 		)
 	}
-	if err := removeValidateMainRecord(plan.Repository, worktrees[0]); err != nil {
+	if err := removeValidateMainRecord(ctx, plan.Repository, worktrees[0]); err != nil {
 		return err
 	}
 	if !removal.SameWorktree(plan.mainWorktree, worktrees[0]) {
@@ -1272,7 +1274,7 @@ func (commandRuntime removeRuntime) observer() removal.Observer {
 }
 
 func removeObserveEligibleLinked(ctx context.Context, observer removal.Observer, observation removal.RepositoryObservation, worktree local.Worktree) (removeLinkedTarget, removeNode, error) {
-	if err := removeValidateLinkedRecord(observation.Repository, worktree); err != nil {
+	if err := removeValidateLinkedRecord(ctx, observation.Repository, worktree); err != nil {
 		return removeLinkedTarget{}, removeNode{}, err
 	}
 	return observer.ObserveListedLinked(ctx, observation, worktree)
@@ -1290,7 +1292,7 @@ func removePrepareLinkedTarget(ctx context.Context, observer removal.Observer, o
 }
 
 func removePrepareResolvedLinkedTarget(ctx context.Context, observer removal.Observer, observation removal.RepositoryObservation, worktree local.Worktree) (removeLinkedTarget, removeNode, error) {
-	if err := removeValidateLinkedRecord(observation.Repository, worktree); err != nil {
+	if err := removeValidateLinkedRecord(ctx, observation.Repository, worktree); err != nil {
 		return removeLinkedTarget{}, removeNode{}, err
 	}
 	target, base, err := observer.ObserveResolvedLinked(ctx, observation, worktree)

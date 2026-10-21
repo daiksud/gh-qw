@@ -67,6 +67,7 @@ type WorktreeAddDependencies struct {
 		...local.WorktreeOptions,
 	) ([]local.Worktree, error)
 	ValidateDestination func(
+		context.Context,
 		string,
 		local.Repository,
 		string,
@@ -123,6 +124,7 @@ type worktreeAddRuntime struct {
 		...local.WorktreeOptions,
 	) ([]local.Worktree, error)
 	validateDestination func(
+		context.Context,
 		string,
 		local.Repository,
 		string,
@@ -229,12 +231,15 @@ func NewWorktreeAddCommand(dependencies WorktreeAddDependencies) *cobra.Command 
 					errors.New("--orphan does not accept a commit-ish"),
 				)
 			}
-			if err := local.ValidateBranch(args[0]); err != nil {
-				return worktreeAddNewUsageError(err)
-			}
 			return nil
 		},
 		RunE: func(command *cobra.Command, args []string) error {
+			if err := local.ValidateSlot(command.Context(), args[0]); err != nil {
+				if errors.Is(err, local.ErrInvalidBranch) {
+					return worktreeAddNewUsageError(err)
+				}
+				return err
+			}
 			mode := worktreeAddModeAutomatic
 			switch {
 			case newMode:
@@ -405,6 +410,7 @@ func worktreeAddRun(
 	}
 
 	expectedDestination, err := local.WorktreePath(
+		ctx,
 		roots.WorktreeRoot,
 		repository.Host,
 		repository.Owner,
@@ -415,6 +421,7 @@ func worktreeAddRun(
 		return fmt.Errorf("derive worktree destination: %w", err)
 	}
 	destination, err := runtime.validateDestination(
+		ctx,
 		roots.WorktreeRoot,
 		repository,
 		request.branch,
@@ -513,7 +520,7 @@ func worktreeAddRun(
 			err,
 		))
 	}
-	added, err := local.FindRegisteredLinkedWorktree(registered, request.branch)
+	added, err := local.FindRegisteredLinkedWorktree(ctx, registered, request.branch)
 	if err != nil {
 		return worktreeAddFailure(fmt.Errorf(
 			"worktree was added at %q but registration validation failed: %w",
@@ -736,7 +743,7 @@ func (planner *worktreeAddPlanner) worktreeAddCreationTarget(
 			err,
 		)
 	}
-	if err := local.ValidateBranch(defaultBranch); err != nil {
+	if err := local.ValidateBranch(planner.ctx, defaultBranch); err != nil {
 		return "", fmt.Errorf(
 			"GitHub API returned an invalid default branch %q: %w",
 			defaultBranch,

@@ -378,7 +378,7 @@ func migratePlanSingle(
 		return migratePlanItem{}, err
 	}
 	item.singleRoots = append([]string(nil), rootResult.RepositoryRoots...)
-	item.identity = spec.Identity
+	item.identity = spec.Identity.String()
 	return item, nil
 }
 
@@ -477,11 +477,11 @@ func migrateExecuteItem(
 		if err != nil {
 			return false, fmt.Errorf("revalidate migration remote: %w", err)
 		}
-		if spec.Identity != item.identity {
+		if spec.Identity.String() != item.identity {
 			return false, fmt.Errorf(
 				"revalidate migration remote: identity changed from %q to %q",
 				item.identity,
-				spec.Identity,
+				spec.Identity.String(),
 			)
 		}
 		destination, err := migratepkg.DestinationPath(
@@ -551,7 +551,11 @@ func migrateRemoteSpec(
 	if err != nil {
 		return repospec.Spec{}, err
 	}
-	spec, err := repospec.Parse(remoteURL, repospec.Options{
+	parsed, err := repospec.Parse(remoteURL)
+	if err != nil {
+		return repospec.Spec{}, fmt.Errorf("parse migration remote: %w", err)
+	}
+	spec, err := parsed.Resolve(ctx, repospec.Options{
 		Roots:      roots,
 		WorkingDir: source,
 	})

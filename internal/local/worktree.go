@@ -215,7 +215,7 @@ func EnumerateWorktrees(
 			continue
 		}
 
-		slot, err := deriveWorktreeSlot(base, item, physicalPath)
+		slot, err := deriveWorktreeSlot(ctx, base, item, physicalPath)
 		if err != nil {
 			return nil, &WorktreeError{
 				Kind:       ErrUnsafeWorktree,
@@ -297,8 +297,8 @@ func ValidateRepository(repository Repository) error {
 }
 
 // ValidateSlotAvailable rejects exact and component-prefix collisions.
-func ValidateSlotAvailable(worktrees []Worktree, slot string) error {
-	if err := ValidateBranch(slot); err != nil {
+func ValidateSlotAvailable(ctx context.Context, worktrees []Worktree, slot string) error {
+	if err := ValidateSlot(ctx, slot); err != nil {
 		return err
 	}
 	for _, worktree := range worktrees {
@@ -317,8 +317,8 @@ func ValidateSlotAvailable(worktrees []Worktree, slot string) error {
 
 // FindLinkedWorktree returns the one registered linked worktree with an exact
 // slot.
-func FindLinkedWorktree(worktrees []Worktree, slot string) (Worktree, error) {
-	if err := ValidateBranch(slot); err != nil {
+func FindLinkedWorktree(ctx context.Context, worktrees []Worktree, slot string) (Worktree, error) {
+	if err := ValidateSlot(ctx, slot); err != nil {
 		return Worktree{}, err
 	}
 	matches := make([]Worktree, 0, 1)
@@ -347,11 +347,12 @@ func FindLinkedWorktree(worktrees []Worktree, slot string) (Worktree, error) {
 }
 
 // FindRegisteredLinkedWorktree is an explicit alias for FindLinkedWorktree.
-func FindRegisteredLinkedWorktree(worktrees []Worktree, slot string) (Worktree, error) {
-	return FindLinkedWorktree(worktrees, slot)
+func FindRegisteredLinkedWorktree(ctx context.Context, worktrees []Worktree, slot string) (Worktree, error) {
+	return FindLinkedWorktree(ctx, worktrees, slot)
 }
 
 func deriveWorktreeSlot(
+	ctx context.Context,
 	base string,
 	item gitcmd.Worktree,
 	physicalPath string,
@@ -378,7 +379,7 @@ func deriveWorktreeSlot(
 	} else {
 		slot = item.Branch
 	}
-	if err := ValidateBranch(slot); err != nil {
+	if err := ValidateSlot(ctx, slot); err != nil {
 		return "", err
 	}
 	return slot, nil

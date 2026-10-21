@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -171,7 +172,7 @@ func NewWorktreeListCommand(deps WorktreeListDependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			records, err := worktreeListPrepareRecords(repository, worktrees)
+			records, err := worktreeListPrepareRecords(command.Context(), repository, worktrees)
 			if err != nil {
 				return err
 			}
@@ -239,6 +240,7 @@ func worktreeListWriteWarnings(writer io.Writer, warnings []local.Warning) error
 }
 
 func worktreeListPrepareRecords(
+	ctx context.Context,
 	repository local.Repository,
 	worktrees []local.Worktree,
 ) ([]worktreeListRecord, error) {
@@ -324,7 +326,10 @@ func worktreeListPrepareRecords(
 					"linked worktree has no slot",
 				)
 			}
-			if err := local.ValidateBranch(worktree.Slot); err != nil {
+			if err := local.ValidateSlot(ctx, worktree.Slot); err != nil {
+				if !errors.Is(err, local.ErrInvalidBranch) {
+					return nil, err
+				}
 				return nil, worktreeListUnsafeRecord(
 					repositoryIdentity,
 					worktree,

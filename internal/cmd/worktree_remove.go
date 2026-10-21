@@ -183,9 +183,6 @@ func NewWorktreeRemoveCommand(dependencies WorktreeRemoveDependencies) *cobra.Co
 			if command.Flags().Changed("dry-run") || command.Flags().Changed("yes") {
 				return worktreeRemoveNewUsageError(errors.New("--dry-run and --yes require --gone"))
 			}
-			if err := local.ValidateBranch(args[0]); err != nil {
-				return worktreeRemoveNewUsageError(err)
-			}
 			return nil
 		},
 		RunE: func(command *cobra.Command, args []string) error {
@@ -199,6 +196,12 @@ func NewWorktreeRemoveCommand(dependencies WorktreeRemoveDependencies) *cobra.Co
 			}
 			if gone {
 				return worktreeRemoveGoneRun(command.Context(), commandRuntime, request)
+			}
+			if err := local.ValidateSlot(command.Context(), args[0]); err != nil {
+				if errors.Is(err, local.ErrInvalidBranch) {
+					return worktreeRemoveNewUsageError(err)
+				}
+				return err
 			}
 			request.branch = args[0]
 			return worktreeRemoveRun(command.Context(), commandRuntime, request)
@@ -365,6 +368,7 @@ func worktreeRemoveRun(
 		return fmt.Errorf("derive worktree base: %w", err)
 	}
 	expectedPath, err := local.WorktreePath(
+		ctx,
 		roots.WorktreeRoot,
 		repository.Host,
 		repository.Owner,

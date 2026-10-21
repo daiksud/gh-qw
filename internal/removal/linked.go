@@ -49,6 +49,7 @@ func (observer Observer) ObserveListedLinked(
 func (observer Observer) ObserveResolvedLinked(ctx context.Context, plan RepositoryObservation, worktree local.Worktree) (LinkedObservation, Node, error) {
 
 	expectedPath, err := local.WorktreePath(
+		ctx,
 		plan.Roots.WorktreeRoot,
 		plan.Repository.Host,
 		plan.Repository.Owner,

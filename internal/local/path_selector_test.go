@@ -1,6 +1,7 @@
 package local
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -27,6 +28,7 @@ func TestDeterministicPathsAreContainedAndDoNotCreateDirectories(t *testing.T) {
 	}
 
 	worktreePath, err := WorktreePath(
+		context.Background(),
 		worktreeRoot,
 		"github.com",
 		"Acme",
@@ -91,6 +93,7 @@ func TestDeterministicPathsRejectInvalidValuesAndSymlinkEscapes(t *testing.T) {
 	}
 	for _, branch := range branches {
 		if _, err := WorktreePath(
+			context.Background(),
 			rootPath,
 			"github.com",
 			"acme",
@@ -119,12 +122,12 @@ func TestSlotPrefixCollisionsUseComponentBoundaries(t *testing.T) {
 	}
 
 	for _, slot := range []string{"feat", "feat/x", "feat/x/y", "release/next"} {
-		if err := ValidateSlotAvailable(worktrees, slot); !errors.Is(err, ErrSlotCollision) {
+		if err := ValidateSlotAvailable(context.Background(), worktrees, slot); !errors.Is(err, ErrSlotCollision) {
 			t.Fatalf("ValidateSlotAvailable(%q) error = %v, want collision", slot, err)
 		}
 	}
 	for _, slot := range []string{"feature", "feat-x", "releases"} {
-		if err := ValidateSlotAvailable(worktrees, slot); err != nil {
+		if err := ValidateSlotAvailable(context.Background(), worktrees, slot); err != nil {
 			t.Fatalf("ValidateSlotAvailable(%q) error = %v", slot, err)
 		}
 	}
@@ -156,6 +159,7 @@ func TestValidateWorktreeDestinationChecksFilesystemPrefixes(t *testing.T) {
 		t.Fatalf("MkdirAll(descendant) error = %v", err)
 	}
 	if _, err := ValidateWorktreeDestination(
+		context.Background(),
 		worktreeRoot,
 		repository,
 		"feat",
@@ -174,6 +178,7 @@ func TestValidateWorktreeDestinationChecksFilesystemPrefixes(t *testing.T) {
 		t.Fatalf("WriteFile(prefix .git) error = %v", err)
 	}
 	if _, err := ValidateWorktreeDestination(
+		context.Background(),
 		worktreeRoot,
 		repository,
 		"feat/x",
@@ -189,6 +194,7 @@ func TestValidateWorktreeDestinationChecksFilesystemPrefixes(t *testing.T) {
 		t.Fatalf("MkdirAll(feature) error = %v", err)
 	}
 	got, err := ValidateWorktreeDestination(
+		context.Background(),
 		worktreeRoot,
 		repository,
 		"feature/x",
@@ -296,12 +302,51 @@ func TestParseIdentityRoundTrip(t *testing.T) {
 		t.Fatalf("ParseIdentity() error = %v", err)
 	}
 	want := IdentityParts{
-		Identity: "git.example.com/Acme/Widget_name.v2",
-		Host:     "git.example.com",
-		Owner:    "Acme",
-		Repo:     "Widget_name.v2",
+		Host:  "git.example.com",
+		Owner: "Acme",
+		Repo:  "Widget_name.v2",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("ParseIdentity() = %#v, want %#v", got, want)
+	}
+}
+
+func TestBranchAndSlotValidationKeepSeparateContracts(t *testing.T) {
+	if err := ValidateBranch(context.Background(), "topic./next"); err != nil {
+		t.Fatalf("Git-valid branch rejected: %v", err)
+	}
+	if err := ValidateSlot(context.Background(), "topic./next"); !errors.Is(err, ErrInvalidBranch) {
+		t.Fatalf("dot-ended slot component error = %v, want portability rejection", err)
+	}
+	for _, value := range []string{"HEAD", "@", "@{-1}", "-topic"} {
+		if err := ValidateBranch(context.Background(), value); !errors.Is(err, ErrInvalidBranch) {
+			t.Fatalf("ValidateBranch(%q) error = %v", value, err)
+		}
+		if err := ValidateSlot(context.Background(), value); !errors.Is(err, ErrInvalidBranch) {
+			t.Fatalf("ValidateSlot(%q) error = %v", value, err)
+		}
+	}
+	for _, slot := range []string{"feature/next", "topic\u00a0name"} {
+		if err := ValidateSlot(context.Background(), slot); err != nil {
+			t.Fatalf("ValidateSlot(%q) error = %v", slot, err)
+		}
+	}
+}
+
+func TestCanonicalIdentityAndSelectorsDoNotRunExternalCommands(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	parts, err := ParseIdentity("github.com/Owner/Repository")
+	if err != nil || parts.String() != "github.com/Owner/Repository" {
+		t.Fatalf("ParseIdentity() = %#v, %v", parts, err)
+	}
+	for _, value := range []string{"Repository", "Owner/Repository", parts.String()} {
+		if _, err := ParseSelector(value); err != nil {
+			t.Fatalf("ParseSelector(%q) error = %v", value, err)
+		}
+	}
+	for _, value := range []string{"Repository.git", "Owner/Repository.git", "github.com/Owner/Repository.git", "Repository@branch"} {
+		if _, err := ParseSelector(value); !errors.Is(err, ErrInvalidSelector) {
+			t.Fatalf("ParseSelector(%q) error = %v, want exact canonical component rejection", value, err)
+		}
 	}
 }

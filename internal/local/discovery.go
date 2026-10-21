@@ -287,7 +287,7 @@ func DiscoverRepositories(
 					}
 
 					result.Repositories = append(result.Repositories, Repository{
-						Identity:  parts.Identity,
+						Identity:  parts.String(),
 						Host:      parts.Host,
 						Owner:     parts.Owner,
 						Repo:      parts.Repo,

@@ -249,8 +249,11 @@ func NewGetCommand(deps GetDependencies) *cobra.Command {
 				return getUsageError(err)
 			}
 			if flags.branch != "" {
-				if err := local.ValidateBranch(flags.branch); err != nil {
-					return getUsageError(fmt.Errorf("invalid --branch value %q: %w", flags.branch, err))
+				if err := local.ValidateBranch(command.Context(), flags.branch); err != nil {
+					if errors.Is(err, local.ErrInvalidBranch) {
+						return getUsageError(fmt.Errorf("invalid --branch value %q: %w", flags.branch, err))
+					}
+					return err
 				}
 			}
 
@@ -266,14 +269,6 @@ func NewGetCommand(deps GetDependencies) *cobra.Command {
 				return nil
 			}
 
-			roots, err := resolved.rootResolver.Resolve()
-			if err != nil {
-				return err
-			}
-			if len(roots.RepositoryRoots) == 0 || roots.Primary() == "" {
-				return getUsageError(errors.New("no repository root is configured"))
-			}
-
 			diagnostic := &getLockedWriter{writer: command.ErrOrStderr(), passthrough: !flags.parallel}
 			warn := resolved.warningSink
 			if warn == nil {
@@ -284,7 +279,6 @@ func NewGetCommand(deps GetDependencies) *cobra.Command {
 				return getRunParallel(
 					command.Context(),
 					inputs,
-					roots.RepositoryRoots,
 					flags,
 					filter,
 					resolved,
@@ -296,7 +290,6 @@ func NewGetCommand(deps GetDependencies) *cobra.Command {
 			return getRunOrdered(
 				command.Context(),
 				inputs,
-				roots.RepositoryRoots,
 				flags,
 				filter,
 				resolved,
@@ -389,24 +382,39 @@ func getResolveDependencies(
 func getRunOrdered(
 	ctx context.Context,
 	inputs []string,
-	roots []string,
 	flags getFlags,
 	filter ghcmd.PartialFilter,
 	deps getResolvedDependencies,
 	warn local.WarningSink,
 	stdout, stderr io.Writer,
 ) error {
-	discovery, err := deps.discover(ctx, roots)
-	if err != nil {
-		return fmt.Errorf("discover existing repositories: %w", err)
-	}
-	getEmitDiscoveryWarnings(discovery.Warnings, warn)
-
-	states := getInitialTargetStates(discovery.Repositories)
+	var roots []string
+	var states map[string]*getTarget
 	for _, input := range inputs {
-		spec, err := getParseRepository(ctx, input, roots, flags.ssh, deps)
+		parsed, err := repospec.Parse(input)
 		if err != nil {
 			return getUsageError(err)
+		}
+		if roots == nil {
+			roots, err = getResolveRoots(deps.rootResolver)
+			if err != nil {
+				return err
+			}
+		}
+		spec, err := getResolveRepository(ctx, parsed, roots, flags.ssh, deps)
+		if err != nil {
+			if errors.Is(err, repospec.ErrUsage) {
+				return getUsageError(err)
+			}
+			return err
+		}
+		if states == nil {
+			discovery, err := deps.discover(ctx, roots)
+			if err != nil {
+				return fmt.Errorf("discover existing repositories: %w", err)
+			}
+			getEmitDiscoveryWarnings(discovery.Warnings, warn)
+			states = getInitialTargetStates(discovery.Repositories)
 		}
 
 		state, err := getResolveTarget(states, spec, roots[0])
@@ -435,7 +443,6 @@ func getRunOrdered(
 func getRunParallel(
 	ctx context.Context,
 	inputs []string,
-	roots []string,
 	flags getFlags,
 	filter ghcmd.PartialFilter,
 	deps getResolvedDependencies,
@@ -443,9 +450,10 @@ func getRunParallel(
 	stdout, stderr io.Writer,
 ) error {
 	aggregate := &GetAggregateError{}
+	var roots []string
 	parsed := make([]getParsedItem, 0, len(inputs))
 	for _, input := range inputs {
-		spec, err := getParseRepository(ctx, input, roots, flags.ssh, deps)
+		syntax, err := repospec.Parse(input)
 		if err != nil {
 			aggregate.usageErrors = append(
 				aggregate.usageErrors,
@@ -453,11 +461,28 @@ func getRunParallel(
 			)
 			continue
 		}
+		if roots == nil {
+			roots, err = getResolveRoots(deps.rootResolver)
+			if err != nil {
+				aggregate.runtimeErrors = append(aggregate.runtimeErrors, err)
+				return aggregate
+			}
+		}
+		spec, err := getResolveRepository(ctx, syntax, roots, flags.ssh, deps)
+		if err != nil {
+			err = fmt.Errorf("get %q: %w", input, err)
+			if errors.Is(err, repospec.ErrUsage) {
+				aggregate.usageErrors = append(aggregate.usageErrors, err)
+			} else {
+				aggregate.runtimeErrors = append(aggregate.runtimeErrors, err)
+			}
+			continue
+		}
 		parsed = append(parsed, getParsedItem{input: input, spec: spec})
 	}
 
 	if len(parsed) == 0 {
-		if len(aggregate.usageErrors) != 0 {
+		if len(aggregate.usageErrors) != 0 || len(aggregate.runtimeErrors) != 0 {
 			return aggregate
 		}
 		return nil
@@ -490,10 +515,10 @@ func getRunParallel(
 		jobs = append(jobs, getParallelJob{
 			item:  item,
 			state: state,
-			wait:  previous[item.spec.Identity],
+			wait:  previous[item.spec.Identity.String()],
 			done:  done,
 		})
-		previous[item.spec.Identity] = done
+		previous[item.spec.Identity.String()] = done
 	}
 
 	results := make(chan getParallelResult, len(jobs))
@@ -558,14 +583,25 @@ func getRunParallel(
 	return nil
 }
 
-func getParseRepository(
+func getResolveRoots(resolver RootResolver) ([]string, error) {
+	roots, err := resolver.Resolve()
+	if err != nil {
+		return nil, err
+	}
+	if len(roots.RepositoryRoots) == 0 || roots.Primary() == "" {
+		return nil, getUsageError(errors.New("no repository root is configured"))
+	}
+	return roots.RepositoryRoots, nil
+}
+
+func getResolveRepository(
 	ctx context.Context,
-	input string,
+	parsed repospec.Input,
 	roots []string,
 	ssh bool,
 	deps getResolvedDependencies,
 ) (repospec.Spec, error) {
-	return repospec.Parse(input, repospec.Options{
+	return parsed.Resolve(ctx, repospec.Options{
 		DefaultHost: os.Getenv("GH_HOST"),
 		SSH:         ssh,
 		Roots:       roots,
@@ -606,7 +642,7 @@ func getResolveTarget(
 	spec repospec.Spec,
 	primaryRoot string,
 ) (*getTarget, error) {
-	if state, found := states[spec.Identity]; found {
+	if state, found := states[spec.Identity.String()]; found {
 		return state, nil
 	}
 
@@ -616,7 +652,7 @@ func getResolveTarget(
 	}
 	state := &getTarget{
 		repository: local.Repository{
-			Identity:  spec.Identity,
+			Identity:  spec.Identity.String(),
 			Host:      spec.Host,
 			Owner:     spec.Owner,
 			Repo:      spec.Repo,
@@ -625,7 +661,7 @@ func getResolveTarget(
 			RootIndex: 0,
 		},
 	}
-	states[spec.Identity] = state
+	states[spec.Identity.String()] = state
 	return state, nil
 }
 

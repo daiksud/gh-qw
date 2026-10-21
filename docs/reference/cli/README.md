@@ -136,6 +136,14 @@ component, so an SSH authority such as `git@host` is not mistaken for a branch s
 the repository identity. An empty or invalid Git branch suffix is a usage error. If both the
 suffix and `--branch` are present, the suffix wins for ghq compatibility.
 
+Git validates the literal ref with `git check-ref-format --allow-onelevel`; checkout-history
+shorthand such as `@{-1}` is rejected rather than expanded. A leading `-` and the single-character
+ref `@` are also rejected. `HEAD` remains accepted as a clone suffix, while `--branch` and worktree
+branch/slot operands reject it. Git-valid suffixes such as `topic./next` and a name containing an
+internal non-breaking space are accepted without rewriting the ref. Existing URL escaping and
+query/fragment restrictions still apply. Failure to start Git or cancellation during validation
+is a runtime failure with status `1`; a ref rejected by Git is a usage error with status `2`.
+
 For a relative path, `@` may also occur in a parent directory name. `gh-qw` tests possible suffix
 boundaries against the configured roots and accepts the input only when one unambiguous
 `<host>/<owner>/<repo>` mapping remains.
@@ -245,6 +253,9 @@ syntax. No arguments with terminal `stdin` is a usage error.
 Without `--parallel`, items run in input order and stop at the first failure. With `--parallel`,
 the concurrency cap is six, all valid items are attempted, and successful paths are written in
 completion order. Each success writes exactly one absolute main-worktree path to `stdout`.
+Inputs with invalid repository syntax are rejected before resolving roots, discovering existing
+repositories, or authenticating. An earlier successful ordered item remains complete if a later
+item has invalid syntax.
 
 The v1 command has no `--look`, `--vcs`, or `--bare` option and never starts a shell.
 
@@ -449,6 +460,9 @@ The destination for slot `<branch>` is always:
 
 Slashes in a branch form nested directories without escaping or replacement. Absolute names,
 empty components, `.`/`..`, or a result outside the per-repository worktree directory are invalid.
+Slot components ending in a dot are also rejected for filesystem portability, even when Git
+accepts the same name as a ref. These storage-slot checks remain independent of the actual branch
+after a branch switch or a detached checkout.
 Before adding, `gh-qw` rejects both an existing destination and prefix collisions such as `feat`
 versus `feat/x`. `-f` never bypasses path, containment, or prefix-collision checks.
 

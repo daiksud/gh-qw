@@ -1,95 +1,86 @@
 package local
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
+	"unicode"
 
+	"github.com/daiksud/gh-qw/internal/gitcmd"
 	"github.com/daiksud/gh-qw/internal/repospec"
 	"github.com/daiksud/gh-qw/internal/root"
 )
 
 // IdentityParts is a validated canonical repository identity.
-type IdentityParts struct {
-	Identity string
-	Host     string
-	Owner    string
-	Repo     string
-}
+type IdentityParts = repospec.Identity
 
 // ParseIdentity validates an already-canonical <host>/<owner>/<repo>
 // identity. It does not accept URLs, ports, branch suffixes, or .git suffixes.
 func ParseIdentity(identity string) (IdentityParts, error) {
-	parts := strings.Split(identity, "/")
-	if len(parts) != 3 {
-		return IdentityParts{}, invalidIdentity(identity, "must contain exactly host, owner, and repository", nil)
-	}
-
-	spec, err := repospec.Parse(identity, repospec.Options{})
+	parts, err := repospec.ParseIdentity(identity)
 	if err != nil {
-		return IdentityParts{}, invalidIdentity(identity, parserReason(err), err)
+		return IdentityParts{}, invalidIdentity(identity, err.Error(), err)
 	}
-	if spec.Identity != identity ||
-		spec.Host != parts[0] ||
-		spec.Owner != parts[1] ||
-		spec.Repo != parts[2] ||
-		spec.Branch != "" {
-		return IdentityParts{}, invalidIdentity(
-			identity,
-			"must already be canonical and contain no port, .git suffix, or branch",
-			nil,
-		)
-	}
-
-	return IdentityParts{
-		Identity: spec.Identity,
-		Host:     spec.Host,
-		Owner:    spec.Owner,
-		Repo:     spec.Repo,
-	}, nil
+	return parts, nil
 }
 
 // CanonicalIdentity validates components and returns their slash-separated
 // canonical identity.
 func CanonicalIdentity(host, owner, repo string) (string, error) {
-	identity := strings.Join([]string{host, owner, repo}, "/")
-	parts, err := ParseIdentity(identity)
+	parts, err := ParseIdentity((repospec.Identity{Host: host, Owner: owner, Repo: repo}).String())
 	if err != nil {
 		return "", err
 	}
-	return parts.Identity, nil
+	return parts.String(), nil
 }
 
-// ValidateBranch validates a branch or slot against gh-qw's Git-ref and path
-// safety rules.
-func ValidateBranch(branch string) error {
-	const prefix = "github.com/gh-qw/validation@"
-
+// ValidateBranch delegates literal ref validity to Git while preserving the
+// command-line exclusion of HEAD and surrounding whitespace/control characters.
+func ValidateBranch(ctx context.Context, branch string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	fail := func(reason string, err error) error {
+		return &ValidationError{Kind: ErrInvalidBranch, Value: branch, Reason: reason, Err: err}
+	}
 	if branch == "HEAD" {
-		return &ValidationError{
-			Kind:   ErrInvalidBranch,
-			Value:  branch,
-			Reason: "branch must not be HEAD",
+		return fail("branch must not be HEAD", nil)
+	}
+	if strings.TrimSpace(branch) != branch {
+		return fail("branch has leading or trailing whitespace", nil)
+	}
+	for _, r := range branch {
+		if unicode.IsControl(r) {
+			return fail("branch contains a control character", nil)
 		}
 	}
-	spec, err := repospec.Parse(prefix+branch, repospec.Options{})
-	if err != nil {
-		return &ValidationError{
-			Kind:   ErrInvalidBranch,
-			Value:  branch,
-			Reason: parserReason(err),
-			Err:    err,
+	if err := (*gitcmd.Runner)(nil).CheckRefFormat(ctx, branch); err != nil {
+		if errors.Is(err, gitcmd.ErrInvalidRef) {
+			return fail(err.Error(), err)
 		}
-	}
-	if spec.Branch != branch {
-		return &ValidationError{
-			Kind:   ErrInvalidBranch,
-			Value:  branch,
-			Reason: "branch is not preserved by canonical parsing",
-		}
+		return fmt.Errorf("validate worktree branch %q: %w", branch, err)
 	}
 	return nil
+}
+
+// ValidateSlot applies branch validation and gh-qw's portable directory layout
+// restriction. A storage slot need not match the worktree's checked-out branch.
+func ValidateSlot(ctx context.Context, slot string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	for _, component := range strings.Split(slot, "/") {
+		if strings.HasSuffix(component, ".") {
+			return &ValidationError{
+				Kind:   ErrInvalidBranch,
+				Value:  slot,
+				Reason: "slot components must not end with a dot",
+			}
+		}
+	}
+	return ValidateBranch(ctx, slot)
 }
 
 // MainPath returns the contained physical destination for one canonical main
@@ -115,8 +106,8 @@ func WorktreeBasePath(worktreeRoot, host, owner, repo string) (string, error) {
 
 // WorktreePath returns the contained physical destination for a branch slot.
 // Slashes in branch form nested directories.
-func WorktreePath(worktreeRoot, host, owner, repo, branch string) (string, error) {
-	if err := ValidateBranch(branch); err != nil {
+func WorktreePath(ctx context.Context, worktreeRoot, host, owner, repo, branch string) (string, error) {
+	if err := ValidateSlot(ctx, branch); err != nil {
 		return "", err
 	}
 
@@ -145,7 +136,7 @@ func NormalizeIdentityForOutput(identity string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return parts.Identity, nil
+	return parts.String(), nil
 }
 
 func invalidIdentity(identity, reason string, err error) error {
@@ -155,12 +146,4 @@ func invalidIdentity(identity, reason string, err error) error {
 		Reason: reason,
 		Err:    err,
 	}
-}
-
-func parserReason(err error) string {
-	var usageErr *repospec.UsageError
-	if errors.As(err, &usageErr) && usageErr.Reason != "" {
-		return usageErr.Reason
-	}
-	return err.Error()
 }
