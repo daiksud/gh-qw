@@ -1419,10 +1419,12 @@ func (git *worktreeRemoveFailingRunner) WorktreeRemove(
 }
 
 type worktreeRemoveFakeGit struct {
-	removals     []worktreeRemoveRemoval
-	removeErr    error
-	removeAction func(string) error
-	leavePath    bool
+	removals           []worktreeRemoveRemoval
+	removeErr          error
+	removeAction       func(string) error
+	leavePath          bool
+	postRemovalRecords []gitcmd.Worktree
+	postRemovalListErr error
 }
 
 func (git *worktreeRemoveFakeGit) OutputDir(
@@ -1437,7 +1439,10 @@ func (git *worktreeRemoveFakeGit) WorktreeList(
 	context.Context,
 	string,
 ) ([]gitcmd.Worktree, error) {
-	return nil, errors.New("unexpected WorktreeList call")
+	if len(git.removals) == 0 {
+		return nil, errors.New("unexpected WorktreeList before removal")
+	}
+	return append([]gitcmd.Worktree(nil), git.postRemovalRecords...), git.postRemovalListErr
 }
 
 func (git *worktreeRemoveFakeGit) BranchUpstreams(

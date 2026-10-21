@@ -593,100 +593,50 @@ func worktreeRemoveGoneExecute(
 			continue
 		}
 
-		removeErr := commandRuntime.git.WorktreeRemove(
-			ctx,
-			plan.repository.Path,
-			gitcmd.WorktreeRemoveOptions{
-				Path:  entry.target.Directory.Path,
-				Force: request.force,
-			},
+		result := commandRuntime.fs.executor(commandRuntime.git).RemoveLinked(
+			ctx, plan.repository.Path,
+			gitcmd.WorktreeRemoveOptions{Path: entry.target.Directory.Path, Force: request.force},
+			*plan.common.worktreeBaseDir, entry.target.Cleanup,
 		)
-		if removeErr != nil {
-			if ctxErr := ctx.Err(); ctxErr != nil {
-				return failed, ctxErr
-			}
-			if errors.Is(removeErr, context.Canceled) ||
-				errors.Is(removeErr, context.DeadlineExceeded) {
-				return failed, removeErr
-			}
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return failed, ctxErr
+		}
+		if errors.Is(result.Err, context.Canceled) || errors.Is(result.Err, context.DeadlineExceeded) {
+			return failed, result.Err
+		}
+		if result.FailedStep == removal.ReadRegistrations {
+			return failed, fmt.Errorf("verify registration removal for slot %q: %w", entry.worktree.Slot, result.Err)
+		}
+		if result.Err != nil && result.FailedStep != removal.CleanupParents {
 			failed = true
-			if writeErr := worktreeRemoveGoneWriteFailure(
-				commandRuntime.stderr,
-				"failed",
-				entry.worktree.Slot,
-				fmt.Errorf("git worktree remove: %w", removeErr),
-			); writeErr != nil {
-				return failed, fmt.Errorf("write gone-worktree Git failure: %w", writeErr)
+			failure, operation := result.Err, "registration failure"
+			switch result.FailedStep {
+			case removal.RemoveGit:
+				failure = fmt.Errorf("git worktree remove: %w", failure)
+				operation = "Git failure"
+			case removal.VerifyPath:
+				failure = fmt.Errorf("verify removed path: %w", failure)
+				operation = "path verification failure"
+			}
+			if err := worktreeRemoveGoneWriteFailure(commandRuntime.stderr, "failed", entry.worktree.Slot, failure); err != nil {
+				return failed, fmt.Errorf("write gone-worktree %s: %w", operation, err)
 			}
 			continue
 		}
 
-		pathMissing, err := removePathMissing(commandRuntime.fs, entry.target.Directory.Path)
-		if err != nil || !pathMissing {
-			if err == nil {
-				err = errors.New("Git returned success but the exact worktree path still exists")
-			}
-			failed = true
-			if writeErr := worktreeRemoveGoneWriteFailure(
-				commandRuntime.stderr,
-				"failed",
-				entry.worktree.Slot,
-				fmt.Errorf("verify removed path: %w", err),
-			); writeErr != nil {
-				return failed, fmt.Errorf("write gone-worktree path verification failure: %w", writeErr)
-			}
-			continue
-		}
-
-		registered, err := commandRuntime.git.WorktreeList(ctx, plan.repository.Path)
-		if err != nil {
-			return failed, fmt.Errorf(
-				"verify registration removal for slot %q: %w",
-				entry.worktree.Slot,
-				err,
-			)
-		}
-		stillRegistered := false
-		for _, worktree := range registered {
-			if physicalpath.SamePath(worktree.Path, entry.target.Directory.Path) {
-				stillRegistered = true
-				break
-			}
-		}
-		if stillRegistered {
-			failed = true
-			if writeErr := worktreeRemoveGoneWriteFailure(
-				commandRuntime.stderr,
-				"failed",
-				entry.worktree.Slot,
-				errors.New("Git still registers the removed worktree path"),
-			); writeErr != nil {
-				return failed, fmt.Errorf("write gone-worktree registration failure: %w", writeErr)
-			}
-			continue
-		}
-
-		cleanupErr := removeCleanupEmptyChain(
-			commandRuntime.fs,
-			*plan.common.worktreeBaseDir,
-			entry.target.Cleanup,
-		)
-		if err := removeWriteProgress(
-			commandRuntime.stderr,
-			"removed worktree",
-			entry.target.Directory.Path,
-		); err != nil {
+		if err := removeWriteProgress(commandRuntime.stderr, "removed worktree", result.Path); err != nil {
 			return failed, fmt.Errorf("write gone-worktree removal progress: %w", err)
 		}
-		if cleanupErr != nil {
+		if result.Err != nil {
 			failed = true
-			if writeErr := worktreeRemoveGoneWriteFailure(
-				commandRuntime.stderr,
-				"warning",
-				entry.worktree.Slot,
-				fmt.Errorf("cleanup empty parents: %w", cleanupErr),
-			); writeErr != nil {
-				return failed, fmt.Errorf("write gone-worktree post-removal failure: %w", writeErr)
+			if errors.Is(result.Err, removal.ErrCleanupBoundary) {
+				return failed, fmt.Errorf("cleanup empty parents: %w", result.Err)
+			}
+			if err := worktreeRemoveGoneWriteFailure(
+				commandRuntime.stderr, "warning", entry.worktree.Slot,
+				fmt.Errorf("cleanup empty parents: %w", result.Err),
+			); err != nil {
+				return failed, fmt.Errorf("write gone-worktree post-removal failure: %w", err)
 			}
 		}
 	}

@@ -13,7 +13,6 @@ import (
 	"runtime"
 	"sort"
 	"strings"
-	"syscall"
 
 	"github.com/daiksud/gh-qw/internal/gitcmd"
 	"github.com/daiksud/gh-qw/internal/local"
@@ -836,56 +835,37 @@ func removeExecuteLinked(
 	commandRuntime removeRuntime,
 	plan removePlan,
 ) error {
-	state := removeNewMutationState(plan)
-	target := plan.linked[0]
+	return removeExecuteLinkedTarget(ctx, commandRuntime, plan, plan.linked[0], removeNewMutationState(plan))
+}
 
-	if err := commandRuntime.git.WorktreeRemove(
-		ctx,
-		plan.Repository.Path,
+func removeExecuteLinkedTarget(
+	ctx context.Context,
+	commandRuntime removeRuntime,
+	plan removePlan,
+	target removeLinkedTarget,
+	state *removeMutationState,
+) error {
+	result := commandRuntime.fs.executor(commandRuntime.git).RemoveLinked(
+		ctx, plan.Repository.Path,
 		gitcmd.WorktreeRemoveOptions{Path: target.Directory.Path},
-	); err != nil {
-		observationErr := state.observePath(commandRuntime.fs, target.Directory.Path)
-		return state.failure(
-			fmt.Sprintf("remove linked worktree %q", removeOutputPath(target.Directory.Path)),
-			errors.Join(err, observationErr),
-		)
+		*plan.worktreeBaseDir, target.Cleanup,
+	)
+	if result.PathRemoved {
+		state.markRemoved(result.Path)
 	}
-	missing, err := removePathMissing(commandRuntime.fs, target.Directory.Path)
-	if err != nil {
-		return state.failure("verify linked worktree removal", err)
+	if result.Err != nil {
+		operation := fmt.Sprintf("remove linked worktree %q", removeOutputPath(result.Path))
+		switch result.FailedStep {
+		case removal.VerifyPath:
+			operation = "verify linked worktree removal"
+		case removal.ReadRegistrations, removal.VerifyRegistration:
+			operation = "verify linked worktree registration removal"
+		case removal.CleanupParents:
+			operation = "cleanup linked worktree parents"
+		}
+		return state.failure(operation, result.Err)
 	}
-	if !missing {
-		return state.failure(
-			"verify linked worktree removal",
-			fmt.Errorf(
-				"Git returned success but exact path %q still exists",
-				removeOutputPath(target.Directory.Path),
-			),
-		)
-	}
-	state.markRemoved(target.Directory.Path)
-
-	if err := removeVerifyWorktreeUnregistered(
-		ctx,
-		commandRuntime.git,
-		plan.Repository.Path,
-		target.Directory.Path,
-	); err != nil {
-		return state.failure("verify linked worktree registration removal", err)
-	}
-	if err := removeCleanupEmptyChain(
-		commandRuntime.fs,
-		*plan.worktreeBaseDir,
-		target.Cleanup,
-	); err != nil {
-		return state.failure("cleanup linked worktree parents", err)
-	}
-
-	if err := removeWriteProgress(
-		commandRuntime.stderr,
-		"removed linked worktree",
-		target.Directory.Path,
-	); err != nil {
+	if err := removeWriteProgress(commandRuntime.stderr, "removed linked worktree", result.Path); err != nil {
 		return state.failure("write linked removal progress", err)
 	}
 	return nil
@@ -911,62 +891,16 @@ func removeExecuteWhole(
 			)
 		}
 
-		err := commandRuntime.git.WorktreeRemove(
-			ctx,
-			plan.Repository.Path,
-			gitcmd.WorktreeRemoveOptions{Path: target.Directory.Path},
-		)
-		if err != nil {
-			observationErr := state.observePath(commandRuntime.fs, target.Directory.Path)
-			return state.failure(
-				fmt.Sprintf(
-					"remove linked worktree %q",
-					removeOutputPath(target.Directory.Path),
-				),
-				errors.Join(err, observationErr),
-			)
-		}
-		missing, err := removePathMissing(commandRuntime.fs, target.Directory.Path)
-		if err != nil {
-			return state.failure("verify linked worktree removal", err)
-		}
-		if !missing {
-			return state.failure(
-				"verify linked worktree removal",
-				fmt.Errorf(
-					"Git returned success but exact path %q still exists",
-					removeOutputPath(target.Directory.Path),
-				),
-			)
-		}
-		state.markRemoved(target.Directory.Path)
-
-		if err := removeVerifyWorktreeUnregistered(
-			ctx,
-			commandRuntime.git,
-			plan.Repository.Path,
-			target.Directory.Path,
-		); err != nil {
-			return state.failure("verify linked worktree registration removal", err)
-		}
-		if err := removeCleanupEmptyChain(
-			commandRuntime.fs,
-			*plan.worktreeBaseDir,
-			target.Cleanup,
-		); err != nil {
-			return state.failure("cleanup linked worktree parents", err)
-		}
-		if err := removeWriteProgress(
-			commandRuntime.stderr,
-			"removed linked worktree",
-			target.Directory.Path,
-		); err != nil {
-			return state.failure("write linked removal progress", err)
+		if err := removeExecuteLinkedTarget(ctx, commandRuntime, plan, target, state); err != nil {
+			return err
 		}
 	}
 
 	if err := removeRevalidateMainForDeletion(ctx, commandRuntime, plan); err != nil {
 		return state.failure("revalidate main repository before exact deletion", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return state.failure("remove exact main repository directory", err)
 	}
 	if err := commandRuntime.fs.removeAll(plan.MainDirectory.Path); err != nil {
 		observationErr := state.observePath(commandRuntime.fs, plan.MainDirectory.Path)
@@ -978,7 +912,7 @@ func removeExecuteWhole(
 			errors.Join(err, observationErr),
 		)
 	}
-	missing, err := removePathMissing(commandRuntime.fs, plan.MainDirectory.Path)
+	missing, err := removal.PathMissing(commandRuntime.fs.observations(), plan.MainDirectory.Path)
 	if err != nil {
 		return state.failure("verify main repository deletion", err)
 	}
@@ -993,17 +927,15 @@ func removeExecuteWhole(
 	}
 	state.markRemoved(plan.MainDirectory.Path)
 
-	if err := removeCleanupEmptyChain(
-		commandRuntime.fs,
-		plan.RepositoryRoot,
+	if err := commandRuntime.fs.executor(commandRuntime.git).CleanupEmptyChain(
+		ctx, plan.RepositoryRoot,
 		plan.mainCleanup,
 	); err != nil {
 		return state.failure("cleanup empty repository owner and host directories", err)
 	}
 	if plan.worktreeBaseDir != nil {
-		if err := removeCleanupEmptyChain(
-			commandRuntime.fs,
-			plan.WorktreeRoot,
+		if err := commandRuntime.fs.executor(commandRuntime.git).CleanupEmptyChain(
+			ctx, plan.WorktreeRoot,
 			plan.worktreeCleanup,
 		); err != nil {
 			return state.failure("cleanup empty worktree-base directories", err)
@@ -1117,111 +1049,6 @@ func removeRevalidateMainForDeletion(
 	return removal.RevalidateNode(commandRuntime.fs.observations(), plan.MainGit, "main .git")
 }
 
-func removeVerifyWorktreeUnregistered(
-	ctx context.Context,
-	git RemoveGit,
-	repositoryPath, removedPath string,
-) error {
-	worktrees, err := git.WorktreeList(ctx, repositoryPath)
-	if err != nil {
-		return err
-	}
-	for _, worktree := range worktrees {
-		if physicalpath.SamePath(worktree.Path, removedPath) {
-			return fmt.Errorf(
-				"Git still registers exact path %q",
-				removeOutputPath(removedPath),
-			)
-		}
-	}
-	return nil
-}
-
-func removeCleanupEmptyChain(
-	filesystem removeFilesystem,
-	boundary removeNode,
-	chain []removeNode,
-) error {
-	if err := removal.RevalidateNode(filesystem.observations(), boundary, "cleanup boundary"); err != nil {
-		return err
-	}
-	for _, planned := range chain {
-		if !removePathStrictlyWithin(boundary.Path, planned.Path) {
-			return fmt.Errorf(
-				"cleanup directory %q escaped boundary %q",
-				planned.Path,
-				boundary.Path,
-			)
-		}
-
-		current, err := removal.CaptureNode(filesystem.observations(),
-			boundary.Path,
-			planned.Path,
-			removal.Directory,
-			true,
-		)
-		if errors.Is(err, fs.ErrNotExist) {
-			continue
-		}
-		if err != nil {
-			return fmt.Errorf("inspect cleanup directory %q: %w", planned.Path, err)
-		}
-		if err := removal.CompareNode(filesystem.observations(),
-			planned,
-			current,
-			"cleanup directory",
-		); err != nil {
-			return err
-		}
-
-		entries, err := filesystem.readDir(planned.Path)
-		if err != nil {
-			return fmt.Errorf("read cleanup directory %q: %w", planned.Path, err)
-		}
-		if len(entries) != 0 {
-			return nil
-		}
-
-		revalidated, err := removal.CaptureNode(filesystem.observations(),
-			boundary.Path,
-			planned.Path,
-			removal.Directory,
-			true,
-		)
-		if err != nil {
-			return fmt.Errorf("reinspect cleanup directory %q: %w", planned.Path, err)
-		}
-		if err := removal.CompareNode(filesystem.observations(),
-			current,
-			revalidated,
-			"cleanup directory",
-		); err != nil {
-			return err
-		}
-		if err := filesystem.remove(planned.Path); err != nil {
-			if errors.Is(err, fs.ErrNotExist) {
-				continue
-			}
-			if errors.Is(err, syscall.ENOTEMPTY) || errors.Is(err, syscall.EEXIST) {
-				return nil
-			}
-			return fmt.Errorf("remove empty cleanup directory %q: %w", planned.Path, err)
-		}
-	}
-	return nil
-}
-
-func removePathMissing(filesystem removeFilesystem, path string) (bool, error) {
-	_, err := filesystem.lstat(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return true, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	return false, nil
-}
-
 type removeMutationState struct {
 	planned []string
 	removed map[string]bool
@@ -1249,7 +1076,7 @@ func (state *removeMutationState) observePath(
 	filesystem removeFilesystem,
 	path string,
 ) error {
-	missing, err := removePathMissing(filesystem, path)
+	missing, err := removal.PathMissing(filesystem.observations(), path)
 	if err != nil {
 		return fmt.Errorf("observe exact target state at %q: %w", path, err)
 	}
@@ -1434,6 +1261,10 @@ func removeWrapError(operation string, err error) error {
 
 func (filesystem removeFilesystem) observations() removal.Filesystem {
 	return removal.Filesystem{Lstat: filesystem.lstat, EvalSymlinks: filesystem.evalSymlinks, SameFile: filesystem.sameFile}
+}
+
+func (filesystem removeFilesystem) executor(git removal.LinkedGit) removal.Executor {
+	return removal.Executor{Git: git, Filesystem: filesystem.observations(), ReadDir: filesystem.readDir, Remove: filesystem.remove}
 }
 
 func (commandRuntime removeRuntime) observer() removal.Observer {
