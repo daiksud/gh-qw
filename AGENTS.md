@@ -23,7 +23,7 @@ versions of repository content.
 - When creating or reviewing a pull request, check that its title's type and
   labels reflect the actual changes and their impact on gh-qw users. Correct
   the title and labels before merging. Version-affecting labels require
-  judgment; only unambiguous file-path labels are assigned automatically.
+  judgment; the labeler automates only unambiguous path-based labels.
 - Treat merging and releasing as separate actions. Unless the user explicitly
   requests a release, do not create or push release tags, dispatch release
   workflows, or publish GitHub Releases. When requested, use the documented
