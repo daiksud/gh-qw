@@ -9,7 +9,6 @@ import (
 
 	"github.com/daiksud/gh-qw/internal/config"
 	"github.com/daiksud/gh-qw/internal/ghapi"
-	"github.com/daiksud/gh-qw/internal/ghauth"
 	"github.com/daiksud/gh-qw/internal/ghcmd"
 	"github.com/daiksud/gh-qw/internal/gitcmd"
 	"github.com/daiksud/gh-qw/internal/local"
@@ -22,14 +21,6 @@ const developmentVersion = "dev"
 
 // ErrCommandUsage identifies command-line syntax errors.
 var ErrCommandUsage = errors.New("invalid command usage")
-
-// AccountResolver resolves which gh account a network Git or GitHub API
-// operation for a repository owner should authenticate as, so a command
-// running with multiple gh-authenticated accounts does not have to rely on
-// whichever one happens to be active. *ghauth.Resolver satisfies it.
-type AccountResolver interface {
-	Resolve(ctx context.Context, host, owner string) (ghauth.Resolution, error)
-}
 
 // ApplicationGit combines every local Git operation used by the command
 // tree. Network-capable operations are delegated to gh; see ApplicationGh.
@@ -54,13 +45,12 @@ type ApplicationAPI interface {
 
 // ApplicationDependencies supplies shared process dependencies.
 type ApplicationDependencies struct {
-	Resolver        RootResolver
-	Git             ApplicationGit
-	Gh              ApplicationGh
-	GitFactory      GetGitFactory
-	AccountResolver AccountResolver
-	API             ApplicationAPI
-	Discover        func(
+	Resolver   RootResolver
+	Git        ApplicationGit
+	Gh         ApplicationGh
+	GitFactory GetGitFactory
+	API        ApplicationAPI
+	Discover   func(
 		context.Context,
 		[]string,
 		...local.DiscoveryOptions,
@@ -72,13 +62,12 @@ type ApplicationDependencies struct {
 }
 
 type applicationRuntime struct {
-	resolver        RootResolver
-	git             ApplicationGit
-	gh              ApplicationGh
-	gitFactory      GetGitFactory
-	accountResolver AccountResolver
-	api             ApplicationAPI
-	discover        func(
+	resolver   RootResolver
+	git        ApplicationGit
+	gh         ApplicationGh
+	gitFactory GetGitFactory
+	api        ApplicationAPI
+	discover   func(
 		context.Context,
 		[]string,
 		...local.DiscoveryOptions,
@@ -160,7 +149,6 @@ func NewCommand(dependencies ApplicationDependencies) *cobra.Command {
 	getCommand := NewGetCommand(GetDependencies{
 		RootResolver:     runtime.resolver,
 		GitFactory:       runtime.gitFactory,
-		AccountResolver:  runtime.accountResolver,
 		Discover:         discover,
 		IdentityResolver: runtime.api,
 		Stdin:            runtime.stdin,
@@ -201,14 +189,13 @@ func NewCommand(dependencies ApplicationDependencies) *cobra.Command {
 	}
 	worktreeCommand.AddCommand(
 		NewWorktreeAddCommand(WorktreeAddDependencies{
-			Resolver:        runtime.resolver,
-			Discover:        runtime.discover,
-			Git:             runtime.git,
-			Gh:              runtime.gh,
-			API:             runtime.api,
-			AccountResolver: runtime.accountResolver,
-			Stdout:          runtime.stdout,
-			Stderr:          runtime.stderr,
+			Resolver: runtime.resolver,
+			Discover: runtime.discover,
+			Git:      runtime.git,
+			Gh:       runtime.gh,
+			API:      runtime.api,
+			Stdout:   runtime.stdout,
+			Stderr:   runtime.stderr,
 		}),
 		NewWorktreeListCommand(WorktreeListDependencies{
 			Resolver: runtime.resolver,
@@ -331,16 +318,7 @@ func prepareApplicationRuntime(dependencies ApplicationDependencies) application
 	if gitFactory == nil {
 		gitFactory = applicationGhFactory(gh)
 	}
-	accountResolver := dependencies.AccountResolver
-	if accountResolver == nil {
-		accountResolver = ghauth.NewResolver(ghauth.ResolverOptions{
-			Runner:     ghcmd.NewRunner(),
-			Cache:      ghauth.NewCache(),
-			Stdin:      stdin,
-			Stderr:     stderr,
-			IsTerminal: getIsTerminal,
-		})
-	}
+
 	apiClient := dependencies.API
 	if apiClient == nil {
 		apiClient = ghapi.NewClient()
@@ -355,32 +333,30 @@ func prepareApplicationRuntime(dependencies ApplicationDependencies) application
 	}
 
 	return applicationRuntime{
-		resolver:        resolver,
-		git:             git,
-		gh:              gh,
-		gitFactory:      gitFactory,
-		accountResolver: accountResolver,
-		api:             apiClient,
-		discover:        discover,
-		stdin:           stdin,
-		stdout:          stdout,
-		stderr:          stderr,
-		version:         version,
+		resolver:   resolver,
+		git:        git,
+		gh:         gh,
+		gitFactory: gitFactory,
+		api:        apiClient,
+		discover:   discover,
+		stdin:      stdin,
+		stdout:     stdout,
+		stderr:     stderr,
+		version:    version,
 	}
 }
 
 func applicationGhFactory(gh ApplicationGh) GetGitFactory {
 	if runner, ok := gh.(*ghcmd.Runner); ok {
 		template := *runner
-		return func(stdout, stderr io.Writer, token string) GetGitOperations {
+		return func(stdout, stderr io.Writer) GetGitOperations {
 			clone := template
 			clone.Stdout = stdout
 			clone.Stderr = stderr
-			scoped := clone.WithToken(token)
-			return &scoped
+			return &clone
 		}
 	}
-	return func(_, _ io.Writer, _ string) GetGitOperations {
+	return func(_, _ io.Writer) GetGitOperations {
 		return gh
 	}
 }

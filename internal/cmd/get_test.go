@@ -20,7 +20,6 @@ import (
 
 	"github.com/daiksud/gh-qw/internal/cmd"
 	"github.com/daiksud/gh-qw/internal/ghapi"
-	"github.com/daiksud/gh-qw/internal/ghauth"
 	"github.com/daiksud/gh-qw/internal/ghcmd"
 	"github.com/daiksud/gh-qw/internal/local"
 	"github.com/daiksud/gh-qw/internal/procio"
@@ -62,7 +61,7 @@ func TestNewGetCommandFlagsAndCloneOptions(t *testing.T) {
 	var output bytes.Buffer
 	command := cmd.NewGetCommand(cmd.GetDependencies{
 		RootResolver: resolver,
-		GitFactory: func(stdout, stderr io.Writer, _ string) cmd.GetGitOperations {
+		GitFactory: func(stdout, stderr io.Writer) cmd.GetGitOperations {
 			gotGitStdout = stdout
 			gotGitStderr = stderr
 			return git
@@ -71,11 +70,11 @@ func TestNewGetCommandFlagsAndCloneOptions(t *testing.T) {
 			discoverCalls++
 			return local.DiscoveryResult{}, nil
 		},
-		AccountResolver: getNoopAccountResolver{},
-		Stdout:          &output,
-		Stderr:          io.Discard,
-		Stdin:           strings.NewReader(""),
-		IsTerminal:      func(io.Reader) bool { return false },
+
+		Stdout:     &output,
+		Stderr:     io.Discard,
+		Stdin:      strings.NewReader(""),
+		IsTerminal: func(io.Reader) bool { return false },
 	})
 	command.SetArgs([]string{
 		"--update",
@@ -117,206 +116,6 @@ func TestNewGetCommandFlagsAndCloneOptions(t *testing.T) {
 	}
 	if got, want := output.String(), filepath.ToSlash(gotClone.Destination)+"\n"; got != want {
 		t.Fatalf("output = %q, want %q", got, want)
-	}
-}
-
-func TestNewGetCommandPassesResolvedTokenToGitFactory(t *testing.T) {
-	t.Parallel()
-
-	root := getTempRoot(t)
-	accountResolver := &getAccountResolver{
-		resolution: ghauth.Resolution{Source: ghauth.SourceSelected, Login: "acme-bot", Token: "gho_scoped"},
-	}
-	var gotToken string
-	deps := getDependencies(root, &getGitOperations{
-		clone: func(context.Context, ghcmd.CloneOptions) error { return nil },
-	}, io.Discard, io.Discard)
-	deps.AccountResolver = accountResolver
-	baseFactory := deps.GitFactory
-	deps.GitFactory = func(stdout, stderr io.Writer, token string) cmd.GetGitOperations {
-		gotToken = token
-		return baseFactory(stdout, stderr, token)
-	}
-	command := cmd.NewGetCommand(deps)
-	command.SetArgs([]string{"acme/widget"})
-
-	if err := command.Execute(); err != nil {
-		t.Fatalf("Execute() error = %v", err)
-	}
-	if gotToken != "gho_scoped" {
-		t.Fatalf("GitFactory token = %q, want %q", gotToken, "gho_scoped")
-	}
-	calls := accountResolver.Calls()
-	if len(calls) != 1 || calls[0].host != "github.com" || calls[0].owner != "acme" {
-		t.Fatalf("Resolve() calls = %#v, want one call for (github.com, acme)", calls)
-	}
-}
-
-func TestNewGetCommandStopsBeforeCloneWhenAccountResolutionFails(t *testing.T) {
-	t.Parallel()
-
-	root := getTempRoot(t)
-	wantErr := errors.New("account cache is unreadable")
-	cloneCalls := 0
-	deps := getDependencies(root, &getGitOperations{
-		clone: func(context.Context, ghcmd.CloneOptions) error {
-			cloneCalls++
-			return nil
-		},
-	}, io.Discard, io.Discard)
-	deps.AccountResolver = &getAccountResolver{err: wantErr}
-	command := cmd.NewGetCommand(deps)
-	command.SetArgs([]string{"acme/widget"})
-
-	err := command.Execute()
-	if !errors.Is(err, wantErr) {
-		t.Fatalf("Execute() error = %v, want it to wrap %v", err, wantErr)
-	}
-	if cloneCalls != 0 {
-		t.Fatalf("Clone() calls = %d, want 0 after resolution failure", cloneCalls)
-	}
-}
-
-func TestNewGetCommandUsesAmbientTokenForExplicitEnvironmentResolution(t *testing.T) {
-	t.Parallel()
-
-	root := getTempRoot(t)
-	accountResolver := &getAccountResolver{resolution: ghauth.Resolution{Source: ghauth.SourceExplicitEnv}}
-	var gotToken string
-	deps := getDependencies(root, &getGitOperations{
-		clone: func(context.Context, ghcmd.CloneOptions) error { return nil },
-	}, io.Discard, io.Discard)
-	deps.AccountResolver = accountResolver
-	baseFactory := deps.GitFactory
-	deps.GitFactory = func(stdout, stderr io.Writer, token string) cmd.GetGitOperations {
-		gotToken = token
-		return baseFactory(stdout, stderr, token)
-	}
-	command := cmd.NewGetCommand(deps)
-	command.SetArgs([]string{"acme/widget"})
-
-	if err := command.Execute(); err != nil {
-		t.Fatalf("Execute() error = %v", err)
-	}
-	if gotToken != "" {
-		t.Fatalf("GitFactory token = %q, want empty for explicit environment authentication", gotToken)
-	}
-}
-
-func TestNewGetCommandParallelSkipsOnlyOwnersWhoseResolutionFailed(t *testing.T) {
-	t.Parallel()
-
-	root := getTempRoot(t)
-	wantErr := errors.New("cannot choose an acme account")
-	accountResolver := &getAccountResolver{
-		resolve: func(_ string, owner string) (ghauth.Resolution, error) {
-			if owner == "acme" {
-				return ghauth.Resolution{}, wantErr
-			}
-			return ghauth.Resolution{
-				Source: ghauth.SourceSelected,
-				Login:  "other-bot",
-				Token:  "gho_other",
-			}, nil
-		},
-	}
-	var cloneMu sync.Mutex
-	var cloned []string
-	deps := getDependencies(root, &getGitOperations{
-		clone: func(_ context.Context, options ghcmd.CloneOptions) error {
-			cloneMu.Lock()
-			defer cloneMu.Unlock()
-			cloned = append(cloned, options.URL)
-			return nil
-		},
-	}, io.Discard, io.Discard)
-	deps.AccountResolver = accountResolver
-	command := cmd.NewGetCommand(deps)
-	command.SetArgs([]string{"-P", "acme/one", "acme/two", "other/three"})
-
-	err := command.Execute()
-	if !errors.Is(err, wantErr) {
-		t.Fatalf("Execute() error = %v, want it to include %v", err, wantErr)
-	}
-	calls := accountResolver.Calls()
-	if len(calls) != 2 {
-		t.Fatalf("Resolve() calls = %#v, want one call for each unique owner", calls)
-	}
-	cloneMu.Lock()
-	defer cloneMu.Unlock()
-	if len(cloned) != 1 || !strings.Contains(cloned[0], "other/three") {
-		t.Fatalf("Clone() URLs = %#v, want only the unaffected other/three job", cloned)
-	}
-}
-
-func TestNewGetCommandParallelResolvesEachUniqueOwnerOnce(t *testing.T) {
-	t.Parallel()
-
-	root := getTempRoot(t)
-	accountResolver := &getAccountResolver{
-		resolution: ghauth.Resolution{Source: ghauth.SourceSelected, Login: "acme-bot", Token: "gho_scoped"},
-	}
-	deps := getDependencies(root, &getGitOperations{
-		clone: func(context.Context, ghcmd.CloneOptions) error { return nil },
-	}, io.Discard, io.Discard)
-	deps.AccountResolver = accountResolver
-	command := cmd.NewGetCommand(deps)
-	command.SetArgs([]string{"-P", "acme/one", "acme/two", "acme/three"})
-
-	if err := command.Execute(); err != nil {
-		t.Fatalf("Execute() error = %v", err)
-	}
-	calls := accountResolver.Calls()
-	if len(calls) != 1 || calls[0].host != "github.com" || calls[0].owner != "acme" {
-		t.Fatalf("Resolve() calls = %#v, want a single call for the shared owner (github.com, acme)", calls)
-	}
-}
-
-func TestNewGetCommandCloneFailureHintsTheSelectedAccount(t *testing.T) {
-	t.Parallel()
-
-	root := getTempRoot(t)
-	wantErr := errors.New("gh command failed with exit code 1")
-	accountResolver := &getAccountResolver{
-		resolution: ghauth.Resolution{Source: ghauth.SourceSelected, Login: "TE-DaikiSudo", Token: "gho_scoped"},
-	}
-	deps := getDependencies(root, &getGitOperations{
-		clone: func(context.Context, ghcmd.CloneOptions) error { return wantErr },
-	}, io.Discard, io.Discard)
-	deps.AccountResolver = accountResolver
-	command := cmd.NewGetCommand(deps)
-	command.SetArgs([]string{"acme/widget"})
-
-	err := command.Execute()
-	if !errors.Is(err, wantErr) {
-		t.Fatalf("Execute() error = %v, want it to wrap %v", err, wantErr)
-	}
-	if !strings.Contains(err.Error(), `"TE-DaikiSudo"`) {
-		t.Fatalf("Execute() error = %q, want it to name the selected account", err.Error())
-	}
-}
-
-func TestNewGetCommandCloneFailureOmitsHintForExplicitEnvironmentToken(t *testing.T) {
-	t.Parallel()
-
-	root := getTempRoot(t)
-	wantErr := errors.New("gh command failed with exit code 1")
-	accountResolver := &getAccountResolver{
-		resolution: ghauth.Resolution{Source: ghauth.SourceExplicitEnv},
-	}
-	deps := getDependencies(root, &getGitOperations{
-		clone: func(context.Context, ghcmd.CloneOptions) error { return wantErr },
-	}, io.Discard, io.Discard)
-	deps.AccountResolver = accountResolver
-	command := cmd.NewGetCommand(deps)
-	command.SetArgs([]string{"acme/widget"})
-
-	err := command.Execute()
-	if !errors.Is(err, wantErr) {
-		t.Fatalf("Execute() error = %v, want it to wrap %v", err, wantErr)
-	}
-	if strings.Contains(err.Error(), "used gh account") {
-		t.Fatalf("Execute() error = %q, want no account hint for an explicit environment token", err.Error())
 	}
 }
 
@@ -672,7 +471,7 @@ func TestNewGetCommandRejectsInvalidAndUndocumentedFlagsBeforeResolving(t *testi
 }
 
 func TestNewGetCommandReusesExistingRepositoryAndUpdatesOnRequest(t *testing.T) {
-	t.Parallel()
+	t.Setenv("GH_HOST", "ambient.example.com")
 
 	tests := []struct {
 		name        string
@@ -696,7 +495,6 @@ func TestNewGetCommandReusesExistingRepositoryAndUpdatesOnRequest(t *testing.T) 
 	for _, test := range tests {
 		test := test
 		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
 
 			root := getTempRoot(t)
 			path := filepath.Join(root, "github.com", "acme", "widget")
@@ -736,7 +534,7 @@ func TestNewGetCommandReusesExistingRepositoryAndUpdatesOnRequest(t *testing.T) 
 				return nil
 			}
 			command := cmd.NewGetCommand(deps)
-			command.SetArgs(append(test.args, "acme/widget"))
+			command.SetArgs(append(test.args, "github.com/acme/widget"))
 
 			if err := command.Execute(); err != nil {
 				t.Fatalf("Execute() error = %v", err)
@@ -751,6 +549,9 @@ func TestNewGetCommandReusesExistingRepositoryAndUpdatesOnRequest(t *testing.T) 
 				if got, want := gotSync.Source, "acme/widget"; got != want {
 					t.Fatalf("Update() Source = %q, want %q", got, want)
 				}
+				if gotSync.Host != "github.com" {
+					t.Fatalf("Update() Host = %q, want github.com", gotSync.Host)
+				}
 				if gotSync.Branch != "" {
 					t.Fatalf("Update() Branch = %q, want empty (gh resolves the default branch)", gotSync.Branch)
 				}
@@ -762,122 +563,6 @@ func TestNewGetCommandReusesExistingRepositoryAndUpdatesOnRequest(t *testing.T) 
 				t.Fatalf("output = %q, want %q", got, want)
 			}
 		})
-	}
-}
-
-// getExistingRepositoryDiscover mirrors the "repository already exists"
-// fixture used by TestNewGetCommandReusesExistingRepositoryAndUpdatesOnRequest,
-// so tests that only care about account-resolution call counts don't have to
-// duplicate the Discover wiring.
-func getExistingRepositoryDiscover(root, path string) func(context.Context, []string) (local.DiscoveryResult, error) {
-	return func(context.Context, []string) (local.DiscoveryResult, error) {
-		return local.DiscoveryResult{Repositories: []local.Repository{{
-			Identity:  "github.com/acme/widget",
-			Host:      "github.com",
-			Owner:     "acme",
-			Repo:      "widget",
-			Path:      path,
-			Root:      root,
-			RootIndex: 0,
-		}}}, nil
-	}
-}
-
-// TestNewGetCommandSkipsAccountResolutionForExistingRepositoryWithoutUpdate
-// mirrors TestNewWorktreeAddCommandSkipsAccountResolutionForTheCommonCase:
-// unlike TestNewGetCommandReusesExistingRepositoryAndUpdatesOnRequest (which
-// only ever plugs in getNoopAccountResolver{}, a resolver with no call
-// counter), this test wires in a countable getAccountResolver{} so a
-// regression to unconditional account resolution would actually be caught.
-func TestNewGetCommandSkipsAccountResolutionForExistingRepositoryWithoutUpdate(t *testing.T) {
-	t.Parallel()
-
-	root := getTempRoot(t)
-	path := filepath.Join(root, "github.com", "acme", "widget")
-	git := &getGitOperations{
-		clone: func(context.Context, ghcmd.CloneOptions) error {
-			t.Fatal("Clone() called for existing repository")
-			return nil
-		},
-	}
-	var output bytes.Buffer
-	resolver := &getAccountResolver{}
-	deps := getDependencies(root, git, &output, io.Discard)
-	deps.Discover = getExistingRepositoryDiscover(root, path)
-	deps.AccountResolver = resolver
-	command := cmd.NewGetCommand(deps)
-	command.SetArgs([]string{"acme/widget"})
-
-	if err := command.Execute(); err != nil {
-		t.Fatalf("Execute() error = %v", err)
-	}
-	if calls := resolver.Calls(); len(calls) != 0 {
-		t.Fatalf(
-			"Resolve() calls = %#v, want none: reusing an existing repository without --update must never trigger gh account resolution or a prompt",
-			calls,
-		)
-	}
-}
-
-// TestNewGetCommandUpdateOfExistingRepositoryDoesResolveAccount is the
-// symmetric regression guard for the test above: --update against the same
-// existing-repository scenario must still trigger account resolution, so a
-// future change can't accidentally make --update skip it too.
-func TestNewGetCommandUpdateOfExistingRepositoryDoesResolveAccount(t *testing.T) {
-	t.Parallel()
-
-	root := getTempRoot(t)
-	path := filepath.Join(root, "github.com", "acme", "widget")
-	git := &getGitOperations{
-		clone: func(context.Context, ghcmd.CloneOptions) error {
-			t.Fatal("Clone() called for existing repository")
-			return nil
-		},
-		update: func(context.Context, string, ghcmd.SyncOptions) error {
-			return nil
-		},
-	}
-	var output bytes.Buffer
-	resolver := &getAccountResolver{}
-	deps := getDependencies(root, git, &output, io.Discard)
-	deps.Discover = getExistingRepositoryDiscover(root, path)
-	deps.AccountResolver = resolver
-	command := cmd.NewGetCommand(deps)
-	command.SetArgs([]string{"--update", "acme/widget"})
-
-	if err := command.Execute(); err != nil {
-		t.Fatalf("Execute() error = %v", err)
-	}
-	if calls := resolver.Calls(); len(calls) == 0 {
-		t.Fatal("Resolve() calls = 0, want at least one: --update must still trigger gh account resolution")
-	}
-}
-
-func TestNewGetCommandStopsBeforeSyncWhenAccountResolutionFails(t *testing.T) {
-	t.Parallel()
-
-	root := getTempRoot(t)
-	path := filepath.Join(root, "github.com", "acme", "widget")
-	wantErr := errors.New("account selection failed")
-	syncCalls := 0
-	git := &getGitOperations{
-		update: func(context.Context, string, ghcmd.SyncOptions) error {
-			syncCalls++
-			return nil
-		},
-	}
-	deps := getDependencies(root, git, io.Discard, io.Discard)
-	deps.Discover = getExistingRepositoryDiscover(root, path)
-	deps.AccountResolver = &getAccountResolver{err: wantErr}
-	command := cmd.NewGetCommand(deps)
-	command.SetArgs([]string{"--update", "acme/widget"})
-
-	err := command.Execute()
-	if !errors.Is(err, wantErr) {
-		t.Fatalf("Execute() error = %v, want it to wrap %v", err, wantErr)
-	}
-	if syncCalls != 0 {
-		t.Fatalf("RepoSync() calls = %d, want 0 after resolution failure", syncCalls)
 	}
 }
 
@@ -894,7 +579,7 @@ func TestNewGetCommandUsesEarliestExistingRoot(t *testing.T) {
 	var output bytes.Buffer
 	command := cmd.NewGetCommand(cmd.GetDependencies{
 		RootResolver: resolver,
-		GitFactory: func(io.Writer, io.Writer, string) cmd.GetGitOperations {
+		GitFactory: func(io.Writer, io.Writer) cmd.GetGitOperations {
 			t.Fatal("Git factory called for unchanged repository")
 			return nil
 		},
@@ -919,11 +604,11 @@ func TestNewGetCommandUsesEarliestExistingRoot(t *testing.T) {
 			}}, nil
 		},
 		IdentityResolver: &getIdentityResolver{},
-		AccountResolver:  getNoopAccountResolver{},
-		Stdin:            strings.NewReader(""),
-		Stdout:           &output,
-		Stderr:           io.Discard,
-		IsTerminal:       func(io.Reader) bool { return false },
+
+		Stdin:      strings.NewReader(""),
+		Stdout:     &output,
+		Stderr:     io.Discard,
+		IsTerminal: func(io.Reader) bool { return false },
 	})
 	command.SetArgs([]string{"acme/widget"})
 
@@ -946,7 +631,7 @@ func TestNewGetCommandReusesSecondaryRootWhenPrimaryIsMissing(t *testing.T) {
 		RootResolver: &getRootResolver{result: rootpkg.Result{
 			RepositoryRoots: []string{primary, secondary},
 		}},
-		GitFactory: func(io.Writer, io.Writer, string) cmd.GetGitOperations {
+		GitFactory: func(io.Writer, io.Writer) cmd.GetGitOperations {
 			t.Fatal("Git factory called for secondary repository")
 			return nil
 		},
@@ -963,11 +648,11 @@ func TestNewGetCommandReusesSecondaryRootWhenPrimaryIsMissing(t *testing.T) {
 			}}}, nil
 		},
 		IdentityResolver: &getIdentityResolver{},
-		AccountResolver:  getNoopAccountResolver{},
-		Stdin:            strings.NewReader(""),
-		Stdout:           &output,
-		Stderr:           io.Discard,
-		IsTerminal:       func(io.Reader) bool { return false },
+
+		Stdin:      strings.NewReader(""),
+		Stdout:     &output,
+		Stderr:     io.Discard,
+		IsTerminal: func(io.Reader) bool { return false },
 	})
 	command.SetArgs([]string{"acme/widget"})
 
@@ -1324,7 +1009,7 @@ func TestNewGetCommandKeepsProgressAndWarningsOffStdout(t *testing.T) {
 	deps.Discover = func(context.Context, []string) (local.DiscoveryResult, error) {
 		return local.DiscoveryResult{Warnings: []local.Warning{warning}}, nil
 	}
-	deps.GitFactory = func(stdout, _ io.Writer, _ string) cmd.GetGitOperations {
+	deps.GitFactory = func(stdout, _ io.Writer) cmd.GetGitOperations {
 		return &getGitOperations{
 			clone: func(context.Context, ghcmd.CloneOptions) error {
 				_, _ = fmt.Fprintln(stdout, "git progress")
@@ -1362,7 +1047,7 @@ func TestNewGetCommandSilentSuppressesProgressButKeepsWarningsAndPaths(t *testin
 	deps.Discover = func(context.Context, []string) (local.DiscoveryResult, error) {
 		return local.DiscoveryResult{Warnings: []local.Warning{warning}}, nil
 	}
-	deps.GitFactory = func(stdout, _ io.Writer, _ string) cmd.GetGitOperations {
+	deps.GitFactory = func(stdout, _ io.Writer) cmd.GetGitOperations {
 		return &getGitOperations{
 			clone: func(context.Context, ghcmd.CloneOptions) error {
 				_, _ = fmt.Fprintln(stdout, "git progress")
@@ -1413,7 +1098,7 @@ func TestNewGetCommandOrderedNonSilentExposesPassthroughFile(t *testing.T) {
 	}
 	var output bytes.Buffer
 	deps := getDependencies(root, git, &output, writer)
-	deps.GitFactory = func(stdout, stderr io.Writer, _ string) cmd.GetGitOperations {
+	deps.GitFactory = func(stdout, stderr io.Writer) cmd.GetGitOperations {
 		gotStdout = stdout
 		gotStderr = stderr
 		return git
@@ -1474,7 +1159,7 @@ func TestNewGetCommandPassthroughNeverLeaksGhStdoutOntoGhQwStdout(t *testing.T) 
 		clone: func(context.Context, ghcmd.CloneOptions) error { return nil },
 	}
 	deps := getDependencies(root, git, &output, writer)
-	deps.GitFactory = func(stdout, _ io.Writer, _ string) cmd.GetGitOperations {
+	deps.GitFactory = func(stdout, _ io.Writer) cmd.GetGitOperations {
 		return &getGitOperations{
 			clone: func(context.Context, ghcmd.CloneOptions) error {
 				_, _ = fmt.Fprintln(io.MultiWriter(stdout, &ghStream), ghMessage)
@@ -1537,7 +1222,7 @@ func TestNewGetCommandSilentAndParallelNeverExposePassthroughFile(t *testing.T) 
 			}
 			var output bytes.Buffer
 			deps := getDependencies(root, git, &output, writer)
-			deps.GitFactory = func(stdout, stderr io.Writer, _ string) cmd.GetGitOperations {
+			deps.GitFactory = func(stdout, stderr io.Writer) cmd.GetGitOperations {
 				gotStdout = stdout
 				gotStderr = stderr
 				return git
@@ -1690,39 +1375,6 @@ func (r *getIdentityResolver) Calls() int {
 	return r.calls
 }
 
-type getAccountResolverCall struct {
-	host, owner string
-}
-
-// getAccountResolver is a cmd.AccountResolver test double that records every
-// host/owner it was asked to resolve and always answers with a fixed
-// resolution, letting tests assert both the resulting GetGitFactory token
-// and how account resolution was invoked (e.g., once per unique owner under
-// --parallel).
-type getAccountResolver struct {
-	mu         sync.Mutex
-	resolution ghauth.Resolution
-	err        error
-	resolve    func(host, owner string) (ghauth.Resolution, error)
-	calls      []getAccountResolverCall
-}
-
-func (r *getAccountResolver) Resolve(_ context.Context, host, owner string) (ghauth.Resolution, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.calls = append(r.calls, getAccountResolverCall{host: host, owner: owner})
-	if r.resolve != nil {
-		return r.resolve(host, owner)
-	}
-	return r.resolution, r.err
-}
-
-func (r *getAccountResolver) Calls() []getAccountResolverCall {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return append([]getAccountResolverCall(nil), r.calls...)
-}
-
 type getGitOperations struct {
 	clone  func(context.Context, ghcmd.CloneOptions) error
 	update func(context.Context, string, ghcmd.SyncOptions) error
@@ -1755,15 +1407,9 @@ func getDependencies(
 		RootResolver: &getRootResolver{result: rootpkg.Result{
 			RepositoryRoots: []string{root},
 		}},
-		GitFactory: func(io.Writer, io.Writer, string) cmd.GetGitOperations {
+		GitFactory: func(io.Writer, io.Writer) cmd.GetGitOperations {
 			return git
 		},
-		// A safe, hermetic default: tests that do not exercise account
-		// resolution directly must never invoke a real gh subprocess, whose
-		// availability, authentication, and output vary by environment (see
-		// TestNewGetCommandPassesResolvedTokenToGitFactory and its siblings
-		// for tests that do exercise it with their own stub).
-		AccountResolver: getNoopAccountResolver{},
 		Discover: func(context.Context, []string) (local.DiscoveryResult, error) {
 			return local.DiscoveryResult{}, nil
 		},
@@ -1775,14 +1421,6 @@ func getDependencies(
 		Stderr:     stderr,
 		IsTerminal: func(io.Reader) bool { return false },
 	}
-}
-
-// getNoopAccountResolver represents an explicit environment token without
-// ever invoking a real gh subprocess.
-type getNoopAccountResolver struct{}
-
-func (getNoopAccountResolver) Resolve(context.Context, string, string) (ghauth.Resolution, error) {
-	return ghauth.Resolution{Source: ghauth.SourceExplicitEnv}, nil
 }
 
 type getPanicReader struct{}
@@ -1856,3 +1494,30 @@ type getStderrError struct {
 func (e *getStderrError) Error() string { return e.message }
 
 func (e *getStderrError) StderrOutput() []byte { return e.stderr }
+
+func TestGetHonorsGHHostForHostlessShorthand(t *testing.T) {
+	t.Setenv("GH_HOST", "enterprise.example.com")
+	for _, test := range []struct{ input, want string }{
+		{"acme/widget", "https://enterprise.example.com/acme/widget"},
+		{"github.com/acme/widget", "https://github.com/acme/widget"},
+		{"https://other.example.com/acme/widget", "https://other.example.com/acme/widget"},
+	} {
+		t.Run(test.input, func(t *testing.T) {
+			var got string
+			git := &getGitOperations{clone: func(_ context.Context, options ghcmd.CloneOptions) error { got = options.URL; return nil }}
+			command := cmd.NewGetCommand(cmd.GetDependencies{
+				RootResolver: &getRootResolver{result: rootpkg.Result{RepositoryRoots: []string{getTempRoot(t)}}},
+				GitFactory:   func(io.Writer, io.Writer) cmd.GetGitOperations { return git },
+				Stdout:       io.Discard, Stderr: io.Discard,
+				Discover: func(context.Context, []string) (local.DiscoveryResult, error) { return local.DiscoveryResult{}, nil },
+			})
+			command.SetArgs([]string{test.input})
+			if err := command.Execute(); err != nil {
+				t.Fatal(err)
+			}
+			if got != test.want {
+				t.Fatalf("clone URL=%q, want %q", got, test.want)
+			}
+		})
+	}
+}

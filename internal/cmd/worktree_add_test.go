@@ -15,7 +15,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/daiksud/gh-qw/internal/ghauth"
 	"github.com/daiksud/gh-qw/internal/ghcmd"
 	"github.com/daiksud/gh-qw/internal/gitcmd"
 	"github.com/daiksud/gh-qw/internal/local"
@@ -119,6 +118,7 @@ func TestNewWorktreeAddCommandAutomaticResolution(t *testing.T) {
 			},
 			wantAPICalls: 1,
 			wantSyncs: []ghcmd.SyncOptions{{
+				Host:   "github.com",
 				Source: "acme/widget",
 				Branch: "main",
 			}},
@@ -161,49 +161,23 @@ func TestNewWorktreeAddCommandAutomaticResolution(t *testing.T) {
 	}
 }
 
-func TestNewWorktreeAddCommandPassesResolvedTokenToAPIAndSync(t *testing.T) {
+func TestNewWorktreeAddCommandFetchesDefaultBranchThroughAPIAndSync(t *testing.T) {
+	t.Setenv("GH_HOST", "ambient.example.com")
 	fixture := worktreeAddNewFixture(t, "feature/api-fetch")
 	fixture.api.branch = "main"
 	fixture.gh.syncCreatesRemoteBranch = true
-	fixture.accountResolver.resolution = ghauth.Resolution{
-		Source: ghauth.SourceSelected,
-		Login:  "acme-bot",
-		Token:  "gho_scoped",
-	}
-
 	if err := fixture.worktreeAddExecute("feature/api-fetch"); err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	if fixture.api.token != "gho_scoped" {
-		t.Fatalf("DefaultBranch() token = %q, want %q", fixture.api.token, "gho_scoped")
+	if fixture.api.calls != 1 || len(fixture.gh.syncs) != 1 {
+		t.Fatalf("API calls=%d, syncs=%v; want one of each", fixture.api.calls, fixture.gh.syncs)
 	}
-	if len(fixture.gh.syncs) != 1 || fixture.gh.syncs[0].Token != "gho_scoped" {
-		t.Fatalf("RepoSync() options = %#v, want Token %q", fixture.gh.syncs, "gho_scoped")
-	}
-	if calls := fixture.accountResolver.calls; len(calls) != 1 ||
-		calls[0].host != "github.com" || calls[0].owner != "acme" {
-		t.Fatalf("Resolve() calls = %#v, want one call for (github.com, acme)", calls)
+	if fixture.gh.syncs[0].Host != "github.com" {
+		t.Fatalf("sync host = %q, want github.com", fixture.gh.syncs[0].Host)
 	}
 }
 
-func TestNewWorktreeAddCommandStopsBeforeAPIWhenAccountResolutionFails(t *testing.T) {
-	fixture := worktreeAddNewFixture(t, "feature/api-fetch")
-	wantErr := errors.New("account cache is unreadable")
-	fixture.accountResolver.err = wantErr
-
-	err := fixture.worktreeAddExecute("feature/api-fetch")
-	if !errors.Is(err, wantErr) {
-		t.Fatalf("Execute() error = %v, want it to wrap %v", err, wantErr)
-	}
-	if fixture.api.calls != 0 {
-		t.Fatalf("DefaultBranch() calls = %d, want 0 after resolution failure", fixture.api.calls)
-	}
-	if len(fixture.gh.syncs) != 0 {
-		t.Fatalf("RepoSync() calls = %#v, want none after resolution failure", fixture.gh.syncs)
-	}
-}
-
-func TestNewWorktreeAddCommandSkipsAccountResolutionForTheCommonCase(t *testing.T) {
+func TestNewWorktreeAddCommandDoesNotUseNetworkForExistingBranches(t *testing.T) {
 	tests := []struct {
 		name      string
 		configure func(*worktreeAddFixture)
@@ -230,44 +204,22 @@ func TestNewWorktreeAddCommandSkipsAccountResolutionForTheCommonCase(t *testing.
 			if err := fixture.worktreeAddExecute("feature/local"); err != nil {
 				t.Fatalf("Execute() error = %v", err)
 			}
-			if len(fixture.accountResolver.calls) != 0 {
-				t.Fatalf(
-					"Resolve() calls = %#v, want none: attaching to an existing branch must never trigger gh account resolution or a prompt",
-					fixture.accountResolver.calls,
-				)
+			if fixture.api.calls != 0 || len(fixture.gh.syncs) != 0 {
+				t.Fatal("existing branches must not require API or sync")
 			}
 		})
 	}
 }
 
-func TestNewWorktreeAddCommandSkipsAccountResolutionForExplicitCommitish(t *testing.T) {
+func TestNewWorktreeAddCommandDoesNotUseNetworkForExplicitCommitish(t *testing.T) {
 	fixture := worktreeAddNewFixture(t, "feature/explicit")
 	fixture.git.revisions["release-base"] = true
 
 	if err := fixture.worktreeAddExecute("feature/explicit", "release-base"); err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	if len(fixture.accountResolver.calls) != 0 {
-		t.Fatalf("Resolve() calls = %#v, want none for an explicit commit-ish", fixture.accountResolver.calls)
-	}
-}
-
-func TestNewWorktreeAddCommandSyncFailureHintsTheSelectedAccount(t *testing.T) {
-	fixture := worktreeAddNewFixture(t, "feature/api-fetch")
-	fixture.api.branch = "main"
-	fixture.gh.syncErr = errors.New("sync failed")
-	fixture.accountResolver.resolution = ghauth.Resolution{
-		Source: ghauth.SourceSelected,
-		Login:  "TE-DaikiSudo",
-		Token:  "gho_scoped",
-	}
-
-	err := fixture.worktreeAddExecute("feature/api-fetch")
-	if err == nil || !strings.Contains(err.Error(), "sync failed") {
-		t.Fatalf("Execute() error = %v, want it to wrap the sync failure", err)
-	}
-	if !strings.Contains(err.Error(), `"TE-DaikiSudo"`) {
-		t.Fatalf("Execute() error = %q, want it to name the selected account", err.Error())
+	if fixture.api.calls != 0 || len(fixture.gh.syncs) != 0 {
+		t.Fatal("explicit commit-ish must not require API or sync")
 	}
 }
 
@@ -962,12 +914,10 @@ type worktreeAddFixture struct {
 	branch         string
 	destination    string
 
-	resolver        *worktreeAddResolver
-	git             *worktreeAddGit
-	gh              *worktreeAddGh
-	api             *worktreeAddAPI
-	accountResolver *worktreeAddAccountResolver
-
+	resolver         *worktreeAddResolver
+	git              *worktreeAddGit
+	gh               *worktreeAddGh
+	api              *worktreeAddAPI
 	initialWorktrees []local.Worktree
 	enumerateCalls   int
 	omitPostWorktree bool
@@ -1027,9 +977,6 @@ func worktreeAddNewFixture(t *testing.T, branch string) *worktreeAddFixture {
 		git: git,
 		gh:  &worktreeAddGh{git: git},
 		api: &worktreeAddAPI{branch: "main"},
-		accountResolver: &worktreeAddAccountResolver{
-			resolution: ghauth.Resolution{Source: ghauth.SourceExplicitEnv},
-		},
 		cwd: repository.Path,
 	}
 	fixture.destination = worktreeAddDestination(worktreeRoot, repository, branch)
@@ -1146,15 +1093,14 @@ func (fixture *worktreeAddFixture) worktreeAddExecute(args ...string) error {
 			fixture.associationCalls++
 			return fixture.associationErr
 		},
-		Git:             fixture.git,
-		Gh:              fixture.gh,
-		API:             fixture.api,
-		AccountResolver: fixture.accountResolver,
-		Getwd:           func() (string, error) { return fixture.cwd, nil },
-		Mkdir:           mkdir,
-		Remove:          remove,
-		Stdout:          stdout,
-		Stderr:          stderr,
+		Git:    fixture.git,
+		Gh:     fixture.gh,
+		API:    fixture.api,
+		Getwd:  func() (string, error) { return fixture.cwd, nil },
+		Mkdir:  mkdir,
+		Remove: remove,
+		Stdout: stdout,
+		Stderr: stderr,
 	})
 	command.SetArgs(args)
 	return command.Execute()
@@ -1306,7 +1252,6 @@ type worktreeAddAPI struct {
 	host   string
 	owner  string
 	repo   string
-	token  string
 }
 
 func (api *worktreeAddAPI) DefaultBranch(
@@ -1314,13 +1259,11 @@ func (api *worktreeAddAPI) DefaultBranch(
 	host string,
 	owner string,
 	repo string,
-	tokenOverride string,
 ) (string, error) {
 	api.calls++
 	api.host = host
 	api.owner = owner
 	api.repo = repo
-	api.token = tokenOverride
 	return api.branch, api.err
 }
 
@@ -1330,27 +1273,6 @@ type worktreeAddFailingWriter struct {
 
 func (writer worktreeAddFailingWriter) Write([]byte) (int, error) {
 	return 0, writer.err
-}
-
-// worktreeAddAccountResolver is an AccountResolver test double that records
-// every host/owner it was asked to resolve and always answers with a fixed
-// resolution.
-type worktreeAddAccountResolver struct {
-	resolution ghauth.Resolution
-	err        error
-	calls      []worktreeAddAccountResolverCall
-}
-
-type worktreeAddAccountResolverCall struct {
-	host, owner string
-}
-
-func (r *worktreeAddAccountResolver) Resolve(
-	_ context.Context,
-	host, owner string,
-) (ghauth.Resolution, error) {
-	r.calls = append(r.calls, worktreeAddAccountResolverCall{host: host, owner: owner})
-	return r.resolution, r.err
 }
 
 func worktreeAddRepository(rootPath, identity string, rootIndex int) local.Repository {

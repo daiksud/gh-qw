@@ -14,9 +14,6 @@ func TestIdentityErrorRemainsDiscoverableThroughRepositoryUsageError(t *testing.
 		hostOverride: func() string {
 			return ""
 		},
-		knownHosts: func() []string {
-			return nil
-		},
 		tokenForHost: func(string) (string, string) {
 			return "", ""
 		},

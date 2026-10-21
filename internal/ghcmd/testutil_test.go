@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -63,6 +64,13 @@ func TestGhCommandHelperProcess(t *testing.T) {
 
 	mode := helperMode(os.Args)
 	switch mode {
+	case "auth-environment":
+		values := []string{}
+		for _, key := range []string{"GH_HOST", "GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"} {
+			values = append(values, os.Getenv(key))
+		}
+		_, _ = os.Stdout.WriteString(strings.Join(values, "\n"))
+		os.Exit(0)
 	case "success":
 		os.Exit(0)
 	case "stream":

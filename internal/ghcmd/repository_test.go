@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
+	"slices"
+	"strings"
 	"testing"
 )
 
@@ -168,39 +171,6 @@ func TestRepoSyncArgumentOrderingAndWorkingDirectory(t *testing.T) {
 	}
 }
 
-func TestRepoSyncScopesSubprocessToTokenWithoutAddingArguments(t *testing.T) {
-	runner, recorder := newHelperRunner(t, "success")
-	runner.Stdout = &bytes.Buffer{}
-	runner.Stderr = &bytes.Buffer{}
-	runner.Env = append(runner.Env, "GH_TOKEN=stale")
-
-	err := runner.RepoSync(context.Background(), t.TempDir(), SyncOptions{
-		Source: "acme/widget",
-		Token:  "gho_scoped",
-	})
-	if err != nil {
-		t.Fatalf("RepoSync() error = %v", err)
-	}
-
-	command := recorder.last(t)
-	want := []string{"repo", "sync", "--source", "acme/widget"}
-	if !slicesEqual(command.args, want) {
-		t.Fatalf("args = %#v, want %#v (token must never appear as an argument)", command.args, want)
-	}
-	found := false
-	for _, entry := range command.cmd.Env {
-		if entry == "GH_TOKEN=gho_scoped" {
-			found = true
-		}
-		if entry == "GH_TOKEN=stale" {
-			t.Fatalf("spawned command Env retained the stale token: %#v", command.cmd.Env)
-		}
-	}
-	if !found {
-		t.Fatalf("spawned command Env = %#v, want GH_TOKEN=gho_scoped", command.cmd.Env)
-	}
-}
-
 func TestRepoSyncOmitsBranchWhenNotProvided(t *testing.T) {
 	runner, recorder := newHelperRunner(t, "success")
 	runner.Stdout = &bytes.Buffer{}
@@ -246,5 +216,69 @@ func TestRepoSyncReturnsFailureFromGh(t *testing.T) {
 	}
 	if commandErr.ExitCode != 1 {
 		t.Fatalf("exit code = %d, want 1", commandErr.ExitCode)
+	}
+}
+
+func TestRepositoryCommandsPreserveStandardAuthenticationEnvironment(t *testing.T) {
+	for _, operation := range []string{"clone", "sync"} {
+		t.Run(operation, func(t *testing.T) {
+			runner, recorder := newHelperRunner(t, "success")
+			runner.Stdout = &bytes.Buffer{}
+			runner.Stderr = &bytes.Buffer{}
+			values := []string{"GH_TOKEN=dummy-gh", "GITHUB_TOKEN=dummy-github", "GH_ENTERPRISE_TOKEN=dummy-enterprise", "GITHUB_ENTERPRISE_TOKEN=dummy-github-enterprise", "GH_HOST=ghe.example.com"}
+			runner.Env = append(runner.Env, values...)
+			var err error
+			if operation == "clone" {
+				err = runner.RepoClone(context.Background(), CloneOptions{URL: "https://ghe.example.com/acme/widget", Destination: t.TempDir()})
+			} else {
+				err = runner.RepoSync(context.Background(), t.TempDir(), SyncOptions{Source: "acme/widget"})
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			command := recorder.last(t)
+			if !slicesEqual(command.cmd.Env, runner.Env) {
+				t.Fatal("subprocess environment differs from caller environment")
+			}
+		})
+	}
+}
+
+func TestRepoSyncUsesSelectedHostWithoutChangingAuthentication(t *testing.T) {
+	keys := []string{"GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"}
+	for _, key := range keys {
+		t.Setenv(key, "dummy-"+key)
+	}
+	t.Setenv("GH_HOST", "ambient.example.com")
+	t.Setenv(helperProcessEnv, "1")
+	for _, inherited := range []bool{false, true} {
+		t.Run(map[bool]string{false: "configured", true: "inherited"}[inherited], func(t *testing.T) {
+			runner, recorder := newHelperRunner(t, "auth-environment")
+			if inherited {
+				runner.Env = nil
+			}
+			before := slices.Clone(runner.Env)
+			for _, host := range []string{"github.com", "selected.example.com"} {
+				var output bytes.Buffer
+				runner.Stdout = &output
+				runner.Stderr = &bytes.Buffer{}
+				if err := runner.RepoSync(context.Background(), t.TempDir(), SyncOptions{Host: host, Source: "acme/widget"}); err != nil {
+					t.Fatal(err)
+				}
+				want := []string{host}
+				for _, key := range keys {
+					want = append(want, "dummy-"+key)
+				}
+				if output.String() != strings.Join(want, "\n") {
+					t.Fatal("subprocess host or authentication environment differs")
+				}
+				if !slices.Equal(recorder.last(t).args, []string{"repo", "sync", "--source", "acme/widget"}) {
+					t.Fatal("sync must remain a local operation")
+				}
+				if !slices.Equal(runner.Env, before) || os.Getenv("GH_HOST") != "ambient.example.com" {
+					t.Fatal("sync mutated caller environment")
+				}
+			}
+		})
 	}
 }

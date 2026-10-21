@@ -3,6 +3,8 @@ package ghcmd
 import (
 	"context"
 	"fmt"
+	"os"
+	"slices"
 )
 
 // SubmoduleMode controls whether gh recursively initializes submodules
@@ -98,6 +100,8 @@ func validateSubmoduleMode(mode SubmoduleMode) error {
 
 // SyncOptions controls `gh repo sync`.
 type SyncOptions struct {
+	// Host selects the repository host for local remote discovery.
+	Host string
 	// Source is the "<owner>/<repo>" to synchronize from. It is required so
 	// synchronization always targets the repository's own remote rather than
 	// a fork parent, which is `gh repo sync`'s default source.
@@ -105,11 +109,6 @@ type SyncOptions struct {
 	// Branch selects the branch to synchronize. An empty Branch synchronizes
 	// gh's resolved default branch.
 	Branch string
-	// Token, when non-empty, scopes the gh subprocess to authenticate as
-	// that account instead of gh's own active account (see internal/ghauth),
-	// by setting GH_TOKEN in its environment. It never becomes a command
-	// argument.
-	Token string
 }
 
 // RepoSync fast-forwards the repository checked out in dir from Source using
@@ -120,12 +119,21 @@ func (r *Runner) RepoSync(ctx context.Context, dir string, options SyncOptions) 
 	if err != nil {
 		return err
 	}
-	runner := r
-	if options.Token != "" {
-		scoped := runner.WithToken(options.Token)
-		runner = &scoped
+	if options.Host == "" {
+		return r.runDir(ctx, dir, args...)
 	}
-	return runner.runDir(ctx, dir, args...)
+	var scoped Runner
+	if r != nil {
+		scoped = *r
+	}
+	if scoped.Env == nil {
+		scoped.Env = os.Environ()
+	} else {
+		scoped.Env = slices.Clone(scoped.Env)
+	}
+	// os/exec applies the last value for duplicate environment keys.
+	scoped.Env = append(scoped.Env, "GH_HOST="+options.Host)
+	return scoped.runDir(ctx, dir, args...)
 }
 
 func repoSyncArgs(options SyncOptions) ([]string, error) {

@@ -6,10 +6,9 @@ the source of truth for branches and worktree relationships.
 
 `gh qw get` and `gh qw worktree add` clone and synchronize repositories through `gh repo clone`
 and `gh repo sync`, so they require `gh` authentication and a `github.com` or
-`gh`-authenticated GitHub Enterprise host. Account selection is deterministic: an explicit token,
-a valid cached choice, an owner-matching account, a sole account, or an interactive choice must
-identify the account before a network operation starts. Ambiguous or invalid authentication state
-fails closed — see
+`gh`-authenticated GitHub Enterprise host. Authentication uses gh's active account and standard
+token environment variables. `gh-qw` does not select accounts by repository owner, maintain an
+account cache, or switch the active account. See
 [gh account selection](docs/reference/cli/README.md#gh-account-selection).
 
 ## Install

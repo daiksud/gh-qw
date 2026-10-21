@@ -15,7 +15,6 @@ import (
 	"syscall"
 
 	"github.com/daiksud/gh-qw/internal/ghapi"
-	"github.com/daiksud/gh-qw/internal/ghauth"
 	"github.com/daiksud/gh-qw/internal/ghcmd"
 	"github.com/daiksud/gh-qw/internal/gitcmd"
 	"github.com/daiksud/gh-qw/internal/local"
@@ -42,7 +41,7 @@ type WorktreeAddGh interface {
 
 // WorktreeAddAPI is the GitHub API capability required by worktree add.
 type WorktreeAddAPI interface {
-	DefaultBranch(ctx context.Context, host, owner, repo, tokenOverride string) (string, error)
+	DefaultBranch(ctx context.Context, host, owner, repo string) (string, error)
 }
 
 // WorktreeAddDependencies supplies command integration and test seams.
@@ -82,16 +81,15 @@ type WorktreeAddDependencies struct {
 		...local.AssociationOptions,
 	) error
 
-	Git             WorktreeAddGit
-	Gh              WorktreeAddGh
-	API             WorktreeAddAPI
-	AccountResolver AccountResolver
-	Filesystem      local.FilesystemOptions
-	Getwd           func() (string, error)
-	Mkdir           func(string, fs.FileMode) error
-	Remove          func(string) error
-	Stdout          io.Writer
-	Stderr          io.Writer
+	Git        WorktreeAddGit
+	Gh         WorktreeAddGh
+	API        WorktreeAddAPI
+	Filesystem local.FilesystemOptions
+	Getwd      func() (string, error)
+	Mkdir      func(string, fs.FileMode) error
+	Remove     func(string) error
+	Stdout     io.Writer
+	Stderr     io.Writer
 }
 
 type worktreeAddMode uint8
@@ -138,16 +136,15 @@ type worktreeAddRuntime struct {
 		string,
 		...local.AssociationOptions,
 	) error
-	git             WorktreeAddGit
-	gh              WorktreeAddGh
-	api             WorktreeAddAPI
-	accountResolver AccountResolver
-	filesystem      local.FilesystemOptions
-	getwd           func() (string, error)
-	mkdir           func(string, fs.FileMode) error
-	remove          func(string) error
-	stdout          io.Writer
-	stderr          io.Writer
+	git        WorktreeAddGit
+	gh         WorktreeAddGh
+	api        WorktreeAddAPI
+	filesystem local.FilesystemOptions
+	getwd      func() (string, error)
+	mkdir      func(string, fs.FileMode) error
+	remove     func(string) error
+	stdout     io.Writer
+	stderr     io.Writer
 }
 
 type worktreeAddRequest struct {
@@ -160,12 +157,11 @@ type worktreeAddRequest struct {
 }
 
 type worktreeAddPlanner struct {
-	ctx             context.Context
-	git             WorktreeAddGit
-	gh              WorktreeAddGh
-	api             WorktreeAddAPI
-	accountResolver AccountResolver
-	repository      local.Repository
+	ctx        context.Context
+	git        WorktreeAddGit
+	gh         WorktreeAddGh
+	api        WorktreeAddAPI
+	repository local.Repository
 
 	remotes       []string
 	remotesLoaded bool
@@ -311,16 +307,6 @@ func worktreeAddPrepareRuntime(dependencies WorktreeAddDependencies) worktreeAdd
 	if apiClient == nil {
 		apiClient = ghapi.NewClient()
 	}
-	accountResolver := dependencies.AccountResolver
-	if accountResolver == nil {
-		accountResolver = ghauth.NewResolver(ghauth.ResolverOptions{
-			Runner:     ghcmd.NewRunner(),
-			Cache:      ghauth.NewCache(),
-			Stdin:      os.Stdin,
-			Stderr:     stderr,
-			IsTerminal: getIsTerminal,
-		})
-	}
 	if dependencies.Discover == nil {
 		dependencies.Discover = local.DiscoverRepositories
 	}
@@ -357,7 +343,6 @@ func worktreeAddPrepareRuntime(dependencies WorktreeAddDependencies) worktreeAdd
 		git:                 git,
 		gh:                  gh,
 		api:                 apiClient,
-		accountResolver:     accountResolver,
 		filesystem:          dependencies.Filesystem,
 		getwd:               getwd,
 		mkdir:               mkdir,
@@ -460,12 +445,11 @@ func worktreeAddRun(
 	}
 
 	planner := &worktreeAddPlanner{
-		ctx:             ctx,
-		git:             runtime.git,
-		gh:              runtime.gh,
-		api:             runtime.api,
-		accountResolver: runtime.accountResolver,
-		repository:      repository,
+		ctx:        ctx,
+		git:        runtime.git,
+		gh:         runtime.gh,
+		api:        runtime.api,
+		repository: repository,
 	}
 	options, err := planner.worktreeAddPlan(request, destination)
 	if err != nil {
@@ -740,32 +724,16 @@ func (planner *worktreeAddPlanner) worktreeAddCreationTarget(
 		return explicit, nil
 	}
 
-	// Resolution only happens here, once this fallback path is actually
-	// reached: worktreeAddPlan's earlier local- and remote-branch matches
-	// (steps 1 and 2) never call the GitHub API, so the common case of
-	// attaching to or tracking an existing branch never triggers gh account
-	// resolution or an interactive prompt (see internal/ghauth).
-	resolution, err := getResolveAccount(
-		planner.ctx,
-		planner.accountResolver,
-		planner.repository.Host,
-		planner.repository.Owner,
-	)
-	if err != nil {
-		return "", err
-	}
-
 	defaultBranch, err := planner.api.DefaultBranch(
 		planner.ctx,
 		planner.repository.Host,
 		planner.repository.Owner,
 		planner.repository.Repo,
-		resolution.Token,
 	)
 	if err != nil {
 		return "", fmt.Errorf(
 			"determine a start point for the new branch: %w; provide an explicit commit-ish",
-			wrapAccountFailureHint(err, resolution),
+			err,
 		)
 	}
 	if err := local.ValidateBranch(defaultBranch); err != nil {
@@ -812,16 +780,16 @@ func (planner *worktreeAddPlanner) worktreeAddCreationTarget(
 		planner.ctx,
 		planner.repository.Path,
 		ghcmd.SyncOptions{
+			Host:   planner.repository.Host,
 			Source: planner.repository.Owner + "/" + planner.repository.Repo,
 			Branch: defaultBranch,
-			Token:  resolution.Token,
 		},
 	); err != nil {
 		return "", fmt.Errorf(
 			"sync API default branch %q from remote %q: %w",
 			defaultBranch,
 			remote,
-			wrapAccountFailureHint(err, resolution),
+			err,
 		)
 	}
 	exists, err := planner.git.RemoteBranchExists(
