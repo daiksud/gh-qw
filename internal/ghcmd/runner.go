@@ -17,7 +17,7 @@ const stderrTailLimit = 64 * 1024
 type commandContextFunc func(context.Context, string, ...string) *exec.Cmd
 
 // Runner executes the GitHub CLI (gh) without involving a shell. Its zero
-// value uses the gh executable, the process standard output and error
+// value resolves gh through GH_PATH or PATH and uses the process output and error
 // streams, and the inherited environment. A gh subprocess never receives the
 // calling process's standard input; its own standard input is always the
 // null device, so it can never block a caller waiting on a terminal that
@@ -40,13 +40,12 @@ type Runner struct {
 	commandContext commandContextFunc
 }
 
-// NewRunner returns a Runner configured for an interactive CLI. Callers
-// typically set Executable from ResolveExecutable.
+// NewRunner returns a Runner configured for an interactive CLI. An unset
+// Executable is resolved lazily through GH_PATH or PATH when a command runs.
 func NewRunner() *Runner {
 	return &Runner{
-		Executable: "gh",
-		Stdout:     os.Stdout,
-		Stderr:     os.Stderr,
+		Stdout: os.Stdout,
+		Stderr: os.Stderr,
 	}
 }
 
@@ -108,7 +107,10 @@ func CommandExitCode(err error) (int, bool) {
 // Stderr is not tailed, since gh's output already reached the caller's file
 // directly; see CommandError.StderrOutput.
 func (r *Runner) runDir(ctx context.Context, dir string, args ...string) error {
-	cmd := r.command(ctx, dir, args...)
+	cmd, err := r.command(ctx, dir, args...)
+	if err != nil {
+		return commandError(ctx, err, nil)
+	}
 	tail := newTailBuffer(stderrTailLimit)
 
 	if file := procio.PassthroughFile(r.stdout()); file != nil {
@@ -141,7 +143,10 @@ func (r *Runner) Output(ctx context.Context, args ...string) ([]byte, error) {
 // stays empty; see CommandError.StderrOutput. An empty dir uses the current
 // working directory.
 func (r *Runner) outputDir(ctx context.Context, dir string, args ...string) ([]byte, error) {
-	cmd := r.command(ctx, dir, args...)
+	cmd, err := r.command(ctx, dir, args...)
+	if err != nil {
+		return nil, commandError(ctx, err, nil)
+	}
 	var stdout bytes.Buffer
 	tail := newTailBuffer(stderrTailLimit)
 	cmd.Stdout = &stdout
@@ -157,8 +162,8 @@ func (r *Runner) outputDir(ctx context.Context, dir string, args ...string) ([]b
 	return bytes.Clone(stdout.Bytes()), nil
 }
 
-func (r *Runner) command(ctx context.Context, dir string, args ...string) *exec.Cmd {
-	executable := "gh"
+func (r *Runner) command(ctx context.Context, dir string, args ...string) (*exec.Cmd, error) {
+	var executable string
 	factory := commandContextFunc(exec.CommandContext)
 	if r != nil {
 		if r.Executable != "" {
@@ -166,6 +171,13 @@ func (r *Runner) command(ctx context.Context, dir string, args ...string) *exec.
 		}
 		if r.commandContext != nil {
 			factory = r.commandContext
+		}
+	}
+	if executable == "" {
+		var err error
+		executable, err = ResolveExecutable(os.LookupEnv, exec.LookPath)
+		if err != nil {
+			return nil, err
 		}
 	}
 
@@ -181,7 +193,7 @@ func (r *Runner) command(ctx context.Context, dir string, args ...string) *exec.
 	if r != nil && r.Env != nil {
 		cmd.Env = append([]string(nil), r.Env...)
 	}
-	return cmd
+	return cmd, nil
 }
 
 func (r *Runner) stdout() io.Writer {

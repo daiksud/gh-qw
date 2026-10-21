@@ -2,246 +2,169 @@ package ghapi
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"io"
-	"net/http"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/daiksud/gh-qw/internal/ghcmd"
 )
 
-type restClientFunc func(context.Context, string, string, io.Reader, any) error
-
-func (f restClientFunc) DoWithContext(
-	ctx context.Context,
-	method string,
-	path string,
-	body io.Reader,
-	response any,
-) error {
-	return f(ctx, method, path, body, response)
-}
-
-func TestResolveIdentityHonorsGHHost(t *testing.T) {
-	client := testClient(
-		"ghe.example.com",
-		map[string]string{
-			"github.com":        "github-token",
-			"ghe.example.com":   "enterprise-token",
-			"other.example.com": "other-token",
-		},
-		func(host, token string) (restClient, error) {
-			if host != "ghe.example.com" {
-				t.Fatalf("REST host = %q, want ghe.example.com", host)
-			}
-			if token != "enterprise-token" {
-				t.Fatalf("REST token = %q, want enterprise-token", token)
-			}
-			return jsonResponse(t, `{"login":"enterprise-user"}`), nil
-		},
-	)
-
-	identity, err := client.ResolveIdentity(context.Background())
-	if err != nil {
-		t.Fatalf("ResolveIdentity() error = %v", err)
-	}
-	if identity != (Identity{Host: "ghe.example.com", Login: "enterprise-user"}) {
-		t.Fatalf("ResolveIdentity() = %#v", identity)
-	}
-}
-
-func TestResolveIdentityDefaultsToAuthenticatedGitHubCom(t *testing.T) {
-	client := testClient(
-		"",
-		map[string]string{
-			"github.com":      "github-token",
-			"ghe.example.com": "enterprise-token",
-		},
-		func(host, token string) (restClient, error) {
-			if host != "github.com" {
-				t.Fatalf("REST host = %q, want github.com", host)
-			}
-			return jsonResponse(t, `{"login":"octocat"}`), nil
-		},
-	)
-
-	identity, err := client.ResolveIdentity(context.Background())
-	if err != nil {
-		t.Fatalf("ResolveIdentity() error = %v", err)
-	}
-	if identity != (Identity{Host: "github.com", Login: "octocat"}) {
-		t.Fatalf("ResolveIdentity() = %#v", identity)
-	}
-}
-
-func TestResolveIdentityDoesNotInferEnterpriseHost(t *testing.T) {
-	client := testClient("", map[string]string{"ghe.example.com": "enterprise-token"}, func(string, string) (restClient, error) {
-		t.Fatal("REST must not use an inferred Enterprise host")
-		return nil, nil
-	})
-	_, err := client.ResolveIdentity(context.Background())
-	var identityErr *IdentityError
-	if !errors.As(err, &identityErr) || !strings.Contains(err.Error(), "github.com") {
-		t.Fatalf("error=%v, want github.com identity failure", err)
-	}
-}
-
-func TestResolveIdentityNoAuthentication(t *testing.T) {
-	client := testClient("", nil, func(string, string) (restClient, error) {
-		t.Fatal("REST client must not be created without authentication")
-		return nil, nil
-	})
-
-	_, err := client.ResolveIdentity(context.Background())
-	var identityErr *IdentityError
-	if !errors.As(err, &identityErr) {
-		t.Fatalf("ResolveIdentity() error = %T %v, want *IdentityError", err, err)
-	}
-	if !strings.Contains(err.Error(), "no authentication token found") ||
-		!strings.Contains(err.Error(), "<owner>/<repo>") {
-		t.Fatalf("ResolveIdentity() error = %q", err)
-	}
-}
-
-func TestResolveIdentityMissingLogin(t *testing.T) {
-	client := testClient(
-		"ghe.example.com",
-		map[string]string{"ghe.example.com": "enterprise-token"},
-		func(string, string) (restClient, error) {
-			return jsonResponse(t, `{}`), nil
-		},
-	)
-
-	_, err := client.ResolveIdentity(context.Background())
-	var identityErr *IdentityError
-	if !errors.As(err, &identityErr) {
-		t.Fatalf("ResolveIdentity() error = %T %v, want *IdentityError", err, err)
-	}
-	if !strings.Contains(err.Error(), "did not include a login") {
-		t.Fatalf("ResolveIdentity() error = %q", err)
-	}
-}
-
-func TestDefaultBranchSuccessUsesExplicitHost(t *testing.T) {
-	type contextKey struct{}
-	ctx := context.WithValue(context.Background(), contextKey{}, "request-context")
-
-	client := testClient(
-		"",
-		map[string]string{"ghe.example.com": "enterprise-token"},
-		func(host, token string) (restClient, error) {
-			if host != "ghe.example.com" {
-				t.Fatalf("REST host = %q, want ghe.example.com", host)
-			}
-			if token != "enterprise-token" {
-				t.Fatalf("REST token = %q, want enterprise-token", token)
-			}
-			return restClientFunc(func(gotCtx context.Context, method, path string, _ io.Reader, response any) error {
-				if gotCtx.Value(contextKey{}) != "request-context" {
+func TestResolveIdentityUsesSelectedHost(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		host string
+		want string
+	}{
+		{name: "default GitHub.com", want: "github.com"},
+		{name: "explicit Enterprise", host: " GHE.EXAMPLE.COM ", want: "ghe.example.com"},
+		{name: "GitHub API alias is passed to gh", host: "api.github.com", want: "api.github.com"},
+		{name: "tenant API alias is passed to gh", host: "api.acme.ghe.com", want: "api.acme.ghe.com"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("GH_HOST", test.host)
+			ctx := context.WithValue(context.Background(), struct{}{}, "identity request")
+			var calls int
+			client := &Client{output: func(gotCtx context.Context, args ...string) ([]byte, error) {
+				calls++
+				if gotCtx != ctx {
 					t.Fatal("request context was not propagated")
 				}
-				if method != http.MethodGet {
-					t.Fatalf("method = %q, want GET", method)
+				want := []string{"api", "--hostname", test.want, "user", "--jq", ".login // empty"}
+				if !slices.Equal(args, want) {
+					t.Fatalf("gh args = %#v, want %#v", args, want)
 				}
-				if path != "repos/acme/widgets" {
-					t.Fatalf("path = %q, want repos/acme/widgets", path)
-				}
-				return json.Unmarshal([]byte(`{"default_branch":"trunk"}`), response)
-			}), nil
-		},
-	)
+				return []byte(" octocat\r\n"), nil
+			}}
 
-	branch, err := client.DefaultBranch(ctx, "GHE.EXAMPLE.COM", "acme", "widgets")
-	if err != nil {
-		t.Fatalf("DefaultBranch() error = %v", err)
-	}
-	if branch != "trunk" {
-		t.Fatalf("DefaultBranch() = %q, want trunk", branch)
-	}
-}
-
-func TestDefaultBranchRESTErrorHasContextAndRedactsToken(t *testing.T) {
-	const token = "secret-enterprise-token"
-	client := testClient(
-		"",
-		map[string]string{"ghe.example.com": token},
-		func(string, string) (restClient, error) {
-			return restClientFunc(func(context.Context, string, string, io.Reader, any) error {
-				return errors.New("request rejected for token " + token)
-			}), nil
-		},
-	)
-
-	_, err := client.DefaultBranch(context.Background(), "ghe.example.com", "acme", "widgets")
-	if err == nil {
-		t.Fatal("DefaultBranch() error = nil")
-	}
-	if !strings.Contains(err.Error(), `lookup default branch for "ghe.example.com/acme/widgets"`) ||
-		!strings.Contains(err.Error(), "GET repository") {
-		t.Fatalf("DefaultBranch() error lacks operation context: %q", err)
-	}
-	if strings.Contains(err.Error(), token) || !strings.Contains(err.Error(), "[REDACTED]") {
-		t.Fatalf("DefaultBranch() error leaked token: %q", err)
-	}
-}
-
-func TestDefaultBranchMissingDefaultBranch(t *testing.T) {
-	client := testClient(
-		"",
-		map[string]string{"github.com": "github-token"},
-		func(string, string) (restClient, error) {
-			return jsonResponse(t, `{}`), nil
-		},
-	)
-
-	_, err := client.DefaultBranch(context.Background(), "github.com", "acme", "widgets")
-	if err == nil || !strings.Contains(err.Error(), "did not include default_branch") {
-		t.Fatalf("DefaultBranch() error = %v", err)
-	}
-}
-
-func TestDefaultBranchUsesHostToken(t *testing.T) {
-	client := testClient(
-		"",
-		map[string]string{"github.com": "host-token"},
-		func(host, token string) (restClient, error) {
-			if token != "host-token" {
-				t.Fatalf("REST token = %q, want host-token", token)
+			identity, err := client.ResolveIdentity(ctx)
+			if err != nil {
+				t.Fatalf("ResolveIdentity() error = %v", err)
 			}
-			return jsonResponse(t, `{"default_branch":"main"}`), nil
-		},
-	)
-
-	if _, err := client.DefaultBranch(context.Background(), "github.com", "acme", "widgets"); err != nil {
-		t.Fatalf("DefaultBranch() error = %v", err)
+			if want := (Identity{Host: test.want, Login: "octocat"}); identity != want {
+				t.Fatalf("ResolveIdentity() = %#v, want %#v", identity, want)
+			}
+			if calls != 1 {
+				t.Fatalf("gh calls = %d, want one API call without auth preflight", calls)
+			}
+		})
 	}
 }
 
-func testClient(
-	override string,
-	tokens map[string]string,
-	newREST func(string, string) (restClient, error),
-) *Client {
-	return &Client{
-		hostOverride: func() string {
-			return override
-		},
-		tokenForHost: func(host string) (string, string) {
-			return tokens[host], "test"
-		},
-		newREST: newREST,
+func TestResolveIdentityRejectsEmptyLogin(t *testing.T) {
+	t.Setenv("GH_HOST", "ghe.example.com")
+	for _, output := range []string{"", " \r\n\t"} {
+		client := &Client{output: func(context.Context, ...string) ([]byte, error) {
+			return []byte(output), nil
+		}}
+		_, err := client.ResolveIdentity(context.Background())
+		var identityErr *IdentityError
+		if !errors.As(err, &identityErr) || !strings.Contains(err.Error(), "did not include a login") ||
+			!strings.Contains(err.Error(), "specify <owner>/<repo>") {
+			t.Fatalf("ResolveIdentity() error = %v, want typed missing-login usage error", err)
+		}
 	}
 }
 
-func jsonResponse(t *testing.T, responseJSON string) restClient {
-	t.Helper()
-	return restClientFunc(func(_ context.Context, method, path string, body io.Reader, response any) error {
-		if method != http.MethodGet {
-			t.Fatalf("method = %q, want GET", method)
+func TestResolveIdentityPreservesProcessFailure(t *testing.T) {
+	t.Setenv("GH_HOST", "ghe.example.com")
+	failure := &ghcmd.CommandError{ExitCode: 4}
+	client := &Client{output: func(context.Context, ...string) ([]byte, error) {
+		return []byte("partial response"), failure
+	}}
+
+	identity, err := client.ResolveIdentity(context.Background())
+	var identityErr *IdentityError
+	if !errors.As(err, &identityErr) || !errors.Is(err, failure) {
+		t.Fatalf("error = %v, want typed identity error preserving process failure", err)
+	}
+	if identity != (Identity{}) {
+		t.Fatalf("identity = %#v, want no identity after failed gh command", identity)
+	}
+	if !strings.Contains(err.Error(), `for "ghe.example.com": query current user`) ||
+		!strings.Contains(err.Error(), "specify <owner>/<repo>") {
+		t.Fatalf("error lacks operation context: %v", err)
+	}
+}
+
+func TestDefaultBranchUsesExplicitHostAndRESTField(t *testing.T) {
+	t.Setenv("GH_HOST", "unrelated.example.com")
+	ctx := context.WithValue(context.Background(), struct{}{}, "default-branch request")
+	for _, branch := range []string{"trunk", "null"} {
+		t.Run(branch, func(t *testing.T) {
+			var calls int
+			client := &Client{output: func(gotCtx context.Context, args ...string) ([]byte, error) {
+				calls++
+				if gotCtx != ctx {
+					t.Fatal("request context was not propagated")
+				}
+				// The REST field exists for empty repositories. `// empty`
+				// distinguishes a missing/null field from a branch named null.
+				want := []string{"api", "--hostname", "ghe.example.com", "repos/acme/widgets", "--jq", ".default_branch // empty"}
+				if !slices.Equal(args, want) {
+					t.Fatalf("gh args = %#v, want %#v", args, want)
+				}
+				return []byte(" " + branch + "\r\n"), nil
+			}}
+
+			got, err := client.DefaultBranch(ctx, "GHE.EXAMPLE.COM", "acme", "widgets")
+			if err != nil || got != branch {
+				t.Fatalf("DefaultBranch() = %q, %v, want %q", got, err, branch)
+			}
+			if calls != 1 {
+				t.Fatalf("gh calls = %d, want one REST lookup", calls)
+			}
+		})
+	}
+}
+
+func TestDefaultBranchEscapesEndpointComponents(t *testing.T) {
+	client := &Client{output: func(_ context.Context, args ...string) ([]byte, error) {
+		if args[3] != "repos/team%2Fpart/widgets%3Fquery" {
+			t.Fatalf("endpoint = %q", args[3])
 		}
-		if body != nil {
-			t.Fatalf("body = %v, want nil", body)
+		return []byte("main\n"), nil
+	}}
+	if _, err := client.DefaultBranch(context.Background(), "github.com", "team/part", "widgets?query"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDefaultBranchRequiresRepositoryIdentity(t *testing.T) {
+	for _, parts := range [][3]string{{"", "acme", "widgets"}, {"github.com", " ", "widgets"}, {"github.com", "acme", ""}} {
+		client := &Client{output: func(context.Context, ...string) ([]byte, error) {
+			t.Fatal("gh must not run with an incomplete repository identity")
+			return nil, nil
+		}}
+		_, err := client.DefaultBranch(context.Background(), parts[0], parts[1], parts[2])
+		if err == nil || !strings.Contains(err.Error(), "host, owner, and repository are required") {
+			t.Fatalf("DefaultBranch(%q) error = %v", parts, err)
 		}
-		return json.Unmarshal([]byte(responseJSON), response)
-	})
+	}
+}
+
+func TestDefaultBranchRejectsEmptyResponse(t *testing.T) {
+	for _, output := range []string{"", " \r\n\t"} {
+		client := &Client{output: func(context.Context, ...string) ([]byte, error) {
+			return []byte(output), nil
+		}}
+		_, err := client.DefaultBranch(context.Background(), "github.com", "acme", "widgets")
+		if err == nil || !strings.Contains(err.Error(), "did not include default_branch") {
+			t.Fatalf("DefaultBranch() error = %v", err)
+		}
+	}
+}
+
+func TestDefaultBranchPreservesProcessFailure(t *testing.T) {
+	failure := &ghcmd.CommandError{ExitCode: 1}
+	client := &Client{output: func(context.Context, ...string) ([]byte, error) {
+		return []byte("partial response"), failure
+	}}
+	branch, err := client.DefaultBranch(context.Background(), "ghe.example.com", "acme", "widgets")
+	if !errors.Is(err, failure) || branch != "" {
+		t.Fatalf("DefaultBranch() = %q, %v, want failure without a branch", branch, err)
+	}
+	if !strings.Contains(err.Error(), `lookup default branch for "ghe.example.com/acme/widgets": GET repository`) {
+		t.Fatalf("error lacks operation context: %v", err)
+	}
 }

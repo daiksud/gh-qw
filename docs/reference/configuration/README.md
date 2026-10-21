@@ -261,9 +261,10 @@ Standard tool variables can still affect the external services used by a command
 | `GH_TOKEN`, `GITHUB_TOKEN` | Reach gh unchanged; gh applies its standard GitHub.com token precedence and host rules. |
 | `GH_ENTERPRISE_TOKEN`, `GITHUB_ENTERPRISE_TOKEN` | Reach gh unchanged and apply to the selected Enterprise host. `GH_HOST` does not restrict them to one host; see [account selection](../cli/#gh-account-selection). |
 | `GH_CONFIG_DIR` | May relocate GitHub CLI's own authentication/configuration state; it does not relocate `gh-qw` configuration. |
+| `GH_PATH` | Selects the external gh executable for clone, sync, and API queries; when unset or empty, `gh-qw` searches `PATH`. |
 | `GIT_SSH`, `GIT_SSH_COMMAND`, `GIT_ASKPASS`, `SSH_ASKPASS`, `GIT_TERMINAL_PROMPT` | Affect Git transport and credential prompting when inherited by Git subprocesses. |
 | Git credential helpers and standard Git config-location variables | Continue to affect Git itself, but never define `gh-qw` roots or identity rules. |
-| `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY` and lowercase equivalents | May affect HTTPS access by Git or GitHub API clients. |
+| `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY` and lowercase equivalents | May affect HTTPS access by Git or external `gh` commands. |
 | `GHQ_ROOT` | Used only for no-argument legacy migration source discovery as described above. |
 
 `GH_REPO` does not replace `-R/--repo` and does not change current-directory repository

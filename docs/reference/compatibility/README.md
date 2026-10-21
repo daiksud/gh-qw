@@ -14,6 +14,25 @@ This page records the current compatibility and interoperability contracts for `
 [versioning reference](../versioning/) are normative; the tables below connect those contracts to
 implementation and regression evidence.
 
+## Required external tool capabilities
+
+Runtime requirements are capability-based. Use Git and GitHub CLI releases that support the
+commands and options below; `gh-qw` does not substitute an internal implementation when a
+capability is unavailable.
+
+| Tool | Required capability | Used by |
+| --- | --- | --- |
+| GitHub CLI | [`gh api`](https://cli.github.com/manual/gh_api) with `--hostname` and its built-in `--jq` response selection | Authenticated-login lookup and the REST repository `default_branch` field, including empty repositories |
+| GitHub CLI | [`gh repo clone`](https://cli.github.com/manual/gh_repo_clone) with `--no-upstream` and Git argument forwarding; [`gh repo sync`](https://cli.github.com/manual/gh_repo_sync) with `--source` and `--branch` | Cloning and synchronization |
+| Git | [`git worktree`](https://git-scm.com/docs/git-worktree) add, remove, prune, and NUL-delimited `list --porcelain -z`; `add --orphan` for orphan creation | Local worktree lifecycle |
+| Git | `git worktree repair <paths...>` that repairs a moved main worktree and moved linked worktrees together | Migration with registered worktrees |
+
+`gh` is resolved lazily through [`GH_PATH`](https://cli.github.com/manual/gh_help_environment)
+or `PATH`, and Git through `PATH`. Help, local commands, and existing-branch worktree creation do
+not require an API lookup. Missing executables or unsupported options fail at the requested
+operation; there is no HTTP, authentication-file, or worktree-metadata fallback. The jq queries
+run inside `gh`; no separate `jq` executable is required.
+
 ## ghq compatibility
 
 The ghq comparison uses `x-motemen/ghq` `v1.10.1` as a fixed upstream reference. `gh-qw` adopts
@@ -47,10 +66,19 @@ GitHub network operations.
 | Executable and process model | `gh` is found through `GH_PATH` or `PATH`, runs directly without a shell, and receives no caller stdin. | `internal/ghcmd/executable.go`; `internal/ghcmd/runner.go`; ADR-0003 | `internal/ghcmd/executable_test.go`; `internal/ghcmd/runner_test.go`; `tests/cli_test.go` |
 | Authentication | Use gh active accounts and standard token environment variables. No owner matching, selection prompts, cache reads/writes, token overrides, or per-repository account switching. | `internal/cmd/get.go`; `internal/cmd/worktree_add.go`; ADR-0002 | `tests/cli_test.go`; command tests |
 | Local operations | Help/version, local commands, and existing-branch worktree creation do not query authentication. Clone/sync have no unconditional authentication preflight. | `internal/cmd/get.go`; `internal/cmd/worktree_add.go` | `tests/cli_test.go`; `internal/cmd/worktree_add_test.go` |
-| Execution environment | Clone and sync inherit all standard GitHub.com/GHES token variables unchanged, leaving precedence to gh. Local sync scopes `GH_HOST` to the selected repository host. | `internal/ghcmd/runner.go` | `internal/ghcmd/repository_test.go` |
-| API lookup | Default-branch lookup uses the repository host and the resolved credential; wrapped errors redact secrets. | `internal/ghapi/client.go` | `internal/ghapi/client_test.go` |
+| Execution environment | Clone, sync, and API queries inherit all standard GitHub.com/GHES token variables unchanged, leaving precedence to gh. Local sync scopes `GH_HOST` to the selected repository host; API queries pass the selected host with `--hostname`. | `internal/ghcmd/runner.go`; `internal/ghapi/client.go` | `internal/ghcmd/repository_test.go`; `internal/ghapi/process_test.go` |
+| API lookup | External `gh api` retrieves `user.login` and the REST repository `default_branch`, preserving empty-repository default branches. Missing, null, or empty fields fail. Errors retain operation and cancellation context without copying gh output, arguments, or token values into the error string. No Go HTTP transport or authentication-setting reader is used. | `internal/ghapi/client.go` | `internal/ghapi/client_test.go`; `internal/ghapi/process_test.go` |
 | Output descriptors | When safe, `gh` inherits the diagnostic file descriptor so terminal progress and color work. Other writers use relay logic with bounded error capture; silent and parallel `get` disable direct progress output. | `internal/procio/procio.go`; `internal/ghcmd/runner.go`; ADR-0003 | `internal/procio/procio_test.go`; `internal/ghcmd/runner_test.go`; `internal/cmd/get_test.go` |
-| Stdout purity | `gh` stdout is routed to gh-qw's diagnostic destination, never gh-qw's result stdout. | `internal/cmd/get.go` | `internal/cmd/get_test.go` |
+| Stdout purity | Clone/sync stdout is routed to gh-qw's diagnostic destination; API stdout is captured for field interpretation. Neither reaches gh-qw's result stdout. | `internal/cmd/get.go`; `internal/ghapi/client.go` | `internal/cmd/get_test.go`; `tests/cli_test.go` |
+
+### Migrating API host aliases
+
+Use the repository host when setting `GH_HOST` or supplying an explicit host: `github.com` or
+`<tenant>.ghe.com`. Earlier API integration implicitly converted `api.github.com` and
+`api.<tenant>.ghe.com` to those repository hosts. That conversion has been removed: the selected
+host is now passed directly to `gh api --hostname`, and gh determines its API endpoint. Update
+API-host values to their repository hosts before running bare-name completion or default-branch
+lookup; otherwise native gh may construct an unintended endpoint such as `api.api.github.com`.
 
 ## Git interoperability
 

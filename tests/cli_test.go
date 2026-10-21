@@ -394,6 +394,52 @@ func TestCLIGetUsesGhWithoutAccountPreflight(t *testing.T) {
 	}
 }
 
+func TestCLIAPILookupsUseGHPathAndKeepStdoutPure(t *testing.T) {
+	fixture := newCLIFixture(t)
+	ghPath := filepath.Join(fixture.buildFakeGh(t), "gh")
+	if runtime.GOOS == "windows" {
+		ghPath += ".exe"
+	}
+	env := append(fixture.env, "GH_PATH="+ghPath, "GH_HOST=ghe.example.com", "GHQW_TEST_API_OUTPUT=octocat")
+	mainPath := filepath.Join(fixture.repository, "ghe.example.com", "octocat", "widget")
+
+	result := fixture.runCLIWithEnv(t, env, "get", "widget")
+	assertStatus(t, result, 0)
+	assertStdout(t, result, filepath.ToSlash(mainPath)+"\n")
+	assertContains(t, result.stderr, "fake gh: api ghe.example.com/user")
+	assertPathExists(t, mainPath)
+
+	// The explicit repository host wins over the ambient host. The local main
+	// branch supplies the start point returned by the external REST lookup.
+	env = append(env, "GH_HOST=unrelated.example.com", "GHQW_TEST_API_OUTPUT=main")
+	result = fixture.runCLIWithEnv(t, env, "worktree", "add", "-R", "ghe.example.com/octocat/widget", "feature/from-api")
+	assertStatus(t, result, 0)
+	worktreePath := filepath.Join(fixture.worktreeRoot, "ghe.example.com", "octocat", "widget", "feature", "from-api")
+	assertStdout(t, result, filepath.ToSlash(worktreePath)+"\n")
+	assertContains(t, result.stderr, "fake gh: api ghe.example.com/repos/octocat/widget")
+
+	result = fixture.runCLIWithEnv(t, append(env, "GHQW_TEST_API_OUTPUT="), "worktree", "add", "-R", "ghe.example.com/octocat/widget", "feature/missing-default")
+	assertStatus(t, result, 1)
+	assertStdout(t, result, "")
+	assertContains(t, result.stderr, "API response did not include default_branch")
+	assertPathMissing(t, filepath.Join(fixture.worktreeRoot, "ghe.example.com", "octocat", "widget", "feature", "missing-default"))
+
+	// An unusable GH_PATH must not affect help, local inputs, or attaching an
+	// existing branch: none requires resolving or starting gh.
+	localEnv := append(env, "GH_PATH="+filepath.Join(fixture.base, "missing-gh"))
+	fixture.runGit(t, mainPath, "branch", "feature/existing", "main")
+	for _, args := range [][]string{
+		{"--help"}, {"--version"}, {"root"}, {"list"}, {"get", "ghe.example.com/octocat/widget"},
+		{"worktree", "add", "-R", "ghe.example.com/octocat/widget", "feature/existing"},
+	} {
+		result := fixture.runCLIWithEnv(t, localEnv, args...)
+		assertStatus(t, result, 0)
+		if strings.Contains(result.stderr, "fake gh:") {
+			t.Fatalf("local command %q invoked gh: %s", args, result.stderr)
+		}
+	}
+}
+
 // TestCLIGetDoesNotBlockOnAnOpenCallerStandardInput verifies that `gh qw get`
 // completes without waiting for EOF from the calling process. The test keeps
 // gh-qw's standard input connected to an open pipe and uses a fake gh on PATH
@@ -570,6 +616,7 @@ func isolatedEnvironment(fixture *cliFixture) []string {
 		"EMAIL":                   {},
 		"GH_CONFIG_DIR":           {},
 		"GH_HOST":                 {},
+		"GH_PATH":                 {},
 		"GH_ENTERPRISE_TOKEN":     {},
 		"GITHUB_ENTERPRISE_TOKEN": {},
 		"GH_TOKEN":                {},
@@ -681,8 +728,8 @@ func (fixture *cliFixture) cloneMain(t *testing.T, remoteURL, mainPath string) {
 }
 
 // fakeGhSource delegates authentication entirely to the external command boundary.
-// It accepts clone and sync only; any auth preflight or mutation fails the test.
-// Clone creates a local Git repository, keeping the CLI tests network-free.
+// API calls require an explicit fixture response; any auth preflight or mutation
+// fails the test. Clone creates a local Git repository, keeping tests network-free.
 const fakeGhSource = `package main
 
 import (
@@ -700,6 +747,15 @@ func main() {
 		cloneRepo(args[2:])
 	case len(args) == 4 && args[0] == "repo" && args[1] == "sync" && args[2] == "--source":
 		fmt.Fprintln(os.Stderr, "fake gh: synchronized "+args[3])
+	case len(args) == 6 && args[0] == "api" && args[1] == "--hostname" && args[4] == "--jq":
+		output, ok := os.LookupEnv("GHQW_TEST_API_OUTPUT")
+		if !ok || (args[3] == "user" && args[5] != ".login // empty") ||
+			(strings.HasPrefix(args[3], "repos/") && args[5] != ".default_branch // empty") {
+			fmt.Fprintln(os.Stderr, "fake gh: unexpected API lookup")
+			os.Exit(1)
+		}
+		fmt.Fprintln(os.Stdout, output)
+		fmt.Fprintln(os.Stderr, "fake gh: api "+args[2]+"/"+args[3])
 	default:
 		fmt.Fprintf(os.Stderr, "fake gh: unsupported invocation %q\n", strings.Join(args, " "))
 		os.Exit(1)

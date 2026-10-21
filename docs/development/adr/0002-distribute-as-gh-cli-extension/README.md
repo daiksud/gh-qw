@@ -33,13 +33,17 @@ Installation and upgrades use the `gh extension` mechanism.
 
 Every network-capable Git operation is delegated to `gh`: `get` clones with `gh repo clone`, `get
 --update` synchronizes with `gh repo sync`, and `worktree add` uses `gh repo sync` when its
-default-branch fallback needs network access. GitHub API requests use `gh` host and authentication
-state. Local branch, revision, and worktree operations continue to use Git directly.
+default-branch fallback needs network access. Login and default-branch queries use external
+`gh api --hostname <selected-host>` commands. The default branch comes from the REST repository
+`default_branch` field, which also represents the configured default branch of an empty
+repository. API output is captured for interpretation, while gh diagnostics use stderr. There
+is no Go HTTP transport or direct access to gh authentication settings. Local branch, revision,
+and worktree operations continue to use Git directly.
 Consequently, `get` rejects `file://` input, while local discovery and `migrate` can still resolve
 it.
 
 Use gh's active account for the selected host and its standard token environment variables.
-Preserve every token variable for clone and sync. For local sync, set the child process's
+Preserve every token variable for clone, sync, and API queries. For local sync, set the child process's
 `GH_HOST` to the selected repository host without changing the caller's environment. Do not
 enumerate or select
 accounts, maintain a selection cache, inject tokens, perform unconditional auth preflight, or
@@ -61,7 +65,8 @@ token variables and specify Enterprise hosts. Old account cache files are ignore
 
 ### Negative
 
-- Cloning and synchronization require an installed and authenticated GitHub CLI.
+- Cloning, synchronization, and API lookups require an installed and authenticated GitHub CLI
+  with the [documented capabilities](../../../reference/compatibility/#required-external-tool-capabilities).
 - Releases must follow GitHub CLI extension naming and asset conventions.
 - `get` cannot clone `file://` repositories, and network operations are limited to GitHub hosts
   known to `gh`.

@@ -321,7 +321,7 @@ func prepareApplicationRuntime(dependencies ApplicationDependencies) application
 
 	apiClient := dependencies.API
 	if apiClient == nil {
-		apiClient = ghapi.NewClient()
+		apiClient = ghapi.NewClient(stderr)
 	}
 	discover := dependencies.Discover
 	if discover == nil {

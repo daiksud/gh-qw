@@ -6,20 +6,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/daiksud/gh-qw/internal/ghcmd"
 	"github.com/daiksud/gh-qw/internal/repospec"
 )
 
 func TestIdentityErrorRemainsDiscoverableThroughRepositoryUsageError(t *testing.T) {
 	client := &Client{
-		hostOverride: func() string {
-			return ""
-		},
-		tokenForHost: func(string) (string, string) {
-			return "", ""
-		},
-		newREST: func(string, string) (restClient, error) {
-			t.Fatal("REST client must not be created without authentication")
-			return nil, nil
+		output: func(context.Context, ...string) ([]byte, error) {
+			return nil, &ghcmd.CommandError{ExitCode: 4}
 		},
 	}
 
