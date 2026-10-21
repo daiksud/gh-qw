@@ -4,11 +4,15 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
+	"sort"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 
@@ -427,9 +431,10 @@ type migrateRepairCall struct {
 }
 
 type migrateTestGit struct {
-	runner    *gitcmd.Runner
-	repairErr error
-	repairs   []migrateRepairCall
+	runner       *gitcmd.Runner
+	repairErr    error
+	beforeRepair func(string, []string)
+	repairs      []migrateRepairCall
 }
 
 func (git *migrateTestGit) Output(ctx context.Context, arguments ...string) ([]byte, error) {
@@ -449,6 +454,9 @@ func (git *migrateTestGit) WorktreeRepair(
 	dir string,
 	paths ...string,
 ) error {
+	if git.beforeRepair != nil {
+		git.beforeRepair(dir, paths)
+	}
 	git.repairs = append(git.repairs, migrateRepairCall{
 		dir:   dir,
 		paths: append([]string(nil), paths...),
@@ -459,12 +467,24 @@ func (git *migrateTestGit) WorktreeRepair(
 	return git.runner.WorktreeRepair(ctx, dir, paths...)
 }
 
+type migrateLockedWriter struct {
+	mu     sync.Mutex
+	writer io.Writer
+}
+
+func (writer *migrateLockedWriter) Write(data []byte) (int, error) {
+	writer.mu.Lock()
+	defer writer.mu.Unlock()
+	return writer.writer.Write(data)
+}
+
 func migrateTestGitRunner(stderr io.Writer) *migrateTestGit {
+	output := &migrateLockedWriter{writer: stderr}
 	return &migrateTestGit{
 		runner: &gitcmd.Runner{
 			Executable: "git",
-			Stdout:     stderr,
-			Stderr:     stderr,
+			Stdout:     output,
+			Stderr:     output,
 		},
 	}
 }
@@ -502,4 +522,347 @@ func migrateTestPhysical(t *testing.T, path string) string {
 		t.Fatal(err)
 	}
 	return physical
+}
+
+func TestMigrateDelegatesWorktreeRepairToGit(t *testing.T) {
+	t.Parallel()
+	for _, scenario := range []struct {
+		name                            string
+		internal, external, crossDevice bool
+	}{
+		{name: "main only"}, {name: "external", external: true}, {name: "nested internal", internal: true},
+		{name: "mixed", internal: true, external: true}, {name: "mixed cross device", internal: true, external: true, crossDevice: true},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			base := migrateTestPhysical(t, t.TempDir())
+			source, primary := filepath.Join(base, "source"), filepath.Join(base, "primary")
+			destination := filepath.Join(primary, "github.com", "acme", "widget")
+			if err := os.Mkdir(primary, 0755); err != nil {
+				t.Fatal(err)
+			}
+			migrateTestInitRepository(t, source, "https://github.com/acme/widget")
+			var before, after []string
+			if scenario.internal {
+				before = append(before, filepath.Join(source, "nested", "internal"))
+				after = append(after, filepath.Join(destination, "nested", "internal"))
+			}
+			if scenario.external {
+				before = append(before, filepath.Join(base, "external"))
+				after = append(after, filepath.Join(base, "external"))
+			}
+			originalPointers := map[string][]byte{}
+			for _, path := range before {
+				branch := filepath.Base(path)
+				migrateTestRunGit(t, source, "worktree", "add", "-qb", branch, path)
+				admin := strings.TrimSpace(migrateTestRunGit(t, path, "rev-parse", "--absolute-git-dir"))
+				rel, err := filepath.Rel(source, filepath.Join(admin, "gitdir"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				content, err := os.ReadFile(filepath.Join(source, rel))
+				if err != nil {
+					t.Fatal(err)
+				}
+				originalPointers[rel] = content
+			}
+			var stdout, stderr bytes.Buffer
+			git := migrateTestGitRunner(&stderr)
+			git.beforeRepair = func(dir string, paths []string) {
+				if dir != destination {
+					t.Fatalf("repair dir=%q, want %q", dir, destination)
+				}
+				got, want := append([]string(nil), paths...), append([]string(nil), after...)
+				sort.Strings(got)
+				sort.Strings(want)
+				if !reflect.DeepEqual(got, want) {
+					t.Fatalf("repair paths=%q, want %q", got, want)
+				}
+				for rel, want := range originalPointers {
+					got, err := os.ReadFile(filepath.Join(destination, rel))
+					if err != nil {
+						t.Fatal(err)
+					}
+					if !bytes.Equal(got, want) {
+						t.Fatalf("gh-qw rewrote %s before Git repair: got %q, want original %q", rel, got, want)
+					}
+				}
+			}
+			filesystem := migratepkg.Filesystem{}
+			if scenario.crossDevice {
+				filesystem.Rename = func(old, new string) error {
+					return &os.LinkError{Op: "rename", Old: old, New: new, Err: syscall.EXDEV}
+				}
+			}
+			command := cmd.NewMigrateCommand(cmd.MigrateDependencies{
+				Resolver: &migrateRootResolver{result: rootpkg.Result{RepositoryRoots: []string{primary}}},
+				Git:      git, Filesystem: filesystem, Stdout: &stdout, Stderr: &stderr,
+			})
+			command.SetArgs([]string{"-y", source})
+			if err := command.Execute(); err != nil {
+				t.Fatalf("migration: %v; stderr=%s", err, stderr.String())
+			}
+			if stdout.String() != filepath.ToSlash(destination)+"\n" {
+				t.Fatalf("stdout=%q", stdout.String())
+			}
+			wantCalls := 0
+			if len(after) > 0 {
+				wantCalls = 1
+			}
+			if len(git.repairs) != wantCalls {
+				t.Fatalf("repair calls=%d, want %d", len(git.repairs), wantCalls)
+			}
+			wantPaths := append([]string{destination}, after...)
+			sort.Strings(wantPaths)
+			for _, path := range append([]string{destination}, after...) {
+				entries, err := git.runner.WorktreeList(context.Background(), path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var got []string
+				for _, entry := range entries {
+					got = append(got, filepath.FromSlash(entry.Path))
+				}
+				sort.Strings(got)
+				if !reflect.DeepEqual(got, wantPaths) {
+					t.Fatalf("registered paths from %q=%q, want %q", path, got, wantPaths)
+				}
+				common := strings.TrimSpace(migrateTestRunGit(t, path, "rev-parse", "--path-format=absolute", "--git-common-dir"))
+				if migrateTestPhysical(t, common) != filepath.Join(destination, ".git") {
+					t.Fatalf("common dir=%q, want destination .git", common)
+				}
+				migrateTestRunGit(t, path, "status", "--porcelain")
+			}
+		})
+	}
+}
+
+func TestMigrateRejectsWorktreeRegistrationChangeAfterConfirmation(t *testing.T) {
+	t.Parallel()
+	base := migrateTestPhysical(t, t.TempDir())
+	source, primary := filepath.Join(base, "source"), filepath.Join(base, "primary")
+	if err := os.Mkdir(primary, 0755); err != nil {
+		t.Fatal(err)
+	}
+	migrateTestInitRepository(t, source, "https://github.com/acme/widget")
+	git := migrateTestGitRunner(io.Discard)
+	var stdout bytes.Buffer
+	prompts := 0
+	command := cmd.NewMigrateCommand(cmd.MigrateDependencies{
+		Resolver: &migrateRootResolver{result: rootpkg.Result{RepositoryRoots: []string{primary}}},
+		Git:      git, Stdout: &stdout, Stderr: io.Discard,
+		Prompt: func(context.Context, io.Writer, string) (bool, error) {
+			prompts++
+			migrateTestRunGit(t, source, "worktree", "add", "-qb", "new", filepath.Join(base, "new"))
+			return true, nil
+		},
+	})
+	command.SetArgs([]string{source})
+	err := command.Execute()
+	if err == nil || !strings.Contains(err.Error(), "revalidate linked worktrees") {
+		t.Fatalf("error=%v, want revalidation failure", err)
+	}
+	if prompts != 1 || len(git.repairs) != 0 || stdout.Len() != 0 {
+		t.Fatalf("prompts=%d repairs=%v stdout=%q", prompts, git.repairs, stdout.String())
+	}
+	if _, err := os.Stat(source); err != nil {
+		t.Fatalf("source missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(primary, "github.com", "acme", "widget")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("destination exists: %v", err)
+	}
+}
+
+func (git *migrateTestGit) WorktreeList(ctx context.Context, dir string) ([]gitcmd.Worktree, error) {
+	return git.runner.WorktreeList(ctx, dir)
+}
+
+func TestMigrateRejectsLinkedGitPointerCrossingSourceBoundary(t *testing.T) {
+	t.Parallel()
+	base := migrateTestPhysical(t, t.TempDir())
+	source, primary, external := filepath.Join(base, "source"), filepath.Join(base, "primary"), filepath.Join(base, "external")
+	if err := os.Mkdir(primary, 0755); err != nil {
+		t.Fatal(err)
+	}
+	migrateTestInitRepository(t, source, "https://github.com/acme/widget")
+	migrateTestRunGit(t, source, "worktree", "add", "-qb", "external", external)
+	pointer := filepath.Join(external, ".git")
+	content, err := os.ReadFile(pointer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inside := filepath.Join(source, "external-pointer")
+	if err := os.WriteFile(inside, content, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(pointer); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(inside, pointer); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	git := migrateTestGitRunner(io.Discard)
+	command := cmd.NewMigrateCommand(cmd.MigrateDependencies{
+		Resolver: &migrateRootResolver{result: rootpkg.Result{RepositoryRoots: []string{primary}}}, Git: git, Stdout: io.Discard, Stderr: io.Discard,
+	})
+	command.SetArgs([]string{"-y", source})
+	if err := command.Execute(); err == nil {
+		t.Fatal("migration succeeded despite crossing Git pointer")
+	}
+	if _, err := os.Stat(source); err != nil {
+		t.Fatalf("source was moved before rejecting crossing pointer: %v", err)
+	}
+	if len(git.repairs) != 0 {
+		t.Fatalf("repair calls=%d, want zero", len(git.repairs))
+	}
+	if _, err := os.Stat(filepath.Join(primary, "github.com", "acme", "widget")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("destination exists: %v", err)
+	}
+}
+
+func TestMigrateRejectsExternalAdministrativeSymlinks(t *testing.T) {
+	for _, target := range []string{"worktrees", "entry", "gitdir"} {
+		t.Run(target, func(t *testing.T) {
+			base := migrateTestPhysical(t, t.TempDir())
+			source, primary := filepath.Join(base, "source"), filepath.Join(base, "primary")
+			if err := os.Mkdir(primary, 0755); err != nil {
+				t.Fatal(err)
+			}
+			migrateTestInitRepository(t, source, "https://github.com/acme/widget")
+			migrateTestRunGit(t, source, "worktree", "add", "-qb", "linked", filepath.Join(source, "linked"))
+			admin := filepath.Join(source, ".git", "worktrees")
+			path := admin
+			if target != "worktrees" {
+				path = filepath.Join(admin, "linked")
+			}
+			if target == "gitdir" {
+				path = filepath.Join(path, "gitdir")
+			}
+			outside := filepath.Join(base, "outside")
+			if err := os.Rename(path, outside); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(outside, path); err != nil {
+				t.Skipf("symlink unavailable: %v", err)
+			}
+			pointer := filepath.Join(admin, "linked", "gitdir")
+			before, err := os.ReadFile(pointer)
+			if err != nil {
+				t.Fatal(err)
+			}
+			git := migrateTestGitRunner(io.Discard)
+			command := cmd.NewMigrateCommand(cmd.MigrateDependencies{
+				Resolver: &migrateRootResolver{result: rootpkg.Result{RepositoryRoots: []string{primary}}},
+				Git:      git, Stdout: io.Discard, Stderr: io.Discard,
+			})
+			command.SetArgs([]string{"-y", source})
+			err = command.Execute()
+			if err == nil {
+				t.Fatal("migration accepted external administrative symlink")
+			}
+			if _, err := os.Stat(source); err != nil {
+				t.Fatalf("source moved before rejecting metadata: %v", err)
+			}
+			if len(git.repairs) != 0 {
+				t.Fatalf("repair calls=%d, want none", len(git.repairs))
+			}
+			if _, err := os.Stat(filepath.Join(primary, "github.com", "acme", "widget")); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("destination exists: %v", err)
+			}
+			after, err := os.ReadFile(pointer)
+			if err != nil || !bytes.Equal(before, after) {
+				t.Fatalf("external metadata changed: %v", err)
+			}
+		})
+	}
+}
+
+func TestMigrateRejectsMetadataReplacementDuringConfirmation(t *testing.T) {
+	for _, target := range []string{"worktrees", "gitdir"} {
+		t.Run(target, func(t *testing.T) {
+			base := migrateTestPhysical(t, t.TempDir())
+			source, primary := filepath.Join(base, "source"), filepath.Join(base, "primary")
+			if err := os.Mkdir(primary, 0755); err != nil {
+				t.Fatal(err)
+			}
+			migrateTestInitRepository(t, source, "https://github.com/acme/widget")
+			migrateTestRunGit(t, source, "worktree", "add", "-qb", "linked", filepath.Join(source, "linked"))
+			git := migrateTestGitRunner(io.Discard)
+			command := cmd.NewMigrateCommand(cmd.MigrateDependencies{
+				Resolver: &migrateRootResolver{result: rootpkg.Result{RepositoryRoots: []string{primary}}},
+				Git:      git, Stdout: io.Discard, Stderr: io.Discard,
+				Prompt: func(context.Context, io.Writer, string) (bool, error) {
+					before := migrateTestRunGit(t, source, "worktree", "list", "--porcelain", "-z")
+					path := filepath.Join(source, ".git", "worktrees")
+					if target == "gitdir" {
+						path = filepath.Join(path, "linked", "gitdir")
+					}
+					saved := filepath.Join(base, "saved")
+					if err := os.Rename(path, saved); err != nil {
+						t.Fatal(err)
+					}
+					if target == "worktrees" {
+						if err := os.CopyFS(path, os.DirFS(saved)); err != nil {
+							t.Fatal(err)
+						}
+					} else {
+						data, err := os.ReadFile(saved)
+						if err != nil {
+							t.Fatal(err)
+						}
+						if err := os.WriteFile(path, data, 0644); err != nil {
+							t.Fatal(err)
+						}
+					}
+					if after := migrateTestRunGit(t, source, "worktree", "list", "--porcelain", "-z"); after != before {
+						t.Fatal("fixture changed registrations")
+					}
+					return true, nil
+				},
+			})
+			command.SetArgs([]string{source})
+			err := command.Execute()
+			if err == nil || !strings.Contains(err.Error(), "metadata identity changed") {
+				t.Fatalf("error=%v, want metadata identity rejection", err)
+			}
+			if _, err := os.Stat(source); err != nil {
+				t.Fatal(err)
+			}
+			if len(git.repairs) != 0 {
+				t.Fatalf("repair calls=%d", len(git.repairs))
+			}
+			if _, err := os.Stat(filepath.Join(primary, "github.com", "acme", "widget")); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("destination exists: %v", err)
+			}
+		})
+	}
+}
+
+func TestMigrateRepairFailureIncludesMovedWorktreeArguments(t *testing.T) {
+	base := migrateTestPhysical(t, t.TempDir())
+	source, primary := filepath.Join(base, "source"), filepath.Join(base, "primary")
+	if err := os.Mkdir(primary, 0755); err != nil {
+		t.Fatal(err)
+	}
+	migrateTestInitRepository(t, source, "https://github.com/acme/widget")
+	migrateTestRunGit(t, source, "worktree", "add", "-qb", "linked", filepath.Join(source, "linked space"))
+	git := migrateTestGitRunner(io.Discard)
+	git.repairErr = errors.New("repair failed before modifying metadata")
+	command := cmd.NewMigrateCommand(cmd.MigrateDependencies{
+		Resolver: &migrateRootResolver{result: rootpkg.Result{RepositoryRoots: []string{primary}}},
+		Git:      git, Stdout: io.Discard, Stderr: io.Discard,
+	})
+	command.SetArgs([]string{"-y", source})
+	err := command.Execute()
+	destination := filepath.Join(primary, "github.com", "acme", "widget")
+	moved := filepath.Join(destination, "linked space")
+	if !errors.Is(err, git.repairErr) || !strings.Contains(err.Error(), fmt.Sprintf("%q", moved)) {
+		t.Fatalf("recovery error=%v, want mapped worktree argument %q", err, moved)
+	}
+	if len(git.repairs) != 1 || !reflect.DeepEqual(git.repairs[0].paths, []string{moved}) {
+		t.Fatalf("repair calls=%v, want relocated argument", git.repairs)
+	}
+	if err := git.runner.WorktreeRepair(context.Background(), destination, git.repairs[0].paths...); err != nil {
+		t.Fatal(err)
+	}
+	migrateTestRunGit(t, moved, "status", "--porcelain")
 }

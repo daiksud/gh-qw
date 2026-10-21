@@ -18,8 +18,6 @@ type Filesystem struct {
 	ReadDir      func(string) ([]os.DirEntry, error)
 	Lstat        func(string) (fs.FileInfo, error)
 	Stat         func(string) (fs.FileInfo, error)
-	ReadFile     func(string) ([]byte, error)
-	WriteFile    func(string, []byte, fs.FileMode) error
 	Readlink     func(string) (string, error)
 	Symlink      func(string, string) error
 	EvalSymlinks func(string) (string, error)
@@ -39,8 +37,6 @@ type filesystem struct {
 	readDir      func(string) ([]os.DirEntry, error)
 	lstat        func(string) (fs.FileInfo, error)
 	stat         func(string) (fs.FileInfo, error)
-	readFile     func(string) ([]byte, error)
-	writeFile    func(string, []byte, fs.FileMode) error
 	readlink     func(string) (string, error)
 	symlink      func(string, string) error
 	evalSymlinks func(string) (string, error)
@@ -58,8 +54,6 @@ func newFilesystem(options Filesystem) filesystem {
 		readDir:      options.ReadDir,
 		lstat:        options.Lstat,
 		stat:         options.Stat,
-		readFile:     options.ReadFile,
-		writeFile:    options.WriteFile,
 		readlink:     options.Readlink,
 		symlink:      options.Symlink,
 		evalSymlinks: options.EvalSymlinks,
@@ -79,12 +73,6 @@ func newFilesystem(options Filesystem) filesystem {
 	}
 	if result.stat == nil {
 		result.stat = os.Stat
-	}
-	if result.readFile == nil {
-		result.readFile = os.ReadFile
-	}
-	if result.writeFile == nil {
-		result.writeFile = os.WriteFile
 	}
 	if result.readlink == nil {
 		result.readlink = os.Readlink
