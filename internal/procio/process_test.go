@@ -125,7 +125,6 @@ func TestExecuteDirectStderrHasNoTailOnFailure(t *testing.T) {
 	}
 }
 
-
 func TestExecuteDoesNotWaitForCallerStdinEOF(t *testing.T) {
 	original := os.Stdin
 	reader, writer, err := os.Pipe()

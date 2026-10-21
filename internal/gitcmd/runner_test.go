@@ -67,8 +67,6 @@ func TestRunnerRunDirStreamsConfiguredIO(t *testing.T) {
 	}
 }
 
-
-
 func TestRunnerOutputPreservesFailureWithoutLeakingDetails(t *testing.T) {
 	runner, recorder := newHelperRunner(t, "output-fail")
 	var streamedStdout, streamedStderr bytes.Buffer
@@ -126,9 +124,6 @@ func TestRunnerOutputPreservesFailureWithoutLeakingDetails(t *testing.T) {
 	}
 }
 
-
-
-
 func TestRunnerReportsContextDeadline(t *testing.T) {
 	runner, _ := newHelperRunner(t, "wait")
 	runner.Stderr = &bytes.Buffer{}
@@ -176,7 +171,6 @@ func TestRunnerWrapsExecutableStartFailure(t *testing.T) {
 		t.Fatalf("error text = %q", got)
 	}
 }
-
 
 func slicesEqual(got, want []string) bool {
 	if len(got) != len(want) {

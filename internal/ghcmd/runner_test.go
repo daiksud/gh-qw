@@ -128,8 +128,6 @@ func TestRunnerRunDirStreamsConfiguredIO(t *testing.T) {
 	}
 }
 
-
-
 func TestRunnerOutputPreservesFailureWithoutLeakingDetails(t *testing.T) {
 	runner, recorder := newHelperRunner(t, "output-fail")
 	var streamedStdout, streamedStderr bytes.Buffer
@@ -181,10 +179,6 @@ func TestRunnerOutputPreservesFailureWithoutLeakingDetails(t *testing.T) {
 		t.Fatalf("args = %#v, want %#v", command.args, wantArgs)
 	}
 }
-
-
-
-
 
 func TestRunnerReportsContextDeadline(t *testing.T) {
 	runner, _ := newHelperRunner(t, "wait")
