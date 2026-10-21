@@ -412,13 +412,13 @@ func TestCLIAPILookupsUseGHPathAndKeepStdoutPure(t *testing.T) {
 	// The explicit repository host wins over the ambient host. The local main
 	// branch supplies the start point returned by the external REST lookup.
 	env = append(env, "GH_HOST=unrelated.example.com", "GHQW_TEST_API_OUTPUT=main")
-	result = fixture.runCLIWithEnv(t, env, "worktree", "add", "-R", "ghe.example.com/octocat/widget", "feature/from-api")
+	result = fixture.runCLIWithEnv(t, env, "worktree", "add", "-R", "ghe.example.com/octocat/widget", "-b", "feature/from-api")
 	assertStatus(t, result, 0)
 	worktreePath := filepath.Join(fixture.worktreeRoot, "ghe.example.com", "octocat", "widget", "feature", "from-api")
 	assertStdout(t, result, filepath.ToSlash(worktreePath)+"\n")
 	assertContains(t, result.stderr, "fake gh: api ghe.example.com/repos/octocat/widget")
 
-	result = fixture.runCLIWithEnv(t, append(env, "GHQW_TEST_API_OUTPUT="), "worktree", "add", "-R", "ghe.example.com/octocat/widget", "feature/missing-default")
+	result = fixture.runCLIWithEnv(t, append(env, "GHQW_TEST_API_OUTPUT="), "worktree", "add", "-R", "ghe.example.com/octocat/widget", "-b", "feature/missing-default")
 	assertStatus(t, result, 1)
 	assertStdout(t, result, "")
 	assertContains(t, result.stderr, "API response did not include default_branch")

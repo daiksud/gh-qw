@@ -358,8 +358,6 @@ func TestNewWorktreeAddCommandAPIAndSyncFailures(t *testing.T) {
 			},
 			want: "invalid default branch",
 		},
-			want: "multiple remotes and no origin",
-		},
 		{
 			name: "sync failure",
 			configure: func(fixture *worktreeAddFixture) {
