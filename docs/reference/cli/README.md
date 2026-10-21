@@ -397,10 +397,13 @@ only after the copy completes successfully.
 
 For a main repository with linked worktrees, migration:
 
-1. rewrites `.git/worktrees/*/gitdir` back-pointers that referred to a path moved with the main
-   repository; and
-2. runs `git worktree repair` from the new main location to repair linked-worktree `.git`
-   pointers.
+1. obtains registered paths through `git worktree list --porcelain -z` before movement;
+2. maps paths inside the main directory to their destination, leaving external paths unchanged;
+3. revalidates registrations and physical boundaries before moving the main directory; and
+4. runs `git worktree repair` from the new main location with all mapped linked-worktree paths.
+
+Git repairs both directions of the association. `gh-qw` never rewrites Git administrative files
+to repair them, and does not fall back to editing those files when Git lacks repair support.
 
 A repair failure is reported as status `1` with the repository left at its new destination for
 manual recovery; it is never silently treated as success.

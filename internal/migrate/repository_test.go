@@ -14,7 +14,7 @@ import (
 func TestInspectRepositoryAcceptsOnlyOrdinaryMainWorktree(t *testing.T) {
 	t.Parallel()
 
-	base := backPointerTestPhysical(t, t.TempDir())
+	base := migrateTestPhysical(t, t.TempDir())
 	main := filepath.Join(base, "main")
 	linked := filepath.Join(base, "linked")
 	bare := filepath.Join(base, "bare")
