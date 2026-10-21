@@ -35,6 +35,59 @@ type commandResult struct {
 	stderr string
 }
 
+var (
+	sharedCLIOnce   sync.Once
+	sharedCLIBinary string
+	sharedCLIDir    string
+	sharedCLIError  error
+	sharedCLILog    string
+)
+
+// TestMain keeps only the immutable executable shared across the package.
+// Every fixture still gets independent HOME, config, roots, and Git state.
+func TestMain(m *testing.M) {
+	status := m.Run()
+	if sharedCLIDir != "" {
+		if err := os.RemoveAll(sharedCLIDir); err != nil {
+			fmt.Fprintf(os.Stderr, "remove shared CLI test executable: %v\n", err)
+			if status == 0 {
+				status = 1
+			}
+		}
+	}
+	os.Exit(status)
+}
+
+func sharedCLIExecutable(t *testing.T) string {
+	t.Helper()
+	sharedCLIOnce.Do(func() {
+		sharedCLIDir, sharedCLIError = os.MkdirTemp("", "gh-qw-cli-tests-")
+		if sharedCLIError != nil {
+			return
+		}
+		sharedCLIBinary = filepath.Join(sharedCLIDir, "gh-qw")
+		if runtime.GOOS == "windows" {
+			sharedCLIBinary += ".exe"
+		}
+		repositoryRoot, err := filepath.Abs(filepath.Join(".."))
+		if err != nil {
+			sharedCLIError = fmt.Errorf("resolve repository root: %w", err)
+			return
+		}
+		build := exec.Command("go", "build", "-o", sharedCLIBinary, ".")
+		build.Dir = repositoryRoot
+		var output bytes.Buffer
+		build.Stdout = &output
+		build.Stderr = &output
+		sharedCLIError = build.Run()
+		sharedCLILog = output.String()
+	})
+	if sharedCLIError != nil {
+		t.Fatalf("build shared gh-qw executable: %v\n%s", sharedCLIError, sharedCLILog)
+	}
+	return sharedCLIBinary
+}
+
 func TestCLIRepositoryAndWorktreeLifecycle(t *testing.T) {
 	fixture := newCLIFixture(t)
 	// Retired workspace settings must not affect Git operations or their results.
@@ -565,18 +618,14 @@ func newCLIFixture(t *testing.T) *cliFixture {
 		t.Fatalf("resolve physical fixture path: %v", err)
 	}
 	fixture := &cliFixture{
-		binary:       filepath.Join(base, "bin", "gh-qw"),
+		binary:       sharedCLIExecutable(t),
 		base:         base,
 		home:         filepath.Join(base, "home"),
 		repository:   filepath.Join(base, "repositories"),
 		remoteRoot:   filepath.Join(base, "remotes"),
 		worktreeRoot: filepath.Join(base, "worktrees"),
 	}
-	if runtime.GOOS == "windows" {
-		fixture.binary += ".exe"
-	}
 	for _, directory := range []string{
-		filepath.Dir(fixture.binary),
 		fixture.home,
 		fixture.repository,
 		fixture.remoteRoot,
@@ -589,19 +638,6 @@ func newCLIFixture(t *testing.T) *cliFixture {
 		if err := os.MkdirAll(directory, 0o755); err != nil {
 			t.Fatalf("create fixture directory %q: %v", directory, err)
 		}
-	}
-
-	repositoryRoot, err := filepath.Abs(filepath.Join(".."))
-	if err != nil {
-		t.Fatalf("resolve repository root: %v", err)
-	}
-	build := exec.Command("go", "build", "-o", fixture.binary, ".")
-	build.Dir = repositoryRoot
-	var buildOutput bytes.Buffer
-	build.Stdout = &buildOutput
-	build.Stderr = &buildOutput
-	if err := build.Run(); err != nil {
-		t.Fatalf("build gh-qw: %v\n%s", err, buildOutput.String())
 	}
 
 	fixture.env = isolatedEnvironment(fixture)
