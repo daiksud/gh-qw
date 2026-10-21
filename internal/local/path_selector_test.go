@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"testing"
 
 	"github.com/daiksud/gh-qw/internal/root"
@@ -285,23 +284,9 @@ func TestExactSelectorResolutionAndDuplicateBehavior(t *testing.T) {
 	}
 }
 
-func TestOutputNormalizationAndPathPrefixSafety(t *testing.T) {
+func TestOutputNormalization(t *testing.T) {
 	if got := NormalizePathForOutput(`C:\Users\Alice\repo`); got != "C:/Users/Alice/repo" {
 		t.Fatalf("NormalizePathForOutput() = %q", got)
-	}
-
-	base := filepath.Join(string(filepath.Separator), "roots", "repo")
-	if pathStrictlyWithin(base, filepath.Join(string(filepath.Separator), "roots", "repository", "child")) {
-		t.Fatal("pathStrictlyWithin() accepted a raw prefix collision")
-	}
-	if !pathStrictlyWithin(base, filepath.Join(base, "child")) {
-		t.Fatal("pathStrictlyWithin() rejected a real descendant")
-	}
-
-	if runtime.GOOS == "windows" {
-		if !equalFoldPath(`C:\ROOT\Repo`, `c:\root\repo`) {
-			t.Fatal("equalFoldPath() rejected a Windows case-only difference")
-		}
 	}
 }
 

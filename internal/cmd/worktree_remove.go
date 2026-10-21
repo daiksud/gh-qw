@@ -14,6 +14,7 @@ import (
 	"github.com/daiksud/gh-qw/internal/fsidentity"
 	"github.com/daiksud/gh-qw/internal/gitcmd"
 	"github.com/daiksud/gh-qw/internal/local"
+	"github.com/daiksud/gh-qw/internal/physicalpath"
 	"github.com/daiksud/gh-qw/internal/repospec"
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
 	"github.com/spf13/cobra"
@@ -545,7 +546,7 @@ func worktreeRemoveValidateResolved(
 		return unsafe("managed lookup returned an inconsistent worktree identity")
 	case !filepath.IsAbs(worktree.Path):
 		return unsafe("managed lookup returned a non-absolute worktree path")
-	case !worktreeRemoveSamePath(worktree.Path, expectedPath):
+	case !physicalpath.SamePath(worktree.Path, expectedPath):
 		return unsafe("managed lookup returned a non-deterministic worktree path")
 	default:
 		return nil
@@ -573,10 +574,10 @@ func worktreeRemoveCaptureCleanupBase(
 ) (fs.FileInfo, error) {
 	parent := filepath.Dir(filepath.Clean(worktreePath))
 	base = filepath.Clean(base)
-	if worktreeRemoveSamePath(parent, base) {
+	if physicalpath.SamePath(parent, base) {
 		return nil, nil
 	}
-	if !worktreeRemovePathStrictlyWithin(base, parent) {
+	if !removePathStrictlyWithin(base, parent) {
 		return nil, fmt.Errorf("parent %q is outside worktree base %q", parent, base)
 	}
 	info, err := worktreeRemoveInspectPhysicalDirectory(filesystem, base, base, false)
@@ -596,10 +597,10 @@ func worktreeRemoveCleanupParents(
 ) error {
 	parent := filepath.Dir(filepath.Clean(worktreePath))
 	base = filepath.Clean(base)
-	if worktreeRemoveSamePath(parent, base) {
+	if physicalpath.SamePath(parent, base) {
 		return nil
 	}
-	if !worktreeRemovePathStrictlyWithin(base, parent) {
+	if !removePathStrictlyWithin(base, parent) {
 		return fmt.Errorf(
 			"parent %q is outside worktree base %q",
 			parent,
@@ -619,8 +620,8 @@ func worktreeRemoveCleanupParents(
 		return fmt.Errorf("worktree base %q changed after Git removal", base)
 	}
 
-	for current := parent; !worktreeRemoveSamePath(current, base); current = filepath.Dir(current) {
-		if !worktreeRemovePathStrictlyWithin(base, current) {
+	for current := parent; !physicalpath.SamePath(current, base); current = filepath.Dir(current) {
+		if !removePathStrictlyWithin(base, current) {
 			return fmt.Errorf(
 				"cleanup directory %q escaped worktree base %q",
 				current,
@@ -628,15 +629,12 @@ func worktreeRemoveCleanupParents(
 			)
 		}
 
-		info, err := filesystem.lstat(current)
+		info, err := fsidentity.Capture(current, filesystem.lstat, filesystem.sameFile)
 		if errors.Is(err, fs.ErrNotExist) {
 			continue
 		}
 		if err != nil {
-			return fmt.Errorf("inspect cleanup directory %q: %w", current, err)
-		}
-		if err := fsidentity.Prime(info, filesystem.sameFile); err != nil {
-			return fmt.Errorf("capture cleanup directory identity %q: %w", current, err)
+			return fmt.Errorf("capture cleanup directory %q: %w", current, err)
 		}
 		if info.Mode()&fs.ModeSymlink != 0 || !info.IsDir() {
 			return nil
@@ -712,12 +710,9 @@ func worktreeRemoveInspectPhysicalDirectory(
 	base, path string,
 	strictlyWithin bool,
 ) (fs.FileInfo, error) {
-	info, err := filesystem.lstat(path)
+	info, err := fsidentity.Capture(path, filesystem.lstat, filesystem.sameFile)
 	if err != nil {
 		return nil, err
-	}
-	if err := fsidentity.Prime(info, filesystem.sameFile); err != nil {
-		return nil, fmt.Errorf("capture directory identity: %w", err)
 	}
 	if info.Mode()&fs.ModeSymlink != 0 || !info.IsDir() {
 		return nil, errors.New("path is not a real directory")
@@ -731,21 +726,13 @@ func worktreeRemoveInspectPhysicalDirectory(
 		return nil, fmt.Errorf("resolved path %q is not absolute", physical)
 	}
 	physical = filepath.Clean(physical)
-	if !worktreeRemoveSamePath(physical, path) {
+	if !physicalpath.SamePath(physical, path) {
 		return nil, fmt.Errorf("path resolves through a symbolic link to %q", physical)
 	}
-	if strictlyWithin && !worktreeRemovePathStrictlyWithin(base, physical) {
+	if strictlyWithin && !removePathStrictlyWithin(base, physical) {
 		return nil, fmt.Errorf("resolved path %q is outside worktree base %q", physical, base)
 	}
 	return info, nil
-}
-
-func worktreeRemovePathStrictlyWithin(base, candidate string) bool {
-	return removePathStrictlyWithin(base, candidate)
-}
-
-func worktreeRemoveSamePath(first, second string) bool {
-	return removeSamePath(first, second)
 }
 
 func worktreeRemoveWriteWarnings(writer io.Writer, warnings []local.Warning) error {
