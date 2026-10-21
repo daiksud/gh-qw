@@ -531,8 +531,9 @@ func migrateExecuteItem(
 		if err := dependencies.Git.WorktreeRepair(ctx, item.destination, repairPaths...); err != nil {
 			return false, fmt.Errorf(
 				"repository moved to %q, but git worktree repair failed; "+
-					"leave the repository there and rerun git worktree repair from that directory: %w",
+					"leave the repository there and rerun git worktree repair from that directory with these path arguments: %q: %w",
 				item.destination,
+				repairPaths,
 				err,
 			)
 		}

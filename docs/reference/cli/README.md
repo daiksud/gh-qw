@@ -406,7 +406,9 @@ Git repairs both directions of the association. `gh-qw` never rewrites Git admin
 to repair them, and does not fall back to editing those files when Git lacks repair support.
 
 A repair failure is reported as status `1` with the repository left at its new destination for
-manual recovery; it is never silently treated as success.
+manual recovery; it is never silently treated as success. The error lists the mapped worktree
+path arguments. Rerun `git worktree repair` from that destination with every listed path;
+running it without those arguments may leave moved internal worktrees unrepaired.
 
 Unless `-y` is present, `migrate` prints the complete plan and prompts before changing files.
 `--dry-run` prints the same plan, performs validation, does not prompt, and changes nothing.

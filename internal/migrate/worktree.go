@@ -33,6 +33,7 @@ type worktreeObservation struct {
 type WorktreeRepairPlan struct {
 	source, destination string
 	entries             []worktreeObservation
+	metadata            map[string]pathObservation
 }
 
 // PlanWorktreeRepair observes registered paths and validates their movement boundaries.
@@ -42,6 +43,11 @@ func PlanWorktreeRepair(ctx context.Context, source, destination string, git Wor
 	}
 	plan := WorktreeRepairPlan{source: filepath.Clean(source), destination: filepath.Clean(destination)}
 	filesystem := newFilesystem(options)
+	metadata, err := observeWorktreeMetadata(plan.source, filesystem)
+	if err != nil {
+		return WorktreeRepairPlan{}, err
+	}
+	plan.metadata = metadata
 	entries, err := git.WorktreeList(ctx, plan.source)
 	if err != nil {
 		return WorktreeRepairPlan{}, fmt.Errorf("list linked worktrees: %w", err)
@@ -106,6 +112,15 @@ func (plan WorktreeRepairPlan) Revalidate(ctx context.Context, git WorktreeListe
 		return errors.New("linked-worktree registrations changed after planning")
 	}
 	filesystem := newFilesystem(options)
+	if len(current.metadata) != len(plan.metadata) {
+		return errors.New("linked-worktree metadata changed after planning")
+	}
+	for path, before := range plan.metadata {
+		after, exists := current.metadata[path]
+		if !exists || !samePathObservation(before, after, filesystem) {
+			return errors.New("linked-worktree metadata identity changed after planning")
+		}
+	}
 	for i, before := range plan.entries {
 		after := current.entries[i]
 		if before.path != after.path || before.repair != after.repair ||
@@ -141,4 +156,61 @@ func observeWorktreePath(path, source string, filesystem filesystem) (pathObserv
 func samePathObservation(before, after pathObservation, filesystem filesystem) bool {
 	return before.physical == after.physical && (before.info == nil) == (after.info == nil) &&
 		(before.info == nil || filesystem.sameFile(before.info, after.info))
+}
+
+// Observe metadata shape and identity only; Git owns its contents and repair.
+func observeWorktreeMetadata(source string, filesystem filesystem) (map[string]pathObservation, error) {
+	root := filepath.Join(source, ".git", "worktrees")
+	observations := make(map[string]pathObservation)
+	capture := func(path string, directory bool) error {
+		info, err := filesystem.lstat(path)
+		if err != nil {
+			return fmt.Errorf("inspect linked-worktree metadata %q: %w", path, err)
+		}
+		if info.Mode()&fs.ModeSymlink != 0 || (directory && !info.IsDir()) || (!directory && !info.Mode().IsRegular()) {
+			return fmt.Errorf("linked-worktree metadata %q has an unsafe file type", path)
+		}
+		physical, err := filesystem.physicalizeAbsolute(path)
+		if err != nil {
+			return fmt.Errorf("resolve linked-worktree metadata %q: %w", path, err)
+		}
+		if physical != path || !pathStrictlyWithin(filepath.Join(source, ".git"), physical) {
+			return fmt.Errorf("linked-worktree metadata %q escapes its physical boundary", path)
+		}
+		if err := fsidentity.Prime(info, filesystem.sameFile); err != nil {
+			return fmt.Errorf("capture metadata identity %q: %w", path, err)
+		}
+		observations[path] = pathObservation{physical: physical, info: info}
+		return nil
+	}
+	if err := capture(root, true); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return observations, nil
+		}
+		return nil, err
+	}
+	entries, err := filesystem.readDir(root)
+	if err != nil {
+		return nil, fmt.Errorf("read linked-worktree metadata %q: %w", root, err)
+	}
+	for _, entry := range entries {
+		path := filepath.Join(root, entry.Name())
+		info, err := filesystem.lstat(path)
+		if err != nil {
+			return nil, fmt.Errorf("inspect worktree metadata entry %q: %w", path, err)
+		}
+		if info.Mode()&fs.ModeSymlink != 0 {
+			return nil, fmt.Errorf("worktree metadata entry %q is a symbolic link", path)
+		}
+		if !info.IsDir() {
+			continue
+		}
+		if err := capture(path, true); err != nil {
+			return nil, err
+		}
+		if err := capture(filepath.Join(path, "gitdir"), false); err != nil {
+			return nil, err
+		}
+	}
+	return observations, nil
 }
