@@ -98,8 +98,6 @@ const (
 	worktreeAddModeOrphan
 )
 
-type worktreeAddRuntime = WorktreeAddDependencies
-
 type worktreeAddRequest struct {
 	selector    string
 	selectorSet bool
@@ -115,8 +113,6 @@ type worktreeAddPlanner struct {
 	api        WorktreeAddAPI
 	repository local.Repository
 }
-
-type worktreeAddUsageError = repositoryUsageError
 
 // NewWorktreeAddCommand returns the command that creates one deterministic
 // linked worktree.
@@ -206,7 +202,7 @@ func NewWorktreeAddCommand(dependencies WorktreeAddDependencies) *cobra.Command 
 	return command
 }
 
-func worktreeAddPrepareRuntime(deps WorktreeAddDependencies) worktreeAddRuntime {
+func worktreeAddPrepareRuntime(deps WorktreeAddDependencies) WorktreeAddDependencies {
 	deps.Stdout = commandStdout(deps.Stdout)
 	deps.Stderr = commandStderr(deps.Stderr)
 	if deps.Resolver == nil {
@@ -254,7 +250,7 @@ func worktreeAddPrepareRuntime(deps WorktreeAddDependencies) worktreeAddRuntime 
 
 func worktreeAddRun(
 	ctx context.Context,
-	runtime worktreeAddRuntime,
+	runtime WorktreeAddDependencies,
 	request worktreeAddRequest,
 ) error {
 	roots, err := runtime.Resolver.Resolve()
@@ -484,7 +480,7 @@ func worktreeAddRun(
 
 func worktreeAddSelectRepository(
 	ctx context.Context,
-	runtime worktreeAddRuntime,
+	runtime WorktreeAddDependencies,
 	worktreeRoot string,
 	repositories []local.Repository,
 	selector string,
@@ -569,10 +565,8 @@ func (planner *worktreeAddPlanner) worktreeAddPlan(
 		}
 		return options, syncBranch, nil
 	case worktreeAddModeAutomatic:
-		// Passing the requested branch to native worktree add lets Git
-		// apply checkout.defaultRemote and reject ambiguous candidates.
-		// Unlike the removed gh-qw fallback, an unknown branch without a
-		// start point is rejected by Git rather than querying GitHub.
+		// Git applies checkout.defaultRemote and rejects unknown or ambiguous
+		// branches without requesting a GitHub default-branch lookup.
 		options.Commitish = request.branch
 		if request.commitish == "" {
 			return options, "", nil
@@ -619,7 +613,7 @@ func (planner *worktreeAddPlanner) worktreeAddCreationTarget(explicit string) (s
 
 func worktreeAddCreateParents(
 	destination string,
-	runtime worktreeAddRuntime,
+	runtime WorktreeAddDependencies,
 ) ([]string, error) {
 	lstat := runtime.Filesystem.Lstat
 	if lstat == nil {
@@ -688,7 +682,7 @@ create:
 
 func worktreeAddCleanupParents(
 	created []string,
-	runtime worktreeAddRuntime,
+	runtime WorktreeAddDependencies,
 ) error {
 	var cleanupErr error
 	for index := len(created) - 1; index >= 0; index-- {
@@ -740,5 +734,5 @@ func worktreeAddPathWithin(rootPath, destination string) bool {
 }
 
 func worktreeAddNewUsageError(err error) error {
-	return &worktreeAddUsageError{err: err}
+	return &repositoryUsageError{err: err}
 }
