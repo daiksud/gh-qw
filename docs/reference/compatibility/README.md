@@ -16,9 +16,18 @@ implementation and regression evidence.
 
 ## Required external tool capabilities
 
-Runtime requirements are capability-based. Use Git and GitHub CLI releases that support the
-commands and options below; `gh-qw` does not substitute an internal implementation when a
-capability is unavailable.
+For the complete supported command set, the minimum upstream capability baselines are
+**Git 2.42.0** and **GitHub CLI 2.88.0**. Git's
+[2.42.0 worktree manual](https://git-scm.com/docs/git-worktree/2.42.0) includes
+`worktree add --orphan`, NUL-delimited worktree listing, and registration repair.
+GitHub CLI [2.88.0](https://github.com/cli/cli/releases/tag/v2.88.0) introduced the
+`repo clone --no-upstream` flag used by gh-qw. Use maintained releases at or above these
+baselines with the capabilities below. These baselines come from upstream command availability;
+they are not a claim that CI runs every historical patch release.
+
+`gh-qw` does not add a version preflight or substitute an internal implementation when a
+capability is unavailable. Unsupported commands fail through the native tool at the requested
+operation. This documents existing delegated commands, not new authentication or host restrictions.
 
 | Tool | Required capability | Used by |
 | --- | --- | --- |
@@ -87,7 +96,7 @@ lookup; otherwise native gh may construct an unintended endpoint such as `api.ap
 | --- | --- | --- | --- |
 | Local Git boundary | Branch/upstream inspection, exact ref and revision checks, worktree creation, enumeration, removal, pruning, and repair use Git directly; network cloning and synchronization use `gh`. Bulk gone-upstream removal does not fetch. | `internal/gitcmd`; ADR-0002; ADR-0019 | `internal/gitcmd/*_test.go`; command worktree tests |
 | Process I/O | Git runs directly without a shell, receives no caller stdin, and uses the same descriptor passthrough or relay strategy as `gh`. | `internal/gitcmd/runner.go`; `internal/procio/procio.go`; ADR-0003 | `internal/gitcmd/runner_test.go`; `tests/cli_test.go` |
-| Worktree add | gh-qw validates deterministic slots and delegates branch/remote selection and ambiguity to Git. Git respects `checkout.defaultRemote`. Explicit creation/reset uses native `git branch` followed by `git worktree add`. Only `-b`/`-B` without a start point queries the GitHub default and synchronizes it when missing locally. An unknown branch without an explicit start point is no longer created implicitly. | `internal/gitcmd/worktree.go`; `internal/cmd/worktree_add.go` | Native multi-remote and custom-remote tests; command integration tests |
+| Worktree add | gh-qw validates deterministic slots and delegates branch/remote selection and ambiguity to Git. Git respects `checkout.defaultRemote`. Explicit creation/reset uses native `git branch` followed by `git worktree add`. Only `-b`/`-B` without a start point queries the GitHub default and synchronizes it when missing locally. An unknown branch without an explicit start point is no longer created implicitly. | `internal/gitcmd/worktree.go`; `internal/cmd/worktree_add.go` | Native multi-remote tests; `tests/fixture_isolation_test.go` custom fetch-mapping regression; command integration tests |
 | Worktree listing | Git's NUL-delimited porcelain is parsed internally. `gh qw worktree list --porcelain` emits gh-qw's stable identity/path/head/kind format rather than passing Git's format through. | `internal/gitcmd/worktree.go`; `internal/cmd/worktree_list.go` | `internal/gitcmd/worktree_test.go`; `internal/cmd/worktree_list_test.go` |
 | Filesystem boundaries | Existing-prefix path resolution and identity capture are shared. Configured-path normalization and runtime validation against an established root remain distinct; replacing that root with a symlink cannot move the trusted boundary. Windows identity is captured before mutation. | `internal/physicalpath`; `internal/fsidentity`; `internal/root/path.go` | shared-package tests; root, migration, removal, prune, and gone-worktree safety tests |
 | Removal observations | Repository boundaries, object identity, Git association, and nested registrations share read-only observations. Initial planning may share one Git inventory; confirmation and late discovery start fresh observations. Command-specific selection and force policies remain separate. | `internal/removal`; `internal/cmd/rm.go`; `internal/cmd/worktree_remove_gone.go` | shared observation tests; real-Git phase counts and late nested-worktree protection in command tests |
@@ -99,3 +108,25 @@ lookup; otherwise native gh may construct an unintended endpoint such as `api.ap
 ### Migrating native worktree branch selection
 
 An unknown branch with no explicit start point now follows native `git worktree add` and fails rather than querying the GitHub default branch. Use `gh qw worktree add -b <branch>` to create from the GitHub default, or provide `<start-point>` explicitly. Git selects among remotes; configure `checkout.defaultRemote` when multiple remotes have the same branch. Existing local/remote branches do not trigger unnecessary API authentication or synchronization.
+
+## Verification and fixture isolation
+
+The CLI suite builds the immutable gh-qw executable and its single fake gh executable once per
+test-package process. It does not share HOME, XDG paths, Git configuration, working directories,
+repository roots, remote data, or response environment values between fixtures. `TestMain`
+removes the shared executable directory only after every test has finished.
+
+Test child environments discard inherited Git/GitHub configuration and token variables,
+including `GH_ENTERPRISE_TOKEN`, `GITHUB_ENTERPRISE_TOKEN`, `GH_HOST`, `GH_REPO`, and `GH_PATH`,
+then install fixture-local paths and explicitly requested synthetic values. This is test
+isolation only: production Git/gh environment delegation is unchanged. Clone/API scenarios
+use fake responses and local Git repositories, never real credentials or unknown-host requests.
+`tests/fixture_isolation_test.go` verifies this through the public CLI, including distinct
+repository results across two fixtures and a native custom fetch mapping with gh unavailable.
+
+Shared OS/process behavior is tested in `internal/procio`; Git/gh adapters test their invocation
+and result contracts. Command tests cover arguments, diagnostics, exit codes and orchestration.
+Existing real-Git lifecycle, boundary, identity, confirmation-race, nested registration,
+locked/dirty-state and partial-failure scenarios remain in their owning packages. Removed-feature
+flag tests are not duplicated alongside generic unknown-option and configuration-key tests.
+Performance improvements are not quantified without comparable before-and-after measurements.
