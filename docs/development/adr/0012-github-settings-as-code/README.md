@@ -73,7 +73,7 @@ this manifest requires `Administration: write`, and this project will not place 
 that scope in a public repository's CI, CI structurally cannot apply settings at all.
 
 **CI runs exactly one check: `gh infra validate .github/settings.yml`**, a job in the existing
-`.github/workflows/ci.yml` alongside the Go and documentation checks. `validate` parses and
+`.github/workflows/ci.yml` alongside the Go checks. `validate` parses and
 schema-checks the manifest; it makes no GitHub API call, needs no credential at all, and therefore
 also runs unmodified on pull requests from forks. It catches a malformed manifest before merge. It
 does **not** detect drift between the manifest and live GitHub state — that comparison

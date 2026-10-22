@@ -39,10 +39,10 @@ Neither `plan` nor `apply` ever runs in CI. See [Token permissions](#token-permi
 
 ## Required checks and Dependabot auto-merge
 
-The `docs` job in [`.github/workflows/ci.yml`](https://github.com/daiksud/gh-qw/blob/main/.github/workflows/ci.yml)
-validates the documentation source, builds the Astro site, checks generated links, and runs the
-runtime smoke test. The `CI success` job aggregates that result with the Go, settings, and release-preparation
-validation jobs so the ruleset does not depend on matrix runner names.
+The `CI success` job in [`.github/workflows/ci.yml`](https://github.com/daiksud/gh-qw/blob/main/.github/workflows/ci.yml)
+aggregates Go build/tests, formatting/vet, race detection, repository settings,
+and release-preparation validation. Documentation is Markdown in the repository
+rather than a separately built Pages site.
 
 The default branch ruleset requires the `CI success` status from the `github-actions` app. The
 required check uses `strict_required_status_checks_policy: false` intentionally: GitHub auto-merge
@@ -117,11 +117,11 @@ own, fully-privileged local credential.
 `gh-infra` v0.13.0 has no field for the following, and they remain manually managed through the
 GitHub UI or API exactly as before this manifest existed:
 
-- **GitHub Pages** — `gh-qw`'s Pages site (`build_type: workflow`) has no corresponding manifest
-  field. The site is published at
-  [https://daiksud.github.io/gh-qw/](https://daiksud.github.io/gh-qw/) by
-  `.github/workflows/pages.yml` after changes to `docs/` or `.pages/` reach `main`; the workflow
-  can also be dispatched manually.
+- **GitHub Pages** — site configuration is not supported by `gh-infra`.
+  The former site and deployment workflow have been retired. A repository
+  administrator must separately delete the Pages site under
+  **Settings → Pages → Build and deployment → Deploy from a branch → None → Save**.
+  Removing source files and the workflow alone does not delete an existing publication.
 - **Environments** — including the `github-pages` environment Pages deployment creates; `gh-infra`
   has no `Environment` kind and cannot manage environment protection rules, reviewers, or secrets.
 - **CodeQL default setup** — configured via the UI (`languages: [actions, go]`,

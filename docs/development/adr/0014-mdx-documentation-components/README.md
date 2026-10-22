@@ -14,6 +14,12 @@ timestamp: 2026-08-08
 - **Deciders:** gh-qw maintainers
 - **Related:** [ADR-0013](../0013-node-pnpm-viteplus-toolchain/)
 
+## Retirement (2026-10-22)
+
+The hosted site and its MDX homepage components are retired. The canonical
+documentation entrypoint is now `docs/README.md`, with normal Markdown links.
+This already-superseded decision is retained as history.
+
 ## Context
 
 The documentation homepage needs the visual structure of the Starlight splash page: a hero,

@@ -93,8 +93,8 @@ output before running `apply`. See the
 
 Dependabot pull requests are enabled for squash auto-merge by
 `.github/workflows/dependabot-auto-merge.yml`. The `CI success` status check is required by the
-default branch ruleset, so a dependency update cannot merge when the Go checks, Astro validation,
-runtime smoke test, settings validation, or release-preparation tests fail. The auto-merge workflow is deliberately
+default branch ruleset, so a dependency update cannot merge when the Go tests,
+formatting/vet, settings validation, or release-preparation tests fail. The auto-merge workflow is deliberately
 separate from the validation workflow and does not check out pull request code.
 
 When changing the required workflow context, merge the workflow change before applying the
@@ -134,25 +134,11 @@ For release automation changes, also run the offline tests:
 $ bash .github/scripts/prepare-release.test.sh
 ```
 
-For documentation-site changes, use Node.js and pnpm:
+Documentation is maintained as Markdown under `docs/` and can be read on GitHub.
+Keep links relative to the source files and review changed documentation with the PR.
+The former Astro/Starlight GitHub Pages site, `.pages/`, and its deployment
+workflow are retired; no Node.js/pnpm/Vite+ site build is required.
 
-```console
-$ cd .pages
-$ vp install --frozen-lockfile
-$ vpr validate
-```
-
-`vpr validate` includes the Astro runtime smoke test. It serves the generated site locally and
-checks the HTML routes, homepage assets, Pagefind, and not-found behavior in addition to the
-static build and link checks.
-
-The package manager remains pnpm as Vite+'s backend. Use `vpr` for the site tasks; `vp dev` and
-`vp build` are Vite+'s built-in Vite commands and do not run Astro.
-
-Changes to `docs/` or `.pages/` merged into `main` trigger the GitHub Pages deployment workflow.
-The published site is [https://daiksud.github.io/gh-qw/](https://daiksud.github.io/gh-qw/).
-
-Do not commit generated `.pages/node_modules/`, `.pages/.astro/`, or `.pages/dist/` content.
 Use relative documentation links and follow the
 [versioning reference](../../reference/versioning/) and
 [ADR-0011](../adr/0011-type-named-release-labels/).

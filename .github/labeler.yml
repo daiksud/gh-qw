@@ -4,19 +4,19 @@
 docs:
   - changed-files:
       - any-glob-to-all-files:
-          - "{docs/**,**/*.md,**/*.mdx,.pages/src/**,.pages/public/**}"
+          - "{docs/**,**/*.md,**/*.mdx}"
 
 test:
   - changed-files:
       - any-glob-to-all-files:
-          - "{tests/**,.pages/test/**,**/*_test.go}"
+          - "{tests/**,**/*_test.go}"
 
 build:
   - changed-files:
       - any-glob-to-all-files:
-          - "{go.mod,go.sum,.pages/package.json,.pages/pnpm-lock.yaml,.pages/astro.config.mjs,.pages/vite.config.ts,.pages/tsconfig.json,.pages/pnpm-workspace.yaml}"
+          - "{go.mod,go.sum}"
 
 ci:
   - changed-files:
       - any-glob-to-all-files:
-          - "{.github/workflows/**,.github/scripts/**,.pages/scripts/**}"
+          - "{.github/workflows/**,.github/scripts/**}"
