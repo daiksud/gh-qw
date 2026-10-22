@@ -112,7 +112,6 @@ type worktreeAddRequest struct {
 type worktreeAddPlanner struct {
 	ctx        context.Context
 	git        WorktreeAddGit
-	gh         WorktreeAddGh
 	api        WorktreeAddAPI
 	repository local.Repository
 }
@@ -348,7 +347,6 @@ func worktreeAddRun(
 	planner := &worktreeAddPlanner{
 		ctx:        ctx,
 		git:        runtime.Git,
-		gh:         runtime.Gh,
 		api:        runtime.API,
 		repository: repository,
 	}
@@ -477,7 +475,7 @@ func worktreeAddRun(
 		))
 	}
 
-	if _, err := fmt.Fprintln(runtime.Stdout, local.NormalizePathForOutput(destination)); err != nil {
+	if err := commandWriteAll(runtime.Stdout, []byte(local.NormalizePathForOutput(destination)+"\n")); err != nil {
 		return worktreeAddFailure(fmt.Errorf("write worktree path: %w", err))
 	}
 
@@ -744,4 +742,3 @@ func worktreeAddPathWithin(rootPath, destination string) bool {
 func worktreeAddNewUsageError(err error) error {
 	return &worktreeAddUsageError{err: err}
 }
-

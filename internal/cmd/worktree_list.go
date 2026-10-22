@@ -513,4 +513,3 @@ func worktreeListIsPrintableToken(value string) bool {
 	}
 	return true
 }
-

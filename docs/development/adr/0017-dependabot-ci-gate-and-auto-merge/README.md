@@ -33,8 +33,8 @@ The documentation validation task includes an Astro preview smoke test. The test
 generated `dist` directory and verifies every generated HTML route, first-party homepage assets,
 the Pagefind script, and a not-found response.
 
-CI exposes a stable `CI success` aggregate job that depends on the existing lint, test, race,
-documentation, and settings jobs. The default branch ruleset requires that context from the
+CI exposes a stable `CI success` aggregate job that depends on lint, test, race,
+documentation, settings, and release-preparation test jobs. The default branch ruleset requires that context from the
 GitHub Actions app. The required status check does not require the head branch to be up to date:
 `strict_required_status_checks_policy` remains `false` so multiple Dependabot pull requests can
 drain through auto-merge without waiting for Dependabot to rebase behind branches.

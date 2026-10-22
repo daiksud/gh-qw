@@ -75,8 +75,8 @@ than weakening the timeout without a new decision.
 - Pages deployment has four minutes of headroom beyond the action's ten-minute wait but only one
   minute below ubuntu-slim's 15-minute platform limit; changes to the deploy-pages action's
   timeout must trigger a reconsideration of this value.
-- Release workflows cannot be exercised end to end before a tag push, so the first release after
-  this change must confirm that the ten-minute budget remains sufficient.
+- A manually dispatched release now validates and builds before creating a tag, and the job
+  budgets must remain sufficient as the project grows.
 - `ubuntu-slim` remains unsuitable for arm64-native jobs and privileged operations.
 
 ### Neutral

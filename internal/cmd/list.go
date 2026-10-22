@@ -457,4 +457,3 @@ func listRenderLines(lines []string) []byte {
 	}
 	return []byte(strings.Join(lines, "\n") + "\n")
 }
-
