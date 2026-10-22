@@ -14,7 +14,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/daiksud/gh-qw/internal/local"
-	"github.com/daiksud/gh-qw/internal/repospec"
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
 	"github.com/spf13/cobra"
 )

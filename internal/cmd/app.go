@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 
 	"github.com/daiksud/gh-qw/internal/config"
 	"github.com/daiksud/gh-qw/internal/ghapi"
