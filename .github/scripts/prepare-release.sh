@@ -5,7 +5,10 @@ set -euo pipefail
 : "${GITHUB_SHA:?GITHUB_SHA is required}"
 
 # Published stable releases are the baseline; failed or stray tags are not.
-PREVIOUS_TAG="$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq '.tag_name')"
+if ! PREVIOUS_TAG="$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq '.tag_name')"; then
+  echo "Could not read the latest published release." >&2
+  exit 1
+fi
 if [[ ! "$PREVIOUS_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
   echo "The latest published release is not a plain v<major>.<minor>.<patch> tag." >&2
   exit 1
@@ -21,27 +24,33 @@ fi
 HAS_BREAKING=false
 HAS_MINOR=false
 HAS_PATCH=false
-declare -A SEEN_PRS=()
 
-# Fail closed on API errors. Do not silently omit a change.
+# Only PRs merged at commits in this release range affect the version.
+declare -A RANGE_COMMITS=()
+commits="$(git rev-list "${PREVIOUS_SHA}..${TARGET_SHA}")"
 while IFS= read -r sha; do
   [ -z "$sha" ] && continue
-  pr_numbers="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/commits/${sha}/pulls" \
-    --jq '.[] | select(.merged_at != null and .base.ref == "main") | .number')"
-  for pr in $pr_numbers; do
-    [ -n "${SEEN_PRS[$pr]:-}" ] && continue
-    SEEN_PRS[$pr]=1
-    labels="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr}" --jq '.labels[].name')"
-    while IFS= read -r label; do
-      case "$label" in
-        "BREAKING CHANGE") HAS_BREAKING=true ;;
-        "DEPRECATED" | feat | perf) HAS_MINOR=true ;;
-        fix | revert) HAS_PATCH=true ;;
-      esac
-    done <<< "$labels"
-  done
-done < <(git rev-list "${PREVIOUS_SHA}..${TARGET_SHA}")
+  RANGE_COMMITS["$sha"]=1
+done <<< "$commits"
 
+# Read labels with the merged PR list instead of one API request per commit
+# plus another API request per PR. Squash merge uses merge_commit_sha on main.
+if ! labeled_merges="$(gh api --paginate \
+  "repos/${GITHUB_REPOSITORY}/pulls?state=closed&per_page=100" \
+  --jq '.[] | select(.merged_at != null and .base.ref == "main" and .merge_commit_sha != null) | .merge_commit_sha as $sha | .labels[].name | [$sha, .] | @tsv')"; then
+  echo "Could not list merged pull request labels." >&2
+  exit 1
+fi
+
+while IFS=$'\t' read -r sha label; do
+  [ -z "$sha" ] && continue
+  [ -n "${RANGE_COMMITS[$sha]:-}" ] || continue
+  case "$label" in
+    "BREAKING CHANGE") HAS_BREAKING=true ;;
+    "DEPRECATED" | feat | perf) HAS_MINOR=true ;;
+    fix | revert) HAS_PATCH=true ;;
+  esac
+done <<< "$labeled_merges"
 if ! $HAS_BREAKING && ! $HAS_MINOR && ! $HAS_PATCH; then
   echo "No merged pull request since ${PREVIOUS_TAG} has a version-affecting label." >&2
   exit 1
