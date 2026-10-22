@@ -17,6 +17,7 @@ git tag v1.2.3
 git tag -a v0.2.9 -m "Annotated baseline"
 git commit --quiet --allow-empty -m change
 TARGET="$(git rev-parse HEAD)"
+export TARGET
 git tag v0.99.0
 git commit --quiet --allow-empty -m later
 LATER="$(git rev-parse HEAD)"
@@ -40,13 +41,14 @@ case "$endpoint" in
     [ "${FAIL_API:-}" != latest ] || exit 42
     echo "$PREV_TAG"
     ;;
-  */commits/*/pulls)
+  */pulls\?state=closed\&per_page=100)
     [ "${FAIL_API:-}" != association ] || exit 42
-    printf '%s\n' "$ASSOCIATIONS" | jq -r "$query"
-    ;;
-  */pulls/*)
     [ "${FAIL_API:-}" != labels ] || exit 42
-    printf '%s\n' "$LABELS"
+    printf '%s\n' "$ASSOCIATIONS" |
+      jq --arg target "$TARGET" --arg labels "$LABELS" 'map(. + {
+        merge_commit_sha: (.merge_commit_sha // $target),
+        labels: (if has("labels") then .labels else ($labels | split("\n") | map(select(length > 0) | {name: .})) end)
+      })' | jq -r "$query"
     ;;
   *)
     echo "Unexpected gh API call: $endpoint" >&2
@@ -112,9 +114,20 @@ FAIL_API=latest LABELS=fix expect_failure "latest API failure" ""
 FAIL_API=association LABELS=fix expect_failure "associated PR API failure" ""
 FAIL_API=labels LABELS=fix expect_failure "labels API failure" ""
 
-GITHUB_SHA="$LATER" LABELS=fix expect_version "ignore stray tags; deduplicate PRs" v0.3.1
-if [ "$(grep -c '^repos/example/gh-qw/pulls/1$' "$FAKE_LOG")" -ne 1 ]; then
-  echo "FAIL associated PR labels requested multiple times" >&2
+GITHUB_SHA="$LATER" LABELS=fix expect_version "ignore stray tags; batch merged PRs" v0.3.1
+FILTERED_PRS="$(jq -nc --arg base "$BASE" --arg target "$TARGET" '[
+  {number: 10, merged_at: "2026-01-01", base: {ref: "main"}, merge_commit_sha: $base, labels: [{name: "feat"}]},
+  {number: 11, merged_at: "2026-01-01", base: {ref: "main"}, merge_commit_sha: $target, labels: [{name: "fix"}]},
+  {number: 12, merged_at: "2026-01-01", base: {ref: "feature"}, merge_commit_sha: $target, labels: [{name: "feat"}]},
+  {number: 13, merged_at: null, base: {ref: "main"}, merge_commit_sha: $target, labels: [{name: "feat"}]}
+]')"
+ASSOCIATIONS="$FILTERED_PRS" LABELS="" expect_version "ignore old, unrelated and unmerged PR labels" v0.3.1
+if [ "$(grep -Fc "repos/example/gh-qw/pulls?state=closed&per_page=100" "$FAKE_LOG")" -ne 1 ]; then
+  echo "FAIL merged PR list queried more than once" >&2
+  exit 1
+fi
+if grep -Fq "repos/example/gh-qw/commits/" "$FAKE_LOG"; then
+  echo "FAIL one API query was made per commit" >&2
   exit 1
 fi
 if git show-ref --verify --quiet refs/tags/v0.3.1; then
