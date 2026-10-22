@@ -102,6 +102,24 @@ corresponding settings manifest. After the new context exists on `main`, run `gh
 `gh infra apply` locally. Existing Dependabot pull requests may need a rebase to report the new
 context.
 
+## Command composition and boundaries
+
+`internal/cmd/app.go` composes the production command tree with shared root resolution,
+Git/gh capabilities, API access, and streams. Each command receives only its own narrow
+capabilities. Standalone constructors retain injectable seams for focused tests; do not add a
+second private copy of an existing dependency struct or a fake-only execution path.
+
+Keep argument validation ahead of configuration reads, discovery, and network work. Use the
+shared usage-error and output helpers in `internal/cmd/runtime_support.go` without losing wrapped
+domain errors. Stdout is reserved for result data, while warnings and child diagnostics use
+stderr. A failed discovery-warning write stops the command before mutation. An output failure
+after a successful operation reports that failure without undoing the completed operation.
+
+Test these contracts through commands and their observable results: exit classification,
+stdout/stderr, and filesystem or subprocess effects. Keep removal observation, revalidation,
+and partial-failure policy with their existing owners rather than reproducing them in new
+composition or formatting helpers.
+
 ## Validate changes
 
 Run the relevant Go checks from the repository root:
