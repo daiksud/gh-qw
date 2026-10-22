@@ -1,112 +1,58 @@
 # gh-qw
 
-`gh-qw` is a GitHub CLI extension that combines ghq-style repository management with
-predictable Git worktree paths. Repository identity stays visible on disk, while Git remains
-the source of truth for branches and worktree relationships.
-
-`gh qw get` and `gh qw worktree add` clone and synchronize repositories through `gh repo clone`
-and `gh repo sync`, so they require `gh` authentication and a `github.com` or
-`gh`-authenticated GitHub Enterprise host. Authentication uses gh's active account and standard
-token environment variables. `gh-qw` does not select accounts by repository owner, maintain an
-account cache, or switch the active account. See
-[gh account selection](docs/reference/cli/README.md#gh-account-selection).
+A GitHub CLI extension for managing repositories and linked Git worktrees in
+predictable directories. Git owns branches and worktree registrations; gh owns
+GitHub network operations and authentication.
 
 ## Install
 
-```console
+```sh
 gh extension install daiksud/gh-qw
 ```
 
-Install Git and GitHub CLI with the [required external tool capabilities](docs/reference/compatibility/README.md#required-external-tool-capabilities).
-Authenticated-login and default-branch lookups run through `gh api`, using the selected host and
-gh's standard authentication.
+The complete command set requires Git 2.42.0 or newer and GitHub CLI 2.88.0 or
+newer. Git must be on `PATH`; gh is resolved through `GH_PATH`, then `PATH`.
+Configure authentication with `gh auth login` for network operations.
 
-## Layout
+## Use
 
-Main worktrees are ordinary Git clones. Linked worktrees use a separate root:
-
-```text
-~/ghqw/
-└── github.com/acme/widget/                          # main worktree
-
-~/.local/share/ghqw/worktrees/
-└── github.com/acme/widget/feature/login/            # linked worktree
+```sh
+gh qw get cli/cli
+gh qw list --full-path
+cd ~/ghqw/github.com/cli/cli
+gh qw worktree add -b feature/docs
+gh qw worktree list
 ```
 
-Each repository has the canonical identity `<host>/<owner>/<repo>`. A linked worktree is shown
-as `<host>/<owner>/<repo>@<branch>`.
+Main repositories live at `<root>/<host>/<owner>/<repo>`. Linked worktrees live
+at `<worktree-root>/<host>/<owner>/<repo>/<slot>`. The default roots are `~/ghqw`
+and `~/.local/share/ghqw/worktrees`, respectively.
 
-## Quick start
-
-```console
-$ gh qw get cli/cli
-/Users/alice/ghqw/github.com/cli/cli
-
-$ gh qw list
-github.com/cli/cli
-
-$ cd ~/ghqw/github.com/cli/cli
-$ gh qw worktree add feature/docs
-/Users/alice/.local/share/ghqw/worktrees/github.com/cli/cli/feature/docs
-
-$ gh qw list --worktree
-github.com/cli/cli
-github.com/cli/cli@feature/docs
-```
-
-Print absolute paths for use in your own shell:
-
-```console
-$ gh qw list --full-path --exact cli/cli
-/Users/alice/ghqw/github.com/cli/cli
-```
-
-Existing shell functions using the removed `--fzf` flag must be updated; see the
-[migration guidance](docs/reference/cli/README.md#migrating-shell-functions).
-
-Herdr workspace integrations have been removed; see the
-[migration guidance](docs/reference/cli/README.md#migrating-herdr-integrations).
-
-## Commands
-
-| Command | Purpose |
-| --- | --- |
-| `gh qw get` / `gh qw clone` | Clone a missing repository or update an existing one. |
-| `gh qw list` | List repositories and, with `--worktree`, linked worktrees. |
-| `gh qw root` | Print configured repository roots. |
-| `gh qw rm` | Remove a repository or an `@branch` linked worktree safely. |
-| `gh qw migrate` | Migrate GitHub repositories from a ghq layout. |
-| `gh qw worktree add` | Create a linked worktree at its deterministic branch path. |
-| `gh qw worktree list` | List one repository's registered worktrees. |
-| `gh qw worktree remove` | Remove one managed linked worktree, or use `--gone` to safely remove every linked worktree whose upstream ref is gone. |
-| `gh qw worktree prune` | Prune stale Git metadata and proven orphaned paths. |
-
-See the [CLI reference](docs/reference/cli/README.md) for every argument, flag, output format,
-and exit status.
-
-## Configuration
-
-Optional settings live only in `$XDG_CONFIG_HOME/ghqw/config.toml` (or `~/.config/ghqw/config.toml`
-when `XDG_CONFIG_HOME` is unset):
+Optional configuration in `~/.config/ghqw/config.toml`:
 
 ```toml
 root = "~/ghqw"
 worktree_root = "~/.local/share/ghqw/worktrees"
 ```
 
-`GHQW_ROOT` and `GHQW_WORKTREE_ROOT` override these values. See the
-[configuration reference](docs/reference/configuration/README.md) for precedence, multiple
-roots, path safety, and ghq migration source discovery.
+`GHQW_ROOT` and `GHQW_WORKTREE_ROOT` override those settings. XDG locations and
+multiple roots are described in the [configuration reference](docs/configuration.md).
 
-## Documentation
+## Commands
 
-- [Concept](docs/concept/README.md)
-- [CLI reference](docs/reference/cli/README.md)
-- [Configuration reference](docs/reference/configuration/README.md)
-- [Versioning reference](docs/reference/versioning/README.md)
-- [Compatibility reference](docs/reference/compatibility/README.md)
-- [Architecture decisions](docs/development/README.md)
+| Command | Result |
+| --- | --- |
+| `get` (`clone`) | Clone or update repositories and print their paths. |
+| `list` | List repository identities or paths; `--worktree` includes linked worktrees. |
+| `root` | Print repository roots. |
+| `rm` | Remove a selected repository or linked worktree after confirmation. |
+| `migrate` | Move repositories into the primary root and repair their worktree registrations. |
+| `worktree add` | Create a linked worktree at its deterministic slot. |
+| `worktree list` | Inspect a repository's worktrees. |
+| `worktree remove` | Remove a linked worktree; `--gone` selects absent upstreams. |
+| `worktree prune` | Prune Git metadata and eligible managed directories. |
 
-## License
+See the [CLI reference](docs/cli.md) for exact arguments, output, exit statuses,
+and safety conditions. Documentation describes the current implementation.
 
-[MIT](LICENSE)
+[Architecture](docs/architecture.md) · [Contributing](docs/contributing.md) · [MIT license](LICENSE)

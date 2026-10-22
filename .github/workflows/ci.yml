@@ -110,10 +110,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
       - name: Validate manifest syntax and schema
-        # Fully offline (no GitHub API calls), so this runs for fork pull
-        # requests too, where secrets are unavailable. Applying a settings
-        # change is a deliberate, local, manual step — see
-        # docs/reference/repository-settings/ and ADR-0012 for why.
+        # Offline validation also runs for forks. Applying settings is a
+        # local maintainer operation; see docs/contributing.md.
         run: gh infra validate .github/settings.yml
 
   release-tests:

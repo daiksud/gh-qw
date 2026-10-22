@@ -1,10 +1,9 @@
-# Only unambiguous all-file path categories receive automatic labels.
+# Add a path label only when every changed file matches that category.
 # Branch names and PR titles are not classification inputs.
-# Release-affecting and other semantic labels are reviewed manually.
 docs:
   - changed-files:
       - any-glob-to-all-files:
-          - "{docs/**,**/*.md,**/*.mdx}"
+          - "{docs/**,**/*.md}"
 
 test:
   - changed-files:

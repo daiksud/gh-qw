@@ -1,12 +1,5 @@
-# Categorizes generated GitHub Release notes by pull request label. See the
-# versioning reference (docs/reference/versioning/) and ADR-0011 for the full
-# label vocabulary and version-impact rules; this file is the executable half
-# of the release-notes contract. Categories are evaluated top to bottom, and
-# a pull request's first matching category wins.
-#
-# No exclude list: every merged pull request is visible in the release notes
-# it ships in (see the versioning reference's "no override, no re-release"
-# policy).
+# Release-note categories use reviewed PR labels; first match wins.
+# Every merged PR is included. See docs/contributing.md#releases.
 changelog:
   categories:
     - title: "💥 BREAKING CHANGE"

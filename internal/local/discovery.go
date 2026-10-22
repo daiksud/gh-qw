@@ -303,15 +303,6 @@ func DiscoverRepositories(
 	return result, nil
 }
 
-// Discover is a concise alias for DiscoverRepositories.
-func Discover(
-	ctx context.Context,
-	roots []string,
-	options ...DiscoveryOptions,
-) (DiscoveryResult, error) {
-	return DiscoverRepositories(ctx, roots, options...)
-}
-
 func discoveryDirectory(
 	filesystem filesystem,
 	physicalize func(string, string, root.ContainmentMode) (string, error),
