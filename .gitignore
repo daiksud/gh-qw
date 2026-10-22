@@ -9,8 +9,3 @@
 # Go workspaces
 go.work
 go.work.sum
-
-# Astro documentation site output
-/.pages/node_modules/
-/.pages/.astro/
-/.pages/dist/

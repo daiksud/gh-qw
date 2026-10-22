@@ -30,16 +30,6 @@ func FindCurrentRepository(
 	return repository, err
 }
 
-// ResolveCurrentRepository is an alias for FindCurrentRepository.
-func ResolveCurrentRepository(
-	ctx context.Context,
-	cwd string,
-	repositories []Repository,
-	options ...CurrentRepositoryOptions,
-) (Repository, error) {
-	return FindCurrentRepository(ctx, cwd, repositories, options...)
-}
-
 // CurrentOptions supplies the combined Git seam for current-worktree
 // discovery.
 type CurrentOptions struct {

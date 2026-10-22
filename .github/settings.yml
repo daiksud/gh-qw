@@ -1,18 +1,12 @@
-# Declarative GitHub repository settings for gh-qw, managed by gh-infra
-# (https://github.com/babarot/gh-infra). See docs/reference/repository-settings/
-# for the operating model (review, apply, what is intentionally unmanaged) and
-# docs/development/adr/0012-github-settings-as-code/ for why `apply` stays a
-# local, manual operation while CI only ever holds a read-only token.
+# Managed with gh-infra v0.13.0; see docs/contributing.md#repository-settings.
+# CI validates offline. Review the plan and apply locally.
 apiVersion: gh-infra/v1
 kind: Repository
 metadata:
   name: gh-qw
   owner: daiksud
 
-# authoritative means gh-infra deletes any label or ruleset that exists on
-# GitHub but is absent from spec below. Always review `gh infra plan` output
-# before `gh infra apply` — a removed entry here is a real deletion, not a
-# no-op.
+# Omitted labels and rulesets are deleted when applying this manifest.
 reconcile:
   labels: authoritative
   rulesets: authoritative
@@ -22,10 +16,6 @@ spec:
   visibility: public
   archived: false
 
-  # Label vocabulary and colors are defined here; this is the single source
-  # of truth going forward (see docs/development/adr/0011-type-named-release-labels/
-  # for the naming rationale and docs/reference/versioning/#labels for which
-  # six labels affect the computed release version).
   labels:
   - name: BREAKING CHANGE
     description: Backward-incompatible public API change (MAJOR; MINOR under 0.y.z)
@@ -110,8 +100,6 @@ spec:
     automated_security_fixes: true
     private_vulnerability_reporting: true
 
-  # Rulesets, not classic branch protection, enforce main and tag rules
-  # (gh-infra supports both; rulesets are its recommended approach).
   rulesets:
   - name: default
     target: branch
