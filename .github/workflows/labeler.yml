@@ -23,7 +23,7 @@ jobs:
       # repository through the GitHub API, so a fork pull request's code is
       # never checked out or executed by this privileged pull_request_target
       # workflow.
-      - name: Apply labels from branch name and changed files
+      - name: Apply labels from changed paths
         uses: actions/labeler@bf12e9b00b37c5c0ca2b87b79b2daf7891dbda13 # v7.0.0
         with:
-          sync-labels: true
+          sync-labels: false

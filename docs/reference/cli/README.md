@@ -473,29 +473,40 @@ gh qw worktree add [-R|--repo <repo>] [-b|-B] [--detach] [--orphan]
                     [-f] <branch> [<commit-ish>]
 ```
 
-With no explicit creation mode, `<branch>` is both the desired branch and the deterministic path
-slot. Resolution is:
+With no explicit creation mode, `<branch>` is both the requested branch and the
+deterministic path slot. `gh-qw` passes the literal branch to native `git worktree add`:
+Git checks out an existing local branch, guesses a unique remote-tracking branch,
+honors `checkout.defaultRemote`, and rejects ambiguous or unknown branches.
+`gh-qw` does not choose `origin` over other remotes or reinterpret Git failures.
+If `<commit-ish>` is supplied and the requested branch does not exist locally,
+`gh-qw` invokes native `git branch <branch> <commit-ish>` before adding the worktree.
+Existing local branches take precedence even when an explicit start point is supplied.
 
-1. if a local branch named `<branch>` exists, check it out;
-2. otherwise, if `origin/<branch>` exists, create a local tracking branch; if there is no
-   `origin` match, use the sole matching `<remote>/<branch>` and reject multiple matches;
-3. otherwise, create `<branch>` from `<commit-ish>`; when it is omitted, query the repository
-   host through the `gh` API for the default branch and use that ref.
+`-b` creates the requested branch and fails if Git reports it already exists;
+`-B` creates or resets it. With a supplied `<commit-ish>`, Git resolves it
+directly. Otherwise, `gh-qw` queries the repository's default branch through
+`gh api`. If that local default branch is absent, `gh repo sync` materializes
+it before the branch is created; the local ref is re-observed after sync.
+Network/API calls are not performed for normal existing-branch worktree adds or
+when a start point is explicit. Creation and reset execute native `git branch`
+before `git worktree add` to preserve the requested branch name when Git's
+remote guessing would otherwise replace it. If worktree creation then fails,
+the created/reset branch is left intact; the error reports this partial result.
 
-The optional `<commit-ish>` is consulted only by step 3. If API host resolution, authentication,
-or default-branch lookup is unavailable, step 3 fails and asks for an explicit `<commit-ish>`.
-When the API-selected default branch is not present locally, `gh-qw` runs `gh repo sync` to bring
-it from the repository's GitHub host before creating the branch, using `gh`'s own authentication.
+**BREAKING CHANGE:** An unknown branch with no explicit `<commit-ish>` and no
+`-b`/`-B` is no longer automatically created from the GitHub default branch.
+Use `gh qw worktree add -b <branch>` to retain GitHub-default-based creation,
+or `gh qw worktree add <branch> <start-point>` for an explicit base.
+With multiple matching remotes, configure Git (for example,
+`git config checkout.defaultRemote origin`) or supply a start point.
+No gh-qw-specific origin preference is applied.
 
-`-b` forces creation of the positional `<branch>` and fails if it already exists. `-B` creates or
-resets the positional `<branch>`. These adapt Git's `worktree add -b/-B` semantics to a command
-that has no separate path operand. They bypass automatic steps 1 and 2, but not layout checks.
-
-`--detach` creates a detached worktree. `<branch>` remains its path slot; `<commit-ish>` is the
-checkout target, or `<branch>` is resolved as the target when `<commit-ish>` is omitted.
-`--orphan` creates an unborn orphan branch named `<branch>` and does not accept `<commit-ish>`.
-`-b`, `-B`, `--detach`, and `--orphan` are mutually exclusive except that `-f` may accompany any
-mode. `-f` has the same checkout-safety meaning as one Git `--force`.
+`--detach` creates a detached worktree. `<branch>` remains its path slot;
+`<commit-ish>` is the checkout target, or `<branch>` is used if it is absent.
+`--orphan` creates an unborn orphan branch named `<branch>` and does not
+accept `<commit-ish>`. `-b`, `-B`, `--detach`, and `--orphan` are
+mutually exclusive except that `-f` may accompany any mode. `-f` delegates
+Git checkout-safety overrides; it never bypasses gh-qw's filesystem boundaries.
 
 On success, `add` writes exactly the new absolute worktree path to `stdout`.
 

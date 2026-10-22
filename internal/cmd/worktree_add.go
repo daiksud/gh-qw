@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -10,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	runtimepkg "runtime"
-	"sort"
 	"strings"
 	"syscall"
 
@@ -18,7 +16,6 @@ import (
 	"github.com/daiksud/gh-qw/internal/ghcmd"
 	"github.com/daiksud/gh-qw/internal/gitcmd"
 	"github.com/daiksud/gh-qw/internal/local"
-	"github.com/daiksud/gh-qw/internal/repospec"
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
 	"github.com/spf13/cobra"
 )
@@ -28,8 +25,6 @@ type WorktreeAddGit interface {
 	local.Git
 	WorktreeAdd(context.Context, string, gitcmd.WorktreeAddOptions) error
 	LocalBranchExists(context.Context, string, string) (bool, error)
-	RemoteBranchExists(context.Context, string, string, string) (bool, error)
-	RevisionExists(context.Context, string, string) (bool, error)
 }
 
 // WorktreeAddGh is the gh capability required by worktree add to bring the
@@ -103,51 +98,7 @@ const (
 	worktreeAddModeOrphan
 )
 
-type worktreeAddRuntime struct {
-	resolver RootResolver
-	discover func(
-		context.Context,
-		[]string,
-		...local.DiscoveryOptions,
-	) (local.DiscoveryResult, error)
-	current func(
-		context.Context,
-		string,
-		string,
-		[]local.Repository,
-		...local.CurrentOptions,
-	) (local.Current, error)
-	enumerate func(
-		context.Context,
-		local.Repository,
-		string,
-		...local.WorktreeOptions,
-	) ([]local.Worktree, error)
-	validateDestination func(
-		context.Context,
-		string,
-		local.Repository,
-		string,
-		[]local.Worktree,
-		...local.DestinationOptions,
-	) (string, error)
-	validateAssociation func(
-		context.Context,
-		local.Repository,
-		local.Worktree,
-		string,
-		...local.AssociationOptions,
-	) error
-	git        WorktreeAddGit
-	gh         WorktreeAddGh
-	api        WorktreeAddAPI
-	filesystem local.FilesystemOptions
-	getwd      func() (string, error)
-	mkdir      func(string, fs.FileMode) error
-	remove     func(string) error
-	stdout     io.Writer
-	stderr     io.Writer
-}
+type worktreeAddRuntime = WorktreeAddDependencies
 
 type worktreeAddRequest struct {
 	selector    string
@@ -161,35 +112,11 @@ type worktreeAddRequest struct {
 type worktreeAddPlanner struct {
 	ctx        context.Context
 	git        WorktreeAddGit
-	gh         WorktreeAddGh
 	api        WorktreeAddAPI
 	repository local.Repository
-
-	remotes       []string
-	remotesLoaded bool
 }
 
-type worktreeAddUsageError struct {
-	err error
-}
-
-func (err *worktreeAddUsageError) Error() string {
-	if err == nil || err.err == nil {
-		return repospec.ErrUsage.Error()
-	}
-	return err.err.Error()
-}
-
-func (err *worktreeAddUsageError) Unwrap() error {
-	if err == nil {
-		return nil
-	}
-	return err.err
-}
-
-func (err *worktreeAddUsageError) Is(target error) bool {
-	return target == repospec.ErrUsage
-}
+type worktreeAddUsageError = repositoryUsageError
 
 // NewWorktreeAddCommand returns the command that creates one deterministic
 // linked worktree.
@@ -273,90 +200,56 @@ func NewWorktreeAddCommand(dependencies WorktreeAddDependencies) *cobra.Command 
 	flags.BoolVar(&detachMode, "detach", false, "Create a detached worktree")
 	flags.BoolVar(&orphanMode, "orphan", false, "Create an unborn orphan branch")
 	flags.BoolVarP(&force, "force", "f", false, "Override Git checkout safety")
-	command.SetOut(runtime.stdout)
-	command.SetErr(runtime.stderr)
+	command.SetOut(runtime.Stdout)
+	command.SetErr(runtime.Stderr)
 
 	return command
 }
 
-func worktreeAddPrepareRuntime(dependencies WorktreeAddDependencies) worktreeAddRuntime {
-	stdout := dependencies.Stdout
-	if stdout == nil {
-		stdout = os.Stdout
+func worktreeAddPrepareRuntime(deps WorktreeAddDependencies) worktreeAddRuntime {
+	deps.Stdout = commandStdout(deps.Stdout)
+	deps.Stderr = commandStderr(deps.Stderr)
+	if deps.Resolver == nil {
+		deps.Resolver = rootpkg.NewResolver()
 	}
-	stderr := dependencies.Stderr
-	if stderr == nil {
-		stderr = os.Stderr
-	}
-
-	resolver := dependencies.Resolver
-	if resolver == nil {
-		resolver = rootpkg.NewResolver()
-	}
-	git := dependencies.Git
-	if git == nil {
-		git = &gitcmd.Runner{
+	if deps.Git == nil {
+		deps.Git = &gitcmd.Runner{
 			Executable: "git",
 			Stdout:     io.Discard,
-			Stderr:     stderr,
+			Stderr:     deps.Stderr,
 		}
 	}
-	gh := dependencies.Gh
-	if gh == nil {
-		gh = &ghcmd.Runner{
-			Stdout: io.Discard,
-			Stderr: stderr,
-		}
+	if deps.Gh == nil {
+		deps.Gh = &ghcmd.Runner{Stdout: io.Discard, Stderr: deps.Stderr}
 	}
-	apiClient := dependencies.API
-	if apiClient == nil {
-		apiClient = ghapi.NewClient(stderr)
+	if deps.API == nil {
+		deps.API = ghapi.NewClient(deps.Stderr)
 	}
-	if dependencies.Discover == nil {
-		dependencies.Discover = local.DiscoverRepositories
+	if deps.Discover == nil {
+		deps.Discover = local.DiscoverRepositories
 	}
-	if dependencies.Current == nil {
-		dependencies.Current = local.DiscoverCurrent
+	if deps.Current == nil {
+		deps.Current = local.DiscoverCurrent
 	}
-	if dependencies.Enumerate == nil {
-		dependencies.Enumerate = local.EnumerateWorktrees
+	if deps.Enumerate == nil {
+		deps.Enumerate = local.EnumerateWorktrees
 	}
-	if dependencies.ValidateDestination == nil {
-		dependencies.ValidateDestination = local.ValidateWorktreeDestination
+	if deps.ValidateDestination == nil {
+		deps.ValidateDestination = local.ValidateWorktreeDestination
 	}
-	if dependencies.ValidateAssociation == nil {
-		dependencies.ValidateAssociation = local.ValidateWorktreeAssociation
+	if deps.ValidateAssociation == nil {
+		deps.ValidateAssociation = local.ValidateWorktreeAssociation
 	}
-
-	getwd := dependencies.Getwd
-	if getwd == nil {
-		getwd = os.Getwd
+	if deps.Getwd == nil {
+		deps.Getwd = os.Getwd
 	}
-	mkdir := dependencies.Mkdir
-	if mkdir == nil {
-		mkdir = os.Mkdir
+	if deps.Mkdir == nil {
+		deps.Mkdir = os.Mkdir
 	}
-	remove := dependencies.Remove
-	if remove == nil {
-		remove = os.Remove
+	if deps.Remove == nil {
+		deps.Remove = os.Remove
 	}
-	return worktreeAddRuntime{
-		resolver:            resolver,
-		discover:            dependencies.Discover,
-		current:             dependencies.Current,
-		enumerate:           dependencies.Enumerate,
-		git:                 git,
-		gh:                  gh,
-		api:                 apiClient,
-		filesystem:          dependencies.Filesystem,
-		getwd:               getwd,
-		mkdir:               mkdir,
-		remove:              remove,
-		stdout:              stdout,
-		stderr:              stderr,
-		validateDestination: dependencies.ValidateDestination,
-		validateAssociation: dependencies.ValidateAssociation,
-	}
+	return deps
 }
 
 func worktreeAddRun(
@@ -364,20 +257,20 @@ func worktreeAddRun(
 	runtime worktreeAddRuntime,
 	request worktreeAddRequest,
 ) error {
-	roots, err := runtime.resolver.Resolve()
+	roots, err := runtime.Resolver.Resolve()
 	if err != nil {
 		return fmt.Errorf("resolve roots: %w", err)
 	}
 
-	discovery, err := runtime.discover(
+	discovery, err := runtime.Discover(
 		ctx,
 		roots.RepositoryRoots,
 		local.DiscoveryOptions{
-			Git:        runtime.git,
-			Filesystem: runtime.filesystem,
+			Git:        runtime.Git,
+			Filesystem: runtime.Filesystem,
 		},
 	)
-	if writeErr := worktreeAddWriteWarnings(runtime.stderr, discovery.Warnings); writeErr != nil {
+	if writeErr := commandWriteWarnings(runtime.Stderr, discovery.Warnings); writeErr != nil {
 		return fmt.Errorf("write discovery warning: %w", writeErr)
 	}
 	if err != nil {
@@ -396,13 +289,13 @@ func worktreeAddRun(
 		return err
 	}
 
-	worktrees, err := runtime.enumerate(
+	worktrees, err := runtime.Enumerate(
 		ctx,
 		repository,
 		roots.WorktreeRoot,
 		local.WorktreeOptions{
-			Lister:     runtime.git,
-			Filesystem: runtime.filesystem,
+			Lister:     runtime.Git,
+			Filesystem: runtime.Filesystem,
 		},
 	)
 	if err != nil {
@@ -420,13 +313,13 @@ func worktreeAddRun(
 	if err != nil {
 		return fmt.Errorf("derive worktree destination: %w", err)
 	}
-	destination, err := runtime.validateDestination(
+	destination, err := runtime.ValidateDestination(
 		ctx,
 		roots.WorktreeRoot,
 		repository,
 		request.branch,
 		worktrees,
-		local.DestinationOptions{Filesystem: runtime.filesystem},
+		local.DestinationOptions{Filesystem: runtime.Filesystem},
 	)
 	if err != nil {
 		return fmt.Errorf("validate worktree destination: %w", err)
@@ -453,12 +346,11 @@ func worktreeAddRun(
 
 	planner := &worktreeAddPlanner{
 		ctx:        ctx,
-		git:        runtime.git,
-		gh:         runtime.gh,
-		api:        runtime.api,
+		git:        runtime.Git,
+		api:        runtime.API,
 		repository: repository,
 	}
-	options, err := planner.worktreeAddPlan(request, destination)
+	options, syncBranch, err := planner.worktreeAddPlan(request, destination)
 	if err != nil {
 		return err
 	}
@@ -475,7 +367,7 @@ func worktreeAddRun(
 		return errors.Join(operationErr, cleanupErr)
 	}
 
-	lstat := runtime.filesystem.Lstat
+	lstat := runtime.Filesystem.Lstat
 	if lstat == nil {
 		lstat = os.Lstat
 	}
@@ -495,7 +387,29 @@ func worktreeAddRun(
 		))
 	}
 
-	if err := runtime.git.WorktreeAdd(ctx, repository.Path, options); err != nil {
+	// Only explicit -b/-B requests without a start point use the GitHub
+	// default branch. Perform synchronization after destination validation
+	// and re-observe the resulting local branch using Git.
+	if syncBranch != "" {
+		if err := runtime.Gh.RepoSync(
+			ctx, repository.Path, ghcmd.SyncOptions{
+				Host:   repository.Host,
+				Source: repository.Owner + "/" + repository.Repo,
+				Branch: syncBranch,
+			},
+		); err != nil {
+			return worktreeAddFailure(fmt.Errorf("sync API default branch %q: %w", syncBranch, err))
+		}
+		exists, err := runtime.Git.LocalBranchExists(ctx, repository.Path, syncBranch)
+		if err != nil {
+			return worktreeAddFailure(fmt.Errorf("inspect synchronized default branch %q: %w", syncBranch, err))
+		}
+		if !exists {
+			return worktreeAddFailure(fmt.Errorf("gh repo sync did not materialize local default branch %q", syncBranch))
+		}
+	}
+
+	if err := runtime.Git.WorktreeAdd(ctx, repository.Path, options); err != nil {
 		return worktreeAddFailure(fmt.Errorf(
 			"add worktree for %q at %q: %w",
 			repository.Identity,
@@ -504,13 +418,13 @@ func worktreeAddRun(
 		))
 	}
 
-	registered, err := runtime.enumerate(
+	registered, err := runtime.Enumerate(
 		ctx,
 		repository,
 		roots.WorktreeRoot,
 		local.WorktreeOptions{
-			Lister:     runtime.git,
-			Filesystem: runtime.filesystem,
+			Lister:     runtime.Git,
+			Filesystem: runtime.Filesystem,
 		},
 	)
 	if err != nil {
@@ -544,14 +458,14 @@ func worktreeAddRun(
 			err,
 		))
 	}
-	if err := runtime.validateAssociation(
+	if err := runtime.ValidateAssociation(
 		ctx,
 		repository,
 		added,
 		roots.WorktreeRoot,
 		local.AssociationOptions{
-			Git:        runtime.git,
-			Filesystem: runtime.filesystem,
+			Git:        runtime.Git,
+			Filesystem: runtime.Filesystem,
 		},
 	); err != nil {
 		return worktreeAddFailure(fmt.Errorf(
@@ -561,7 +475,7 @@ func worktreeAddRun(
 		))
 	}
 
-	if _, err := fmt.Fprintln(runtime.stdout, local.NormalizePathForOutput(destination)); err != nil {
+	if err := commandWriteAll(runtime.Stdout, []byte(local.NormalizePathForOutput(destination)+"\n")); err != nil {
 		return worktreeAddFailure(fmt.Errorf("write worktree path: %w", err))
 	}
 
@@ -586,18 +500,18 @@ func worktreeAddSelectRepository(
 		return repository, nil
 	}
 
-	cwd, err := runtime.getwd()
+	cwd, err := runtime.Getwd()
 	if err != nil {
 		return local.Repository{}, fmt.Errorf("get current directory: %w", err)
 	}
-	current, err := runtime.current(
+	current, err := runtime.Current(
 		ctx,
 		cwd,
 		worktreeRoot,
 		repositories,
 		local.CurrentOptions{
-			Git:        runtime.git,
-			Filesystem: runtime.filesystem,
+			Git:        runtime.Git,
+			Filesystem: runtime.Filesystem,
 		},
 	)
 	if err != nil {
@@ -620,355 +534,94 @@ func worktreeAddSelectRepository(
 	return current.Repository, nil
 }
 
+// worktreeAddPlan performs only read-only observations and default-branch API
+// lookup. Git itself owns branch creation, remote guessing, tracking, and
+// revision/conflict validation. The returned syncBranch is executed later,
+// after the destination has been revalidated.
 func (planner *worktreeAddPlanner) worktreeAddPlan(
 	request worktreeAddRequest,
 	destination string,
-) (gitcmd.WorktreeAddOptions, error) {
-	options := gitcmd.WorktreeAddOptions{
-		Path:  destination,
-		Force: request.force,
-	}
+) (gitcmd.WorktreeAddOptions, string, error) {
+	options := gitcmd.WorktreeAddOptions{Path: destination, Force: request.force}
 
 	switch request.mode {
 	case worktreeAddModeOrphan:
 		options.Orphan = true
 		options.NewBranch = request.branch
-		return options, nil
+		return options, "", nil
 	case worktreeAddModeDetach:
-		target := request.commitish
-		if target == "" {
-			target = request.branch
-		}
-		if err := planner.worktreeAddRequireRevision(target); err != nil {
-			return gitcmd.WorktreeAddOptions{}, err
-		}
 		options.Detach = true
-		options.Commitish = target
-		return options, nil
-	case worktreeAddModeNew:
-		exists, err := planner.git.LocalBranchExists(
-			planner.ctx,
-			planner.repository.Path,
-			request.branch,
-		)
+		options.Commitish = request.commitish
+		if options.Commitish == "" {
+			options.Commitish = request.branch
+		}
+		return options, "", nil
+	case worktreeAddModeNew, worktreeAddModeReset:
+		target, syncBranch, err := planner.worktreeAddCreationTarget(request.commitish)
 		if err != nil {
-			return gitcmd.WorktreeAddOptions{}, fmt.Errorf(
-				"inspect local branch %q: %w",
-				request.branch,
-				err,
-			)
+			return gitcmd.WorktreeAddOptions{}, "", err
 		}
-		if exists {
-			return gitcmd.WorktreeAddOptions{}, fmt.Errorf(
-				"cannot create branch %q with -b: local branch already exists",
-				request.branch,
-			)
-		}
-		target, err := planner.worktreeAddCreationTarget(request.commitish)
-		if err != nil {
-			return gitcmd.WorktreeAddOptions{}, err
-		}
-		options.NewBranch = request.branch
 		options.Commitish = target
-		return options, nil
-	case worktreeAddModeReset:
-		target, err := planner.worktreeAddCreationTarget(request.commitish)
-		if err != nil {
-			return gitcmd.WorktreeAddOptions{}, err
+		if request.mode == worktreeAddModeNew {
+			options.NewBranch = request.branch
+		} else {
+			options.ResetBranch = request.branch
 		}
-		options.ResetBranch = request.branch
-		options.Commitish = target
-		return options, nil
+		return options, syncBranch, nil
 	case worktreeAddModeAutomatic:
-	default:
-		return gitcmd.WorktreeAddOptions{}, errors.New("unsupported worktree add mode")
-	}
-
-	localExists, err := planner.git.LocalBranchExists(
-		planner.ctx,
-		planner.repository.Path,
-		request.branch,
-	)
-	if err != nil {
-		return gitcmd.WorktreeAddOptions{}, fmt.Errorf(
-			"inspect local branch %q: %w",
-			request.branch,
-			err,
-		)
-	}
-	if localExists {
+		// Passing the requested branch to native worktree add lets Git
+		// apply checkout.defaultRemote and reject ambiguous candidates.
+		// Unlike the removed gh-qw fallback, an unknown branch without a
+		// start point is rejected by Git rather than querying GitHub.
 		options.Commitish = request.branch
-		return options, nil
+		if request.commitish == "" {
+			return options, "", nil
+		}
+		exists, err := planner.git.LocalBranchExists(planner.ctx, planner.repository.Path, request.branch)
+		if err != nil {
+			return gitcmd.WorktreeAddOptions{}, "", fmt.Errorf("inspect local branch %q: %w", request.branch, err)
+		}
+		if !exists {
+			options.NewBranch = request.branch
+			options.Commitish = request.commitish
+		}
+		return options, "", nil
+	default:
+		return gitcmd.WorktreeAddOptions{}, "", errors.New("unsupported worktree add mode")
 	}
-
-	remote, found, err := planner.worktreeAddFindRemoteBranch(request.branch)
-	if err != nil {
-		return gitcmd.WorktreeAddOptions{}, err
-	}
-	if found {
-		options.Commitish = remote + "/" + request.branch
-		options.NewBranch = request.branch
-		options.Tracking = gitcmd.TrackingEnabled
-		return options, nil
-	}
-
-	target, err := planner.worktreeAddCreationTarget(request.commitish)
-	if err != nil {
-		return gitcmd.WorktreeAddOptions{}, err
-	}
-	options.Commitish = target
-	options.NewBranch = request.branch
-	return options, nil
 }
 
-func (planner *worktreeAddPlanner) worktreeAddCreationTarget(
-	explicit string,
-) (string, error) {
+// worktreeAddCreationTarget returns the explicit start point unchanged, or the
+// GitHub default branch for -b/-B without a start point. If the default is not
+// a local branch, the caller must synchronize it after checking the destination.
+func (planner *worktreeAddPlanner) worktreeAddCreationTarget(explicit string) (string, string, error) {
 	if explicit != "" {
-		if err := planner.worktreeAddRequireRevision(explicit); err != nil {
-			return "", err
-		}
-		return explicit, nil
+		return explicit, "", nil
 	}
-
 	defaultBranch, err := planner.api.DefaultBranch(
-		planner.ctx,
-		planner.repository.Host,
-		planner.repository.Owner,
-		planner.repository.Repo,
+		planner.ctx, planner.repository.Host, planner.repository.Owner, planner.repository.Repo,
 	)
 	if err != nil {
-		return "", fmt.Errorf(
-			"determine a start point for the new branch: %w; provide an explicit commit-ish",
-			err,
-		)
+		return "", "", fmt.Errorf("determine a start point for the new branch: %w; provide an explicit commit-ish", err)
 	}
 	if err := local.ValidateBranch(planner.ctx, defaultBranch); err != nil {
-		return "", fmt.Errorf(
-			"GitHub API returned an invalid default branch %q: %w",
-			defaultBranch,
-			err,
-		)
+		return "", "", fmt.Errorf("GitHub API returned an invalid default branch %q: %w", defaultBranch, err)
 	}
-
-	localExists, err := planner.git.LocalBranchExists(
-		planner.ctx,
-		planner.repository.Path,
-		defaultBranch,
-	)
+	exists, err := planner.git.LocalBranchExists(planner.ctx, planner.repository.Path, defaultBranch)
 	if err != nil {
-		return "", fmt.Errorf("inspect default branch %q: %w", defaultBranch, err)
+		return "", "", fmt.Errorf("inspect default branch %q: %w", defaultBranch, err)
 	}
-	if localExists {
-		return defaultBranch, nil
+	if exists {
+		return "refs/heads/" + defaultBranch, "", nil
 	}
-
-	remote, found, err := planner.worktreeAddFindRemoteBranch(defaultBranch)
-	if err != nil {
-		return "", err
-	}
-	if found {
-		return remote + "/" + defaultBranch, nil
-	}
-
-	remote, err = planner.worktreeAddSyncRemote()
-	if err != nil {
-		return "", fmt.Errorf(
-			"sync API default branch %q: %w; provide an explicit commit-ish",
-			defaultBranch,
-			err,
-		)
-	}
-	// gh repo sync brings the API-selected default branch into the local
-	// repository (and its remote-tracking ref) using gh's own GitHub
-	// authentication, rather than a targeted `git fetch` that would need an
-	// ambient Git credential helper for a private repository.
-	if err := planner.gh.RepoSync(
-		planner.ctx,
-		planner.repository.Path,
-		ghcmd.SyncOptions{
-			Host:   planner.repository.Host,
-			Source: planner.repository.Owner + "/" + planner.repository.Repo,
-			Branch: defaultBranch,
-		},
-	); err != nil {
-		return "", fmt.Errorf(
-			"sync API default branch %q from remote %q: %w",
-			defaultBranch,
-			remote,
-			err,
-		)
-	}
-	exists, err := planner.git.RemoteBranchExists(
-		planner.ctx,
-		planner.repository.Path,
-		remote,
-		defaultBranch,
-	)
-	if err != nil {
-		return "", fmt.Errorf(
-			"verify synced default branch %q from remote %q: %w",
-			defaultBranch,
-			remote,
-			err,
-		)
-	}
-	if !exists {
-		return "", fmt.Errorf(
-			"sync API default branch %q from remote %q completed without creating the remote-tracking ref",
-			defaultBranch,
-			remote,
-		)
-	}
-	return remote + "/" + defaultBranch, nil
-}
-
-func (planner *worktreeAddPlanner) worktreeAddRequireRevision(revision string) error {
-	exists, err := planner.git.RevisionExists(
-		planner.ctx,
-		planner.repository.Path,
-		revision,
-	)
-	if err != nil {
-		return fmt.Errorf("resolve commit-ish %q: %w", revision, err)
-	}
-	if !exists {
-		return fmt.Errorf("commit-ish %q does not exist locally", revision)
-	}
-	return nil
-}
-
-func (planner *worktreeAddPlanner) worktreeAddFindRemoteBranch(
-	branch string,
-) (string, bool, error) {
-	originExists, err := planner.git.RemoteBranchExists(
-		planner.ctx,
-		planner.repository.Path,
-		"origin",
-		branch,
-	)
-	if err != nil {
-		return "", false, fmt.Errorf(
-			"inspect remote branch %q: %w",
-			"origin/"+branch,
-			err,
-		)
-	}
-	if originExists {
-		return "origin", true, nil
-	}
-
-	remotes, err := planner.worktreeAddRemotes()
-	if err != nil {
-		return "", false, err
-	}
-	matches := make([]string, 0, 1)
-	for _, remote := range remotes {
-		if remote == "origin" {
-			continue
-		}
-		exists, err := planner.git.RemoteBranchExists(
-			planner.ctx,
-			planner.repository.Path,
-			remote,
-			branch,
-		)
-		if err != nil {
-			return "", false, fmt.Errorf(
-				"inspect remote branch %q: %w",
-				remote+"/"+branch,
-				err,
-			)
-		}
-		if exists {
-			matches = append(matches, remote)
-		}
-	}
-
-	switch len(matches) {
-	case 0:
-		return "", false, nil
-	case 1:
-		return matches[0], true, nil
-	default:
-		return "", false, fmt.Errorf(
-			"remote branch %q is ambiguous across remotes: %s",
-			branch,
-			strings.Join(matches, ", "),
-		)
-	}
-}
-
-// worktreeAddSyncRemote resolves which local remote name should have a
-// tracking ref after gh repo sync brings the API default branch locally.
-func (planner *worktreeAddPlanner) worktreeAddSyncRemote() (string, error) {
-	remotes, err := planner.worktreeAddRemotes()
-	if err != nil {
-		return "", err
-	}
-	for _, remote := range remotes {
-		if remote == "origin" {
-			return remote, nil
-		}
-	}
-	switch len(remotes) {
-	case 0:
-		return "", errors.New("repository has no configured remote")
-	case 1:
-		return remotes[0], nil
-	default:
-		return "", fmt.Errorf(
-			"repository has multiple remotes and no origin (%s)",
-			strings.Join(remotes, ", "),
-		)
-	}
-}
-
-func (planner *worktreeAddPlanner) worktreeAddRemotes() ([]string, error) {
-	if planner.remotesLoaded {
-		return append([]string(nil), planner.remotes...), nil
-	}
-
-	output, err := planner.git.OutputDir(
-		planner.ctx,
-		planner.repository.Path,
-		"remote",
-	)
-	if err != nil {
-		return nil, fmt.Errorf("list repository remotes: %w", err)
-	}
-	output = bytes.TrimRight(output, "\r\n")
-	if len(output) == 0 {
-		planner.remotesLoaded = true
-		return nil, nil
-	}
-
-	rawRemotes := bytes.Split(output, []byte{'\n'})
-	remotes := make([]string, 0, len(rawRemotes))
-	seen := make(map[string]struct{}, len(rawRemotes))
-	for _, rawRemote := range rawRemotes {
-		rawRemote = bytes.TrimSuffix(rawRemote, []byte{'\r'})
-		if len(rawRemote) == 0 || bytes.IndexByte(rawRemote, 0) >= 0 {
-			return nil, errors.New("Git returned an invalid remote name")
-		}
-		remote := string(rawRemote)
-		if _, duplicate := seen[remote]; duplicate {
-			return nil, fmt.Errorf("Git returned duplicate remote %q", remote)
-		}
-		seen[remote] = struct{}{}
-		remotes = append(remotes, remote)
-	}
-	sort.Strings(remotes)
-	planner.remotes = remotes
-	planner.remotesLoaded = true
-	return append([]string(nil), remotes...), nil
+	return "refs/heads/" + defaultBranch, defaultBranch, nil
 }
 
 func worktreeAddCreateParents(
 	destination string,
 	runtime worktreeAddRuntime,
 ) ([]string, error) {
-	lstat := runtime.filesystem.Lstat
+	lstat := runtime.Filesystem.Lstat
 	if lstat == nil {
 		lstat = os.Lstat
 	}
@@ -1010,7 +663,7 @@ create:
 	created := make([]string, 0, len(missing))
 	for index := len(missing) - 1; index >= 0; index-- {
 		path := missing[index]
-		if err := runtime.mkdir(path, 0o755); err != nil {
+		if err := runtime.Mkdir(path, 0o755); err != nil {
 			if errors.Is(err, fs.ErrExist) {
 				info, lstatErr := lstat(path)
 				if lstatErr == nil &&
@@ -1040,7 +693,7 @@ func worktreeAddCleanupParents(
 	var cleanupErr error
 	for index := len(created) - 1; index >= 0; index-- {
 		path := created[index]
-		err := runtime.remove(path)
+		err := runtime.Remove(path)
 		if err == nil ||
 			errors.Is(err, fs.ErrNotExist) ||
 			errors.Is(err, syscall.ENOTEMPTY) ||
@@ -1088,13 +741,4 @@ func worktreeAddPathWithin(rootPath, destination string) bool {
 
 func worktreeAddNewUsageError(err error) error {
 	return &worktreeAddUsageError{err: err}
-}
-
-func worktreeAddWriteWarnings(writer io.Writer, warnings []local.Warning) error {
-	for _, warning := range warnings {
-		if _, err := fmt.Fprintf(writer, "gh-qw: warning: %v\n", warning); err != nil {
-			return err
-		}
-	}
-	return nil
 }

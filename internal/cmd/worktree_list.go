@@ -14,7 +14,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/daiksud/gh-qw/internal/local"
-	"github.com/daiksud/gh-qw/internal/repospec"
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
 	"github.com/spf13/cobra"
 )
@@ -48,17 +47,7 @@ type WorktreeListDependencies struct {
 	Stderr     io.Writer
 }
 
-type worktreeListUsageError struct {
-	message string
-}
-
-func (e *worktreeListUsageError) Error() string {
-	return e.message
-}
-
-func (e *worktreeListUsageError) Is(target error) bool {
-	return target == repospec.ErrUsage
-}
+type worktreeListUsageError = repositoryUsageError
 
 type worktreeListRecord struct {
 	identity       string
@@ -122,7 +111,7 @@ func NewWorktreeListCommand(deps WorktreeListDependencies) *cobra.Command {
 					Filesystem: deps.Filesystem,
 				},
 			)
-			if err := worktreeListWriteWarnings(command.ErrOrStderr(), discovery.Warnings); err != nil {
+			if err := commandWriteWarnings(command.ErrOrStderr(), discovery.Warnings); err != nil {
 				return err
 			}
 			if discoveryErr != nil {
@@ -183,7 +172,7 @@ func NewWorktreeListCommand(deps WorktreeListDependencies) *cobra.Command {
 			} else {
 				worktreeListRenderHuman(&output, records, verbose, fullPath)
 			}
-			return worktreeListWriteAll(command.OutOrStdout(), output.Bytes())
+			return commandWriteAll(command.OutOrStdout(), output.Bytes())
 		},
 	}
 
@@ -225,18 +214,6 @@ func worktreeListApplyDefaults(deps *WorktreeListDependencies) {
 	if deps.Stderr == nil {
 		deps.Stderr = os.Stderr
 	}
-}
-
-func worktreeListWriteWarnings(writer io.Writer, warnings []local.Warning) error {
-	if len(warnings) == 0 {
-		return nil
-	}
-
-	var output bytes.Buffer
-	for _, warning := range warnings {
-		_, _ = fmt.Fprintf(&output, "gh-qw: warning: %v\n", warning)
-	}
-	return worktreeListWriteAll(writer, output.Bytes())
 }
 
 func worktreeListPrepareRecords(
@@ -535,21 +512,4 @@ func worktreeListIsPrintableToken(value string) bool {
 		}
 	}
 	return true
-}
-
-func worktreeListWriteAll(writer io.Writer, data []byte) error {
-	for len(data) > 0 {
-		written, err := writer.Write(data)
-		if written < 0 || written > len(data) {
-			return io.ErrShortWrite
-		}
-		data = data[written:]
-		if err != nil {
-			return err
-		}
-		if written == 0 {
-			return io.ErrShortWrite
-		}
-	}
-	return nil
 }

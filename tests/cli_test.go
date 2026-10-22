@@ -36,11 +36,14 @@ type commandResult struct {
 }
 
 var (
-	sharedCLIOnce   sync.Once
-	sharedCLIBinary string
-	sharedCLIDir    string
-	sharedCLIError  error
-	sharedCLILog    string
+	sharedCLIOnce     sync.Once
+	sharedCLIBinary   string
+	sharedCLIDir      string
+	sharedCLIError    error
+	sharedCLILog      string
+	sharedFakeGhOnce  sync.Once
+	sharedFakeGhError error
+	sharedFakeGhLog   string
 )
 
 // TestMain keeps only the immutable executable shared across the package.
@@ -90,8 +93,6 @@ func sharedCLIExecutable(t *testing.T) string {
 
 func TestCLIRepositoryAndWorktreeLifecycle(t *testing.T) {
 	fixture := newCLIFixture(t)
-	// Retired workspace settings must not affect Git operations or their results.
-	fixture.env = append(fixture.env, "GHQW_HERDR=maybe", "HERDR_ENV=1")
 	remoteURL := fixture.createBareRemote(t, "acme", "widget")
 	fixture.seedRemote(t, remoteURL)
 
@@ -465,13 +466,13 @@ func TestCLIAPILookupsUseGHPathAndKeepStdoutPure(t *testing.T) {
 	// The explicit repository host wins over the ambient host. The local main
 	// branch supplies the start point returned by the external REST lookup.
 	env = append(env, "GH_HOST=unrelated.example.com", "GHQW_TEST_API_OUTPUT=main")
-	result = fixture.runCLIWithEnv(t, env, "worktree", "add", "-R", "ghe.example.com/octocat/widget", "feature/from-api")
+	result = fixture.runCLIWithEnv(t, env, "worktree", "add", "-R", "ghe.example.com/octocat/widget", "-b", "feature/from-api")
 	assertStatus(t, result, 0)
 	worktreePath := filepath.Join(fixture.worktreeRoot, "ghe.example.com", "octocat", "widget", "feature", "from-api")
 	assertStdout(t, result, filepath.ToSlash(worktreePath)+"\n")
 	assertContains(t, result.stderr, "fake gh: api ghe.example.com/repos/octocat/widget")
 
-	result = fixture.runCLIWithEnv(t, append(env, "GHQW_TEST_API_OUTPUT="), "worktree", "add", "-R", "ghe.example.com/octocat/widget", "feature/missing-default")
+	result = fixture.runCLIWithEnv(t, append(env, "GHQW_TEST_API_OUTPUT="), "worktree", "add", "-R", "ghe.example.com/octocat/widget", "-b", "feature/missing-default")
 	assertStatus(t, result, 1)
 	assertStdout(t, result, "")
 	assertContains(t, result.stderr, "API response did not include default_branch")
@@ -584,9 +585,10 @@ func TestCLIGetFailsClearlyWhenGhIsNotInstalled(t *testing.T) {
 // creation, or a panic.
 func TestCLIGetFailsClearlyWhenGhSubprocessFails(t *testing.T) {
 	fixture := newCLIFixture(t)
-	failingGhDir := fixture.buildFailingFakeGh(t)
+	fakeGhDir := fixture.buildFakeGh(t)
 
-	result := fixture.runCLIWithEnv(t, fixture.envWithPathPrepended(failingGhDir), "get", "acme/widget")
+	env := append(fixture.envWithPathPrepended(fakeGhDir), "GHQW_TEST_GH_FAIL=1")
+	result := fixture.runCLIWithEnv(t, env, "get", "acme/widget")
 
 	assertStatus(t, result, 1)
 	if trimmed := strings.TrimSpace(result.stdout); trimmed != "" {
@@ -649,49 +651,30 @@ func newCLIFixture(t *testing.T) *cliFixture {
 // only when those values are part of the contract under test.
 func isolatedEnvironment(fixture *cliFixture) []string {
 	blocked := map[string]struct{}{
-		"EMAIL":                   {},
-		"GH_CONFIG_DIR":           {},
-		"GH_HOST":                 {},
-		"GH_PATH":                 {},
-		"GH_ENTERPRISE_TOKEN":     {},
-		"GITHUB_ENTERPRISE_TOKEN": {},
-		"GH_TOKEN":                {},
-		"GHQ_ROOT":                {},
-		"GHQW_HERDR":              {},
-		"GHQW_ROOT":               {},
-		"GHQW_WORKTREE_ROOT":      {},
-		"GITHUB_TOKEN":            {},
-		"GIT_ALLOW_PROTOCOL":      {},
-		"GIT_AUTHOR_EMAIL":        {},
-		"GIT_AUTHOR_NAME":         {},
-		"GIT_COMMITTER_EMAIL":     {},
-		"GIT_COMMITTER_NAME":      {},
-		"GIT_CONFIG_COUNT":        {},
-		"GIT_CONFIG_GLOBAL":       {},
-		"GIT_CONFIG_NOSYSTEM":     {},
-		"GIT_CONFIG_SYSTEM":       {},
-		"GIT_DIR":                 {},
-		"HERDR_ENV":               {},
-		"GIT_TERMINAL_PROMPT":     {},
-		"GIT_WORK_TREE":           {},
-		"HOME":                    {},
-		"LANG":                    {},
-		"LC_ALL":                  {},
-		"NO_COLOR":                {},
-		"XDG_CACHE_HOME":          {},
-		"XDG_CONFIG_HOME":         {},
-		"XDG_DATA_HOME":           {},
+		"EMAIL": {}, "HOME": {}, "USERPROFILE": {}, "APPDATA": {}, "LOCALAPPDATA": {},
+		"LANG": {}, "LC_ALL": {}, "NO_COLOR": {}, "SSH_AUTH_SOCK": {}, "SSH_AGENT_PID": {},
+		"XDG_CACHE_HOME": {}, "XDG_CONFIG_HOME": {}, "XDG_DATA_HOME": {},
 	}
-	environment := make([]string, 0, len(os.Environ())+24)
+	environment := make([]string, 0, len(os.Environ())+28)
 	for _, entry := range os.Environ() {
 		key, _, _ := strings.Cut(entry, "=")
-		if _, remove := blocked[key]; !remove {
-			environment = append(environment, entry)
+		key = strings.ToUpper(key)
+		if _, remove := blocked[key]; remove {
+			continue
 		}
+		if strings.HasPrefix(key, "GIT_") || strings.HasPrefix(key, "GH_") ||
+			strings.HasPrefix(key, "GITHUB_") || strings.HasPrefix(key, "GHQ_") ||
+			strings.HasPrefix(key, "GHQW_") {
+			continue
+		}
+		environment = append(environment, entry)
 	}
 	environment = append(
 		environment,
 		"HOME="+fixture.home,
+		"USERPROFILE="+fixture.home,
+		"APPDATA="+filepath.Join(fixture.home, "xdg-config"),
+		"LOCALAPPDATA="+filepath.Join(fixture.home, "xdg-data"),
 		"XDG_CONFIG_HOME="+filepath.Join(fixture.home, "xdg-config"),
 		"XDG_DATA_HOME="+filepath.Join(fixture.home, "xdg-data"),
 		"XDG_CACHE_HOME="+filepath.Join(fixture.home, "xdg-cache"),
@@ -777,6 +760,18 @@ import (
 )
 
 func main() {
+	if os.Getenv("GHQW_TEST_GH_FAIL") == "1" {
+		fmt.Fprintln(os.Stderr, "fake-gh: simulated failure")
+		os.Exit(1)
+	}
+	if os.Getenv("GHQW_TEST_ASSERT_CLEAN_ENV") == "1" {
+		for _, key := range []string{"GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN", "GH_HOST", "GH_REPO", "GH_PATH", "GIT_DIR", "GIT_COMMON_DIR", "GIT_CONFIG_PARAMETERS", "GIT_WORK_TREE", "SSH_AUTH_SOCK"} {
+			if _, present := os.LookupEnv(key); present {
+				fmt.Fprintln(os.Stderr, "fake gh: unexpected ambient variable " + key)
+				os.Exit(1)
+			}
+		}
+	}
 	args := os.Args[1:]
 	switch {
 	case len(args) >= 2 && args[0] == "repo" && args[1] == "clone":
@@ -832,82 +827,37 @@ func cloneRepo(args []string) {
 }
 `
 
-// buildFakeGh compiles fakeGhSource into an executable named gh (gh.exe on
-// Windows) and returns the directory containing it, ready to be prepended
-// onto PATH (see envWithPathPrepended) so gh-qw's own `gh` subprocess calls
-// resolve to it instead of any real gh installed on the host running this
-// test.
+// buildFakeGh shares only the immutable fake executable. Its responses, HOME,
+// configuration, and repository state are supplied by each fixture's environment.
 func (fixture *cliFixture) buildFakeGh(t *testing.T) string {
 	t.Helper()
-
-	sourcePath := filepath.Join(t.TempDir(), "fakegh.go")
-	if err := os.WriteFile(sourcePath, []byte(fakeGhSource), 0o644); err != nil {
-		t.Fatalf("write fake gh source: %v", err)
-	}
-
-	fakeGhDir := filepath.Join(fixture.base, "fakebin")
-	if err := os.MkdirAll(fakeGhDir, 0o755); err != nil {
-		t.Fatalf("create fake gh directory: %v", err)
-	}
-	fakeGhPath := filepath.Join(fakeGhDir, "gh")
-	if runtime.GOOS == "windows" {
-		fakeGhPath += ".exe"
-	}
-	build := exec.Command("go", "build", "-o", fakeGhPath, sourcePath)
-	var buildOutput bytes.Buffer
-	build.Stdout = &buildOutput
-	build.Stderr = &buildOutput
-	if err := build.Run(); err != nil {
-		t.Fatalf("build fake gh: %v\n%s", err, buildOutput.String())
+	sharedCLIExecutable(t)
+	fakeGhDir := filepath.Join(sharedCLIDir, "fakebin")
+	sharedFakeGhOnce.Do(func() {
+		if err := os.MkdirAll(fakeGhDir, 0o755); err != nil {
+			sharedFakeGhError = err
+			return
+		}
+		sourcePath := filepath.Join(sharedCLIDir, "fakegh.go")
+		if err := os.WriteFile(sourcePath, []byte(fakeGhSource), 0o600); err != nil {
+			sharedFakeGhError = err
+			return
+		}
+		fakeGhPath := filepath.Join(fakeGhDir, "gh")
+		if runtime.GOOS == "windows" {
+			fakeGhPath += ".exe"
+		}
+		build := exec.Command("go", "build", "-o", fakeGhPath, sourcePath)
+		var output bytes.Buffer
+		build.Stdout = &output
+		build.Stderr = &output
+		sharedFakeGhError = build.Run()
+		sharedFakeGhLog = output.String()
+	})
+	if sharedFakeGhError != nil {
+		t.Fatalf("build shared fake gh: %v\n%s", sharedFakeGhError, sharedFakeGhLog)
 	}
 	return fakeGhDir
-}
-
-// failingFakeGhSource is a fake `gh` that unconditionally exits 1 with a
-// distinctive stderr message for every invocation, regardless of
-// arguments. It confirms that gh-qw surfaces subprocess failure clearly
-// instead of succeeding silently or crashing.
-const failingFakeGhSource = `package main
-
-import (
-	"fmt"
-	"os"
-)
-
-func main() {
-	fmt.Fprintln(os.Stderr, "fake-gh: simulated failure")
-	os.Exit(1)
-}
-`
-
-// buildFailingFakeGh compiles failingFakeGhSource into an executable named
-// gh (gh.exe on Windows) and returns the directory containing it, ready to
-// be prepended onto PATH (see envWithPathPrepended). It uses a separate
-// fixture subdirectory so tests can select the failing executable explicitly.
-func (fixture *cliFixture) buildFailingFakeGh(t *testing.T) string {
-	t.Helper()
-
-	sourcePath := filepath.Join(t.TempDir(), "failingfakegh.go")
-	if err := os.WriteFile(sourcePath, []byte(failingFakeGhSource), 0o644); err != nil {
-		t.Fatalf("write failing fake gh source: %v", err)
-	}
-
-	failingGhDir := filepath.Join(fixture.base, "fakebin-failing")
-	if err := os.MkdirAll(failingGhDir, 0o755); err != nil {
-		t.Fatalf("create failing fake gh directory: %v", err)
-	}
-	failingGhPath := filepath.Join(failingGhDir, "gh")
-	if runtime.GOOS == "windows" {
-		failingGhPath += ".exe"
-	}
-	build := exec.Command("go", "build", "-o", failingGhPath, sourcePath)
-	var buildOutput bytes.Buffer
-	build.Stdout = &buildOutput
-	build.Stderr = &buildOutput
-	if err := build.Run(); err != nil {
-		t.Fatalf("build failing fake gh: %v\n%s", err, buildOutput.String())
-	}
-	return failingGhDir
 }
 
 // envWithPathPrepended returns a copy of fixture.env with directory

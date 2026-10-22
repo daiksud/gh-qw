@@ -114,7 +114,7 @@ func TestNewCommandHelpAndVersionUseExtensionName(t *testing.T) {
 	}
 }
 
-func TestListHelpOmitsRemovedPicker(t *testing.T) {
+func TestListHelpShowsSupportedOptions(t *testing.T) {
 	t.Parallel()
 
 	var stdout, stderr bytes.Buffer
@@ -124,9 +124,6 @@ func TestListHelpOmitsRemovedPicker(t *testing.T) {
 	})
 	if status != 0 {
 		t.Fatalf("Execute() status = %d, want 0", status)
-	}
-	if strings.Contains(stdout.String(), "--fzf") {
-		t.Fatalf("help advertises removed flag: %s", stdout.String())
 	}
 	for _, want := range []string{"Usage:", "--full-path", "--exact", "--unique", "--worktree"} {
 		if !strings.Contains(stdout.String(), want) {
@@ -170,11 +167,11 @@ func TestExecuteMapsUsageAndRuntimeErrors(t *testing.T) {
 			wantError:  "gh-qw: unknown flag: --unknown",
 		},
 		{
-			name:       "removed fzf flag",
-			args:       []string{"list", "--fzf"},
+			name:       "unknown subcommand flag",
+			args:       []string{"list", "--unknown"},
 			resolver:   appRootResolver{result: rootpkg.Result{RepositoryRoots: []string{rootPath}}},
 			wantStatus: 2,
-			wantError:  "gh-qw: unknown flag: --fzf",
+			wantError:  "gh-qw: unknown flag: --unknown",
 		},
 		{
 			name:       "missing argument",
@@ -261,5 +258,4 @@ func (resolver appRootResolver) Resolve() (rootpkg.Result, error) {
 	return resolver.result, resolver.err
 }
 
-var _ cmd.RootResolver = appRootResolver{}
 var _ cmd.RootResolver = appRootResolver{}

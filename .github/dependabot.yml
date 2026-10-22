@@ -1,31 +1,6 @@
-# Dependabot's default `dependencies`/`javascript` labels are not part of
-# gh-qw's Conventional Commits label vocabulary (see ADR-0011 and the
-# versioning reference at docs/reference/versioning/#labels). The documented
-# `labels: []` opt-out is currently ignored by GitHub's hosted Dependabot
-# service (dependabot/dependabot-core#11783), which recreates those labels.
-# Use the same explicit labels that `.github/labeler.yml` derives from each
-# branch prefix as a workaround. They are declared in `.github/settings.yml`,
-# so Dependabot and labeler converge on the same final label set. Return to
-# `labels: []` when the upstream regression is fixed.
-#
-# `commit-message.prefix` and `pull-request-branch-name.prefix` are set to
-# the same Conventional Commits type per ecosystem so that labeler's
-# branch-name rule and path rule agree on the same label: `build/...` (gomod,
-# npm) and `ci/...` (github-actions) land on `build` and `ci` respectively —
-# neither matches any of the six branch-derived, version-affecting labels, so
-# a dependency update cannot affect the computed release version.
-# `commit-message.include: "scope"` adds `(deps)`/`(deps-dev)` after the
-# prefix so every generated title is fully Conventional Commits-compliant
-# (for example, `build(deps): bump ...`).
-#
-# `prefix-development` (npm-only, lets development-dependency commits use a
-# different prefix such as `chore`) is deliberately NOT used: it only affects
-# the commit message, not `pull-request-branch-name.prefix` — Dependabot can
-# only ever request one branch prefix per ecosystem — so a `chore(deps-dev)`
-# title would still land on a `build/...` branch carrying the `build` label,
-# reintroducing the same type/label mismatch the per-ecosystem prefixes exist
-# to avoid. The production/development distinction is preserved through the
-# `(deps)`/`(deps-dev)` scope instead.
+# Dependabot supplies initial maintenance labels and Conventional Commit types.
+# Branch names are unrestricted and do not determine release classifications.
+# Reviewers can change PR types or add version labels when warranted.
 version: 2
 updates:
   - package-ecosystem: "gomod"
@@ -36,8 +11,6 @@ updates:
     commit-message:
       prefix: "build"
       include: "scope"
-    pull-request-branch-name:
-      prefix: "build"
 
   - package-ecosystem: "npm"
     directory: "/.pages"
@@ -56,8 +29,6 @@ updates:
     commit-message:
       prefix: "build"
       include: "scope"
-    pull-request-branch-name:
-      prefix: "build"
 
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -67,5 +38,3 @@ updates:
     commit-message:
       prefix: "ci"
       include: "scope"
-    pull-request-branch-name:
-      prefix: "ci"

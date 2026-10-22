@@ -169,17 +169,6 @@ type getFlags struct {
 	partial     string
 }
 
-type getResolvedDependencies struct {
-	rootResolver     RootResolver
-	gitFactory       GetGitFactory
-	mkdirAll         func(string, fs.FileMode) error
-	discover         GetDiscoverFunc
-	identityResolver GetIdentityResolver
-	isTerminal       GetTerminalDetector
-	warningSink      local.WarningSink
-	workingDir       string
-}
-
 type getTarget struct {
 	exists     bool
 	repository local.Repository
@@ -234,7 +223,8 @@ func (w *getLockedWriter) PassthroughFile() *os.File {
 
 // NewGetCommand returns the repository acquisition command.
 func NewGetCommand(deps GetDependencies) *cobra.Command {
-	resolved, stdin, stdout, stderr := getResolveDependencies(deps)
+	resolved := getResolveDependencies(deps)
+	stdin, stdout, stderr := resolved.Stdin, resolved.Stdout, resolved.Stderr
 	flags := getFlags{}
 
 	command := &cobra.Command{
@@ -260,7 +250,7 @@ func NewGetCommand(deps GetDependencies) *cobra.Command {
 			inputs, err := getRepositoryInputs(
 				command.InOrStdin(),
 				args,
-				resolved.isTerminal,
+				resolved.IsTerminal,
 			)
 			if err != nil {
 				return err
@@ -270,10 +260,7 @@ func NewGetCommand(deps GetDependencies) *cobra.Command {
 			}
 
 			diagnostic := &getLockedWriter{writer: command.ErrOrStderr(), passthrough: !flags.parallel}
-			warn := resolved.warningSink
-			if warn == nil {
-				warn = getStderrWarningSink(diagnostic)
-			}
+			warn := resolved.WarningSink
 
 			if flags.parallel {
 				return getRunParallel(
@@ -318,65 +305,33 @@ func NewGetCommand(deps GetDependencies) *cobra.Command {
 	return command
 }
 
-func getResolveDependencies(
-	deps GetDependencies,
-) (getResolvedDependencies, io.Reader, io.Writer, io.Writer) {
-	stdin := deps.Stdin
-	if stdin == nil {
-		stdin = os.Stdin
+func getResolveDependencies(deps GetDependencies) GetDependencies {
+	deps.Stdin = commandStdin(deps.Stdin)
+	deps.Stdout = commandStdout(deps.Stdout)
+	deps.Stderr = commandStderr(deps.Stderr)
+	if deps.RootResolver == nil {
+		deps.RootResolver = rootpkg.NewResolver()
 	}
-	stdout := deps.Stdout
-	if stdout == nil {
-		stdout = os.Stdout
+	if deps.IsTerminal == nil {
+		deps.IsTerminal = getIsTerminal
 	}
-	stderr := deps.Stderr
-	if stderr == nil {
-		stderr = os.Stderr
-	}
-
-	rootResolver := deps.RootResolver
-	if rootResolver == nil {
-		rootResolver = rootpkg.NewResolver()
-	}
-	isTerminal := deps.IsTerminal
-	if isTerminal == nil {
-		isTerminal = getIsTerminal
-	}
-	gitFactory := deps.GitFactory
-	if gitFactory == nil {
-		gitFactory = func(stdout, stderr io.Writer) GetGitOperations {
-			runner := ghcmd.Runner{
-				Stdout: stdout,
-				Stderr: stderr,
-			}
-			return &runner
+	if deps.GitFactory == nil {
+		deps.GitFactory = func(stdout, stderr io.Writer) GetGitOperations {
+			return &ghcmd.Runner{Stdout: stdout, Stderr: stderr}
 		}
 	}
-	mkdirAll := deps.MkdirAll
-	if mkdirAll == nil {
-		mkdirAll = os.MkdirAll
+	if deps.MkdirAll == nil {
+		deps.MkdirAll = os.MkdirAll
 	}
-	discover := deps.Discover
-	if discover == nil {
-		discover = func(ctx context.Context, roots []string) (local.DiscoveryResult, error) {
+	if deps.Discover == nil {
+		deps.Discover = func(ctx context.Context, roots []string) (local.DiscoveryResult, error) {
 			return local.DiscoverRepositories(ctx, roots)
 		}
 	}
-	identityResolver := deps.IdentityResolver
-	if identityResolver == nil {
-		identityResolver = ghapi.NewClient(stderr)
+	if deps.IdentityResolver == nil {
+		deps.IdentityResolver = ghapi.NewClient(deps.Stderr)
 	}
-
-	return getResolvedDependencies{
-		rootResolver:     rootResolver,
-		gitFactory:       gitFactory,
-		mkdirAll:         mkdirAll,
-		discover:         discover,
-		identityResolver: identityResolver,
-		isTerminal:       isTerminal,
-		warningSink:      deps.WarningSink,
-		workingDir:       deps.WorkingDir,
-	}, stdin, stdout, stderr
+	return deps
 }
 
 func getRunOrdered(
@@ -384,7 +339,7 @@ func getRunOrdered(
 	inputs []string,
 	flags getFlags,
 	filter ghcmd.PartialFilter,
-	deps getResolvedDependencies,
+	deps GetDependencies,
 	warn local.WarningSink,
 	stdout, stderr io.Writer,
 ) error {
@@ -396,7 +351,7 @@ func getRunOrdered(
 			return getUsageError(err)
 		}
 		if roots == nil {
-			roots, err = getResolveRoots(deps.rootResolver)
+			roots, err = getResolveRoots(deps.RootResolver)
 			if err != nil {
 				return err
 			}
@@ -409,11 +364,13 @@ func getRunOrdered(
 			return err
 		}
 		if states == nil {
-			discovery, err := deps.discover(ctx, roots)
+			discovery, err := deps.Discover(ctx, roots)
 			if err != nil {
 				return fmt.Errorf("discover existing repositories: %w", err)
 			}
-			getEmitDiscoveryWarnings(discovery.Warnings, warn)
+			if err := getEmitDiscoveryWarnings(discovery.Warnings, warn, stderr); err != nil {
+				return fmt.Errorf("write discovery warning: %w", err)
+			}
 			states = getInitialTargetStates(discovery.Repositories)
 		}
 
@@ -445,7 +402,7 @@ func getRunParallel(
 	inputs []string,
 	flags getFlags,
 	filter ghcmd.PartialFilter,
-	deps getResolvedDependencies,
+	deps GetDependencies,
 	warn local.WarningSink,
 	stdout, stderr io.Writer,
 ) error {
@@ -462,7 +419,7 @@ func getRunParallel(
 			continue
 		}
 		if roots == nil {
-			roots, err = getResolveRoots(deps.rootResolver)
+			roots, err = getResolveRoots(deps.RootResolver)
 			if err != nil {
 				aggregate.runtimeErrors = append(aggregate.runtimeErrors, err)
 				return aggregate
@@ -488,7 +445,7 @@ func getRunParallel(
 		return nil
 	}
 
-	discovery, err := deps.discover(ctx, roots)
+	discovery, err := deps.Discover(ctx, roots)
 	if err != nil {
 		aggregate.runtimeErrors = append(
 			aggregate.runtimeErrors,
@@ -496,7 +453,10 @@ func getRunParallel(
 		)
 		return aggregate
 	}
-	getEmitDiscoveryWarnings(discovery.Warnings, warn)
+	if err := getEmitDiscoveryWarnings(discovery.Warnings, warn, stderr); err != nil {
+		aggregate.runtimeErrors = append(aggregate.runtimeErrors, fmt.Errorf("write discovery warning: %w", err))
+		return aggregate
+	}
 
 	states := getInitialTargetStates(discovery.Repositories)
 	previous := make(map[string]<-chan struct{})
@@ -599,19 +559,19 @@ func getResolveRepository(
 	parsed repospec.Input,
 	roots []string,
 	ssh bool,
-	deps getResolvedDependencies,
+	deps GetDependencies,
 ) (repospec.Spec, error) {
 	return parsed.Resolve(ctx, repospec.Options{
 		DefaultHost: os.Getenv("GH_HOST"),
 		SSH:         ssh,
 		Roots:       roots,
-		WorkingDir:  deps.workingDir,
+		WorkingDir:  deps.WorkingDir,
 		// get clones through `gh repo clone`, which never accepts a file://
 		// URL, so file:// input is rejected here rather than failing later
 		// as an opaque gh error.
 		RejectFileScheme: true,
 		ResolveIdentity: func() (string, string, error) {
-			identity, err := deps.identityResolver.ResolveIdentity(ctx)
+			identity, err := deps.IdentityResolver.ResolveIdentity(ctx)
 			if err != nil {
 				return "", "", err
 			}
@@ -671,7 +631,7 @@ func getAcquire(
 	state *getTarget,
 	flags getFlags,
 	filter ghcmd.PartialFilter,
-	deps getResolvedDependencies,
+	deps GetDependencies,
 	stderr io.Writer,
 ) (string, error) {
 	if err := ctx.Err(); err != nil {
@@ -694,7 +654,7 @@ func getAcquire(
 			return "", fmt.Errorf("revalidate existing repository containment: %w", err)
 		}
 
-		git, err := getGitOperations(deps.gitFactory, stderr, flags.silent || flags.parallel)
+		git, err := getGitOperations(deps.GitFactory, stderr, flags.silent || flags.parallel)
 		if err != nil {
 			return "", err
 		}
@@ -725,7 +685,7 @@ func getAcquire(
 	if err != nil {
 		return "", fmt.Errorf("revalidate clone parent containment: %w", err)
 	}
-	if err := deps.mkdirAll(parent, 0o755); err != nil {
+	if err := deps.MkdirAll(parent, 0o755); err != nil {
 		return "", fmt.Errorf("create clone parent %q: %w", parent, err)
 	}
 	path, err = rootpkg.PhysicalizeTarget(
@@ -741,7 +701,7 @@ func getAcquire(
 	if spec.Branch != "" {
 		branch = spec.Branch
 	}
-	git, err := getGitOperations(deps.gitFactory, stderr, flags.silent || flags.parallel)
+	git, err := getGitOperations(deps.GitFactory, stderr, flags.silent || flags.parallel)
 	if err != nil {
 		return "", err
 	}
@@ -860,16 +820,14 @@ func getWritePath(output io.Writer, path string) error {
 	return nil
 }
 
-func getEmitDiscoveryWarnings(warnings []local.Warning, sink local.WarningSink) {
+func getEmitDiscoveryWarnings(warnings []local.Warning, sink local.WarningSink, writer io.Writer) error {
+	if sink == nil {
+		return commandWriteWarnings(writer, warnings)
+	}
 	for _, warning := range warnings {
 		sink(warning)
 	}
-}
-
-func getStderrWarningSink(stderr io.Writer) local.WarningSink {
-	return func(warning local.Warning) {
-		_, _ = fmt.Fprintf(stderr, "gh-qw: warning: %v\n", warning)
-	}
+	return nil
 }
 
 // getStderrOutputter is satisfied by errors that retain a bounded stderr

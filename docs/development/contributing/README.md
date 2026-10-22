@@ -18,39 +18,51 @@ Keep changes focused and preserve the contracts in the [concept](../../concept/)
 [ADR template](../adr/template/). While the project is `0.y.z`, revise accepted ADRs in place when
 their decisions change; after `1.0.0`, follow ADR-0001's superseding policy.
 
-## Branch names, commits, and labels
+## Pull request types and labels
 
-Name every branch and write every commit header with a
-[Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) type from
-[`@commitlint/config-conventional`](https://github.com/conventional-changelog/commitlint/blob/master/%40commitlint/config-conventional/README.md):
-`feat`, `fix`, `perf`, `revert`, `docs`, `refactor`, `style`, `test`, `build`, `ci`, or `chore`. A
-branch starts with that type as its prefix — `feat/short-description`, `fix/short-description`, and
-so on — so the type is visible before the branch is even opened.
+PR titles and commit headers follow [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/).
+Use the `@commitlint/config-conventional` types: `feat`, `fix`, `perf`, `revert`,
+`docs`, `refactor`, `style`, `test`, `build`, `ci`, and `chore`.
 
-A breaking change or a deprecation has no dedicated type; declare it in a commit footer instead, on
-top of whichever type describes the actual change. For `feat`, `perf`, and `fix`, put the matching
-exception prefix before the type so label automation can apply both labels:
+**Branch names are unrestricted.** They never determine the PR type, its labels, or
+the release version. Reviewers and authors may revise the PR title and labels
+without renaming a branch.
 
-| Footer | Branch prefix | Labels |
-| --- | --- |
-| `BREAKING CHANGE: <summary>` | `breaking-change/{feat,perf,fix}/short-description` | `BREAKING CHANGE` + type |
-| `DEPRECATED: <what is deprecated>` | `deprecated/{feat,perf,fix}/short-description` | `DEPRECATED` + type |
+Choose the type from actual user impact: `feat` and `fix` refer to gh-qw
+functionality and bugs, not to CI, docs tooling, or test changes. Reviewers
+check that the chosen type matches the change. Keep the final squash commit
+consistent with the reviewed PR and preserve meaningful commit footers.
 
-The type segment is required. Bare `breaking-change/` or `deprecated/` branches, combinations with
-other types, and stacked exception prefixes are invalid and receive no version-affecting label.
-When both labels are present, `BREAKING CHANGE` takes precedence for release notes and version
-calculation. The branch must still contain the matching footer in at least one commit.
+The six version-affecting labels (`BREAKING CHANGE`, `DEPRECATED`, `feat`,
+`perf`, `fix`, and `revert`) are reviewed metadata, editable directly at
+any time. For a public API break or deprecation, apply the corresponding
+label alongside the type and preserve `BREAKING CHANGE:` or `DEPRECATED:`
+footers describing impact and migration. No branch prefix is required.
 
-A GitHub Actions labeler applies labels automatically from the pull request's branch name and, for
-a few non-version-affecting types, from its changed file paths. Do not hand-edit a
-version-affecting label (`BREAKING CHANGE`, `DEPRECATED`, `feat`, `perf`, `fix`, `revert`) — it is
-resynchronized from the branch name on every push, so a mismatched branch name needs a rename, not
-a label edit.
+A labeler automatically **adds only** `docs`, `test`, `build`, and `ci`
+when every changed file matches one unambiguous path category. It does not
+remove manually adjusted labels and does not infer user-visible semantics.
+Authors and reviewers remove stale path labels when a PR changes scope.
 
-Every merged pull request's label feeds both the generated release notes and a tag-verification
-job that computes the next release version from those labels and fails the release if a pushed tag
-does not match. See the [versioning reference](../../reference/versioning/) for the full public API
-declaration, the `0.y.z` version-selection rule, and the exhaustive label table.
+## Release a version
+
+After reviewing labels on merged PRs, manually run the Release workflow from
+`main`:
+
+```console
+$ gh workflow run release.yml --ref main
+```
+
+No version input is needed. The workflow selects the next version from the
+latest published stable release and the reviewed labels of merged PRs, then
+validates one captured `main` commit with full CI and builds all five
+platform binaries. Only after both succeed does it create a tag and publish a
+GitHub Release. **Pushing a tag does not trigger a release.**
+
+A preparation, test, or build failure leaves no tag. Final publication is
+not atomic: an API error during tag/release creation may leave a tag or draft.
+Inspect the remote state before retrying. Published releases are immutable.
+See the [versioning reference](../../reference/versioning/) for detailed rules.
 
 ## Repository settings
 
@@ -82,7 +94,7 @@ output before running `apply`. See the
 Dependabot pull requests are enabled for squash auto-merge by
 `.github/workflows/dependabot-auto-merge.yml`. The `CI success` status check is required by the
 default branch ruleset, so a dependency update cannot merge when the Go checks, Astro validation,
-runtime smoke test, or settings validation fails. The auto-merge workflow is deliberately
+runtime smoke test, settings validation, or release-preparation tests fail. The auto-merge workflow is deliberately
 separate from the validation workflow and does not check out pull request code.
 
 When changing the required workflow context, merge the workflow change before applying the
@@ -90,12 +102,36 @@ corresponding settings manifest. After the new context exists on `main`, run `gh
 `gh infra apply` locally. Existing Dependabot pull requests may need a rebase to report the new
 context.
 
+## Command composition and boundaries
+
+`internal/cmd/app.go` composes the production command tree with shared root resolution,
+Git/gh capabilities, API access, and streams. Each command receives only its own narrow
+capabilities. Standalone constructors retain injectable seams for focused tests; do not add a
+second private copy of an existing dependency struct or a fake-only execution path.
+
+Keep argument validation ahead of configuration reads, discovery, and network work. Use the
+shared usage-error and output helpers in `internal/cmd/runtime_support.go` without losing wrapped
+domain errors. Stdout is reserved for result data, while warnings and child diagnostics use
+stderr. A failed discovery-warning write stops the command before mutation. An output failure
+after a successful operation reports that failure without undoing the completed operation.
+
+Test these contracts through commands and their observable results: exit classification,
+stdout/stderr, and filesystem or subprocess effects. Keep removal observation, revalidation,
+and partial-failure policy with their existing owners rather than reproducing them in new
+composition or formatting helpers.
+
 ## Validate changes
 
 Run the relevant Go checks from the repository root:
 
 ```console
 $ go test ./...
+```
+
+For release automation changes, also run the offline tests:
+
+```console
+$ bash .github/scripts/prepare-release.test.sh
 ```
 
 For documentation-site changes, use Node.js and pnpm:

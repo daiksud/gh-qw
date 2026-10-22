@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -13,7 +12,6 @@ import (
 	"github.com/daiksud/gh-qw/internal/local"
 	"github.com/daiksud/gh-qw/internal/physicalpath"
 	"github.com/daiksud/gh-qw/internal/removal"
-	"github.com/daiksud/gh-qw/internal/repospec"
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
 	"github.com/spf13/cobra"
 )
@@ -126,27 +124,7 @@ type worktreeRemoveRequest struct {
 	yes         bool
 }
 
-type worktreeRemoveUsageError struct {
-	err error
-}
-
-func (err *worktreeRemoveUsageError) Error() string {
-	if err == nil || err.err == nil {
-		return repospec.ErrUsage.Error()
-	}
-	return err.err.Error()
-}
-
-func (err *worktreeRemoveUsageError) Unwrap() error {
-	if err == nil {
-		return nil
-	}
-	return err.err
-}
-
-func (err *worktreeRemoveUsageError) Is(target error) bool {
-	return target == repospec.ErrUsage
-}
+type worktreeRemoveUsageError = repositoryUsageError
 
 // NewWorktreeRemoveCommand returns the command that removes one deterministic
 // linked worktree or safely plans removal of all gone-upstream worktrees.
@@ -338,7 +316,7 @@ func worktreeRemoveRun(
 			Filesystem: commandRuntime.filesystem,
 		},
 	)
-	warningErr := worktreeRemoveWriteWarnings(commandRuntime.stderr, discovery.Warnings)
+	warningErr := commandWriteWarnings(commandRuntime.stderr, discovery.Warnings)
 	if discoveryErr != nil || warningErr != nil {
 		return errors.Join(
 			worktreeRemoveWrapError("discover repositories", discoveryErr),
@@ -538,27 +516,11 @@ func worktreeRemoveValidateResolved(
 	}
 }
 
-func worktreeRemoveWriteWarnings(writer io.Writer, warnings []local.Warning) error {
-	if len(warnings) == 0 {
-		return nil
-	}
-
-	var output bytes.Buffer
-	for _, warning := range warnings {
-		_, _ = fmt.Fprintf(&output, "gh-qw: warning: %v\n", warning)
-	}
-	return worktreeRemoveWriteAll(writer, output.Bytes())
-}
-
 func worktreeRemoveWriteDiagnostic(writer io.Writer, normalizedPath string) error {
-	return worktreeRemoveWriteAll(
+	return commandWriteAll(
 		writer,
 		[]byte(fmt.Sprintf("removed worktree %s\n", normalizedPath)),
 	)
-}
-
-func worktreeRemoveWriteAll(writer io.Writer, data []byte) error {
-	return removeWriteAll(writer, data)
 }
 
 func worktreeRemoveNewUsageError(err error) error {
