@@ -16,7 +16,6 @@ import (
 	"github.com/daiksud/gh-qw/internal/ghcmd"
 	"github.com/daiksud/gh-qw/internal/gitcmd"
 	"github.com/daiksud/gh-qw/internal/local"
-	"github.com/daiksud/gh-qw/internal/repospec"
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
 	"github.com/spf13/cobra"
 )
@@ -99,51 +98,7 @@ const (
 	worktreeAddModeOrphan
 )
 
-type worktreeAddRuntime struct {
-	resolver RootResolver
-	discover func(
-		context.Context,
-		[]string,
-		...local.DiscoveryOptions,
-	) (local.DiscoveryResult, error)
-	current func(
-		context.Context,
-		string,
-		string,
-		[]local.Repository,
-		...local.CurrentOptions,
-	) (local.Current, error)
-	enumerate func(
-		context.Context,
-		local.Repository,
-		string,
-		...local.WorktreeOptions,
-	) ([]local.Worktree, error)
-	validateDestination func(
-		context.Context,
-		string,
-		local.Repository,
-		string,
-		[]local.Worktree,
-		...local.DestinationOptions,
-	) (string, error)
-	validateAssociation func(
-		context.Context,
-		local.Repository,
-		local.Worktree,
-		string,
-		...local.AssociationOptions,
-	) error
-	git        WorktreeAddGit
-	gh         WorktreeAddGh
-	api        WorktreeAddAPI
-	filesystem local.FilesystemOptions
-	getwd      func() (string, error)
-	mkdir      func(string, fs.FileMode) error
-	remove     func(string) error
-	stdout     io.Writer
-	stderr     io.Writer
-}
+type worktreeAddRuntime = WorktreeAddDependencies
 
 type worktreeAddRequest struct {
 	selector    string
@@ -157,32 +112,11 @@ type worktreeAddRequest struct {
 type worktreeAddPlanner struct {
 	ctx        context.Context
 	git        WorktreeAddGit
-	gh         WorktreeAddGh
 	api        WorktreeAddAPI
 	repository local.Repository
 }
 
-type worktreeAddUsageError struct {
-	err error
-}
-
-func (err *worktreeAddUsageError) Error() string {
-	if err == nil || err.err == nil {
-		return repospec.ErrUsage.Error()
-	}
-	return err.err.Error()
-}
-
-func (err *worktreeAddUsageError) Unwrap() error {
-	if err == nil {
-		return nil
-	}
-	return err.err
-}
-
-func (err *worktreeAddUsageError) Is(target error) bool {
-	return target == repospec.ErrUsage
-}
+type worktreeAddUsageError = repositoryUsageError
 
 // NewWorktreeAddCommand returns the command that creates one deterministic
 // linked worktree.
@@ -266,90 +200,56 @@ func NewWorktreeAddCommand(dependencies WorktreeAddDependencies) *cobra.Command 
 	flags.BoolVar(&detachMode, "detach", false, "Create a detached worktree")
 	flags.BoolVar(&orphanMode, "orphan", false, "Create an unborn orphan branch")
 	flags.BoolVarP(&force, "force", "f", false, "Override Git checkout safety")
-	command.SetOut(runtime.stdout)
-	command.SetErr(runtime.stderr)
+	command.SetOut(runtime.Stdout)
+	command.SetErr(runtime.Stderr)
 
 	return command
 }
 
-func worktreeAddPrepareRuntime(dependencies WorktreeAddDependencies) worktreeAddRuntime {
-	stdout := dependencies.Stdout
-	if stdout == nil {
-		stdout = os.Stdout
+func worktreeAddPrepareRuntime(deps WorktreeAddDependencies) worktreeAddRuntime {
+	deps.Stdout = commandStdout(deps.Stdout)
+	deps.Stderr = commandStderr(deps.Stderr)
+	if deps.Resolver == nil {
+		deps.Resolver = rootpkg.NewResolver()
 	}
-	stderr := dependencies.Stderr
-	if stderr == nil {
-		stderr = os.Stderr
-	}
-
-	resolver := dependencies.Resolver
-	if resolver == nil {
-		resolver = rootpkg.NewResolver()
-	}
-	git := dependencies.Git
-	if git == nil {
-		git = &gitcmd.Runner{
+	if deps.Git == nil {
+		deps.Git = &gitcmd.Runner{
 			Executable: "git",
 			Stdout:     io.Discard,
-			Stderr:     stderr,
+			Stderr:     deps.Stderr,
 		}
 	}
-	gh := dependencies.Gh
-	if gh == nil {
-		gh = &ghcmd.Runner{
-			Stdout: io.Discard,
-			Stderr: stderr,
-		}
+	if deps.Gh == nil {
+		deps.Gh = &ghcmd.Runner{Stdout: io.Discard, Stderr: deps.Stderr}
 	}
-	apiClient := dependencies.API
-	if apiClient == nil {
-		apiClient = ghapi.NewClient(stderr)
+	if deps.API == nil {
+		deps.API = ghapi.NewClient(deps.Stderr)
 	}
-	if dependencies.Discover == nil {
-		dependencies.Discover = local.DiscoverRepositories
+	if deps.Discover == nil {
+		deps.Discover = local.DiscoverRepositories
 	}
-	if dependencies.Current == nil {
-		dependencies.Current = local.DiscoverCurrent
+	if deps.Current == nil {
+		deps.Current = local.DiscoverCurrent
 	}
-	if dependencies.Enumerate == nil {
-		dependencies.Enumerate = local.EnumerateWorktrees
+	if deps.Enumerate == nil {
+		deps.Enumerate = local.EnumerateWorktrees
 	}
-	if dependencies.ValidateDestination == nil {
-		dependencies.ValidateDestination = local.ValidateWorktreeDestination
+	if deps.ValidateDestination == nil {
+		deps.ValidateDestination = local.ValidateWorktreeDestination
 	}
-	if dependencies.ValidateAssociation == nil {
-		dependencies.ValidateAssociation = local.ValidateWorktreeAssociation
+	if deps.ValidateAssociation == nil {
+		deps.ValidateAssociation = local.ValidateWorktreeAssociation
 	}
-
-	getwd := dependencies.Getwd
-	if getwd == nil {
-		getwd = os.Getwd
+	if deps.Getwd == nil {
+		deps.Getwd = os.Getwd
 	}
-	mkdir := dependencies.Mkdir
-	if mkdir == nil {
-		mkdir = os.Mkdir
+	if deps.Mkdir == nil {
+		deps.Mkdir = os.Mkdir
 	}
-	remove := dependencies.Remove
-	if remove == nil {
-		remove = os.Remove
+	if deps.Remove == nil {
+		deps.Remove = os.Remove
 	}
-	return worktreeAddRuntime{
-		resolver:            resolver,
-		discover:            dependencies.Discover,
-		current:             dependencies.Current,
-		enumerate:           dependencies.Enumerate,
-		git:                 git,
-		gh:                  gh,
-		api:                 apiClient,
-		filesystem:          dependencies.Filesystem,
-		getwd:               getwd,
-		mkdir:               mkdir,
-		remove:              remove,
-		stdout:              stdout,
-		stderr:              stderr,
-		validateDestination: dependencies.ValidateDestination,
-		validateAssociation: dependencies.ValidateAssociation,
-	}
+	return deps
 }
 
 func worktreeAddRun(
@@ -357,20 +257,20 @@ func worktreeAddRun(
 	runtime worktreeAddRuntime,
 	request worktreeAddRequest,
 ) error {
-	roots, err := runtime.resolver.Resolve()
+	roots, err := runtime.Resolver.Resolve()
 	if err != nil {
 		return fmt.Errorf("resolve roots: %w", err)
 	}
 
-	discovery, err := runtime.discover(
+	discovery, err := runtime.Discover(
 		ctx,
 		roots.RepositoryRoots,
 		local.DiscoveryOptions{
-			Git:        runtime.git,
-			Filesystem: runtime.filesystem,
+			Git:        runtime.Git,
+			Filesystem: runtime.Filesystem,
 		},
 	)
-	if writeErr := worktreeAddWriteWarnings(runtime.stderr, discovery.Warnings); writeErr != nil {
+	if writeErr := commandWriteWarnings(runtime.Stderr, discovery.Warnings); writeErr != nil {
 		return fmt.Errorf("write discovery warning: %w", writeErr)
 	}
 	if err != nil {
@@ -389,13 +289,13 @@ func worktreeAddRun(
 		return err
 	}
 
-	worktrees, err := runtime.enumerate(
+	worktrees, err := runtime.Enumerate(
 		ctx,
 		repository,
 		roots.WorktreeRoot,
 		local.WorktreeOptions{
-			Lister:     runtime.git,
-			Filesystem: runtime.filesystem,
+			Lister:     runtime.Git,
+			Filesystem: runtime.Filesystem,
 		},
 	)
 	if err != nil {
@@ -413,13 +313,13 @@ func worktreeAddRun(
 	if err != nil {
 		return fmt.Errorf("derive worktree destination: %w", err)
 	}
-	destination, err := runtime.validateDestination(
+	destination, err := runtime.ValidateDestination(
 		ctx,
 		roots.WorktreeRoot,
 		repository,
 		request.branch,
 		worktrees,
-		local.DestinationOptions{Filesystem: runtime.filesystem},
+		local.DestinationOptions{Filesystem: runtime.Filesystem},
 	)
 	if err != nil {
 		return fmt.Errorf("validate worktree destination: %w", err)
@@ -446,9 +346,8 @@ func worktreeAddRun(
 
 	planner := &worktreeAddPlanner{
 		ctx:        ctx,
-		git:        runtime.git,
-		gh:         runtime.gh,
-		api:        runtime.api,
+		git:        runtime.Git,
+		api:        runtime.API,
 		repository: repository,
 	}
 	options, syncBranch, err := planner.worktreeAddPlan(request, destination)
@@ -468,7 +367,7 @@ func worktreeAddRun(
 		return errors.Join(operationErr, cleanupErr)
 	}
 
-	lstat := runtime.filesystem.Lstat
+	lstat := runtime.Filesystem.Lstat
 	if lstat == nil {
 		lstat = os.Lstat
 	}
@@ -492,7 +391,7 @@ func worktreeAddRun(
 	// default branch. Perform synchronization after destination validation
 	// and re-observe the resulting local branch using Git.
 	if syncBranch != "" {
-		if err := runtime.gh.RepoSync(
+		if err := runtime.Gh.RepoSync(
 			ctx, repository.Path, ghcmd.SyncOptions{
 				Host:   repository.Host,
 				Source: repository.Owner + "/" + repository.Repo,
@@ -501,7 +400,7 @@ func worktreeAddRun(
 		); err != nil {
 			return worktreeAddFailure(fmt.Errorf("sync API default branch %q: %w", syncBranch, err))
 		}
-		exists, err := runtime.git.LocalBranchExists(ctx, repository.Path, syncBranch)
+		exists, err := runtime.Git.LocalBranchExists(ctx, repository.Path, syncBranch)
 		if err != nil {
 			return worktreeAddFailure(fmt.Errorf("inspect synchronized default branch %q: %w", syncBranch, err))
 		}
@@ -510,7 +409,7 @@ func worktreeAddRun(
 		}
 	}
 
-	if err := runtime.git.WorktreeAdd(ctx, repository.Path, options); err != nil {
+	if err := runtime.Git.WorktreeAdd(ctx, repository.Path, options); err != nil {
 		return worktreeAddFailure(fmt.Errorf(
 			"add worktree for %q at %q: %w",
 			repository.Identity,
@@ -519,13 +418,13 @@ func worktreeAddRun(
 		))
 	}
 
-	registered, err := runtime.enumerate(
+	registered, err := runtime.Enumerate(
 		ctx,
 		repository,
 		roots.WorktreeRoot,
 		local.WorktreeOptions{
-			Lister:     runtime.git,
-			Filesystem: runtime.filesystem,
+			Lister:     runtime.Git,
+			Filesystem: runtime.Filesystem,
 		},
 	)
 	if err != nil {
@@ -559,14 +458,14 @@ func worktreeAddRun(
 			err,
 		))
 	}
-	if err := runtime.validateAssociation(
+	if err := runtime.ValidateAssociation(
 		ctx,
 		repository,
 		added,
 		roots.WorktreeRoot,
 		local.AssociationOptions{
-			Git:        runtime.git,
-			Filesystem: runtime.filesystem,
+			Git:        runtime.Git,
+			Filesystem: runtime.Filesystem,
 		},
 	); err != nil {
 		return worktreeAddFailure(fmt.Errorf(
@@ -576,7 +475,7 @@ func worktreeAddRun(
 		))
 	}
 
-	if _, err := fmt.Fprintln(runtime.stdout, local.NormalizePathForOutput(destination)); err != nil {
+	if err := commandWriteAll(runtime.Stdout, []byte(local.NormalizePathForOutput(destination)+"\n")); err != nil {
 		return worktreeAddFailure(fmt.Errorf("write worktree path: %w", err))
 	}
 
@@ -601,18 +500,18 @@ func worktreeAddSelectRepository(
 		return repository, nil
 	}
 
-	cwd, err := runtime.getwd()
+	cwd, err := runtime.Getwd()
 	if err != nil {
 		return local.Repository{}, fmt.Errorf("get current directory: %w", err)
 	}
-	current, err := runtime.current(
+	current, err := runtime.Current(
 		ctx,
 		cwd,
 		worktreeRoot,
 		repositories,
 		local.CurrentOptions{
-			Git:        runtime.git,
-			Filesystem: runtime.filesystem,
+			Git:        runtime.Git,
+			Filesystem: runtime.Filesystem,
 		},
 	)
 	if err != nil {
@@ -722,7 +621,7 @@ func worktreeAddCreateParents(
 	destination string,
 	runtime worktreeAddRuntime,
 ) ([]string, error) {
-	lstat := runtime.filesystem.Lstat
+	lstat := runtime.Filesystem.Lstat
 	if lstat == nil {
 		lstat = os.Lstat
 	}
@@ -764,7 +663,7 @@ create:
 	created := make([]string, 0, len(missing))
 	for index := len(missing) - 1; index >= 0; index-- {
 		path := missing[index]
-		if err := runtime.mkdir(path, 0o755); err != nil {
+		if err := runtime.Mkdir(path, 0o755); err != nil {
 			if errors.Is(err, fs.ErrExist) {
 				info, lstatErr := lstat(path)
 				if lstatErr == nil &&
@@ -794,7 +693,7 @@ func worktreeAddCleanupParents(
 	var cleanupErr error
 	for index := len(created) - 1; index >= 0; index-- {
 		path := created[index]
-		err := runtime.remove(path)
+		err := runtime.Remove(path)
 		if err == nil ||
 			errors.Is(err, fs.ErrNotExist) ||
 			errors.Is(err, syscall.ENOTEMPTY) ||
@@ -842,13 +741,4 @@ func worktreeAddPathWithin(rootPath, destination string) bool {
 
 func worktreeAddNewUsageError(err error) error {
 	return &worktreeAddUsageError{err: err}
-}
-
-func worktreeAddWriteWarnings(writer io.Writer, warnings []local.Warning) error {
-	for _, warning := range warnings {
-		if _, err := fmt.Fprintf(writer, "gh-qw: warning: %v\n", warning); err != nil {
-			return err
-		}
-	}
-	return nil
 }

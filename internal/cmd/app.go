@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 
 	"github.com/daiksud/gh-qw/internal/config"
 	"github.com/daiksud/gh-qw/internal/ghapi"
@@ -61,23 +60,6 @@ type ApplicationDependencies struct {
 	Version string
 }
 
-type applicationRuntime struct {
-	resolver   RootResolver
-	git        ApplicationGit
-	gh         ApplicationGh
-	gitFactory GetGitFactory
-	api        ApplicationAPI
-	discover   func(
-		context.Context,
-		[]string,
-		...local.DiscoveryOptions,
-	) (local.DiscoveryResult, error)
-	stdin   io.Reader
-	stdout  io.Writer
-	stderr  io.Writer
-	version string
-}
-
 type commandUsageError struct {
 	err error
 }
@@ -102,7 +84,7 @@ func (err *commandUsageError) Is(target error) bool {
 
 // NewCommand returns the complete gh-qw command tree.
 func NewCommand(dependencies ApplicationDependencies) *cobra.Command {
-	runtime := prepareApplicationRuntime(dependencies)
+	deps := composeApplicationDependencies(dependencies)
 
 	command := &cobra.Command{
 		Use:           "qw",
@@ -110,7 +92,7 @@ func NewCommand(dependencies ApplicationDependencies) *cobra.Command {
 		Args:          cobra.NoArgs,
 		SilenceErrors: true,
 		SilenceUsage:  true,
-		Version:       runtime.version,
+		Version:       deps.Version,
 		Annotations: map[string]string{
 			cobra.CommandDisplayNameAnnotation: "gh qw",
 		},
@@ -119,9 +101,9 @@ func NewCommand(dependencies ApplicationDependencies) *cobra.Command {
 		},
 	}
 	command.CompletionOptions.DisableDefaultCmd = true
-	command.SetIn(runtime.stdin)
-	command.SetOut(runtime.stdout)
-	command.SetErr(runtime.stderr)
+	command.SetIn(deps.Stdin)
+	command.SetOut(deps.Stdout)
+	command.SetErr(deps.Stderr)
 	command.SetVersionTemplate("gh qw version {{.Version}}\n")
 	command.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
 		return newCommandUsageError(err)
@@ -131,7 +113,7 @@ func NewCommand(dependencies ApplicationDependencies) *cobra.Command {
 		ctx context.Context,
 		roots []string,
 	) (local.DiscoveryResult, error) {
-		return runtime.discover(ctx, roots, local.DiscoveryOptions{Git: runtime.git})
+		return deps.Discover(ctx, roots, local.DiscoveryOptions{Git: deps.Git})
 	}
 	enumerate := func(
 		ctx context.Context,
@@ -142,39 +124,39 @@ func NewCommand(dependencies ApplicationDependencies) *cobra.Command {
 			ctx,
 			repository,
 			worktreeRoot,
-			local.WorktreeOptions{Lister: runtime.git},
+			local.WorktreeOptions{Lister: deps.Git},
 		)
 	}
 
 	getCommand := NewGetCommand(GetDependencies{
-		RootResolver:     runtime.resolver,
-		GitFactory:       runtime.gitFactory,
+		RootResolver:     deps.Resolver,
+		GitFactory:       deps.GitFactory,
 		Discover:         discover,
-		IdentityResolver: runtime.api,
-		Stdin:            runtime.stdin,
-		Stdout:           runtime.stdout,
-		Stderr:           runtime.stderr,
+		IdentityResolver: deps.API,
+		Stdin:            deps.Stdin,
+		Stdout:           deps.Stdout,
+		Stderr:           deps.Stderr,
 	})
 	listCommand := NewListCommand(ListDependencies{
-		Resolver:             runtime.resolver,
+		Resolver:             deps.Resolver,
 		DiscoverRepositories: discover,
 		EnumerateWorktrees:   enumerate,
-		Stdout:               runtime.stdout,
-		Stderr:               runtime.stderr,
+		Stdout:               deps.Stdout,
+		Stderr:               deps.Stderr,
 	})
-	rootCommand := NewRootCommand(runtime.resolver, runtime.stdout)
+	rootCommand := NewRootCommand(deps.Resolver, deps.Stdout)
 	removeCommand := NewRemoveCommand(RemoveDependencies{
-		Resolver: runtime.resolver,
-		Discover: runtime.discover,
-		Git:      runtime.git,
-		Stdout:   runtime.stdout,
-		Stderr:   runtime.stderr,
+		Resolver: deps.Resolver,
+		Discover: deps.Discover,
+		Git:      deps.Git,
+		Stdout:   deps.Stdout,
+		Stderr:   deps.Stderr,
 	})
 	migrateCommand := NewMigrateCommand(MigrateDependencies{
-		Resolver: runtime.resolver,
-		Git:      runtime.git,
-		Stdout:   runtime.stdout,
-		Stderr:   runtime.stderr,
+		Resolver: deps.Resolver,
+		Git:      deps.Git,
+		Stdout:   deps.Stdout,
+		Stderr:   deps.Stderr,
 	})
 
 	worktreeCommand := &cobra.Command{
@@ -189,34 +171,34 @@ func NewCommand(dependencies ApplicationDependencies) *cobra.Command {
 	}
 	worktreeCommand.AddCommand(
 		NewWorktreeAddCommand(WorktreeAddDependencies{
-			Resolver: runtime.resolver,
-			Discover: runtime.discover,
-			Git:      runtime.git,
-			Gh:       runtime.gh,
-			API:      runtime.api,
-			Stdout:   runtime.stdout,
-			Stderr:   runtime.stderr,
+			Resolver: deps.Resolver,
+			Discover: deps.Discover,
+			Git:      deps.Git,
+			Gh:       deps.Gh,
+			API:      deps.API,
+			Stdout:   deps.Stdout,
+			Stderr:   deps.Stderr,
 		}),
 		NewWorktreeListCommand(WorktreeListDependencies{
-			Resolver: runtime.resolver,
-			Discover: runtime.discover,
-			Git:      runtime.git,
-			Stdout:   runtime.stdout,
-			Stderr:   runtime.stderr,
+			Resolver: deps.Resolver,
+			Discover: deps.Discover,
+			Git:      deps.Git,
+			Stdout:   deps.Stdout,
+			Stderr:   deps.Stderr,
 		}),
 		NewWorktreeRemoveCommand(WorktreeRemoveDependencies{
-			Resolver: runtime.resolver,
-			Discover: runtime.discover,
-			Git:      runtime.git,
-			Stdout:   runtime.stdout,
-			Stderr:   runtime.stderr,
+			Resolver: deps.Resolver,
+			Discover: deps.Discover,
+			Git:      deps.Git,
+			Stdout:   deps.Stdout,
+			Stderr:   deps.Stderr,
 		}),
 		NewWorktreePruneCommand(WorktreePruneDependencies{
-			Resolver: runtime.resolver,
-			Discover: runtime.discover,
-			Git:      runtime.git,
-			Stdout:   runtime.stdout,
-			Stderr:   runtime.stderr,
+			Resolver: deps.Resolver,
+			Discover: deps.Discover,
+			Git:      deps.Git,
+			Stdout:   deps.Stdout,
+			Stderr:   deps.Stderr,
 		}),
 	)
 
@@ -281,84 +263,43 @@ func ExitCode(err error) int {
 	return 1
 }
 
-func prepareApplicationRuntime(dependencies ApplicationDependencies) applicationRuntime {
-	stdin := dependencies.Stdin
-	if stdin == nil {
-		stdin = os.Stdin
+// composeApplicationDependencies is the sole composition root for the command
+// tree. Standalone subcommand constructors still normalize nil test seams,
+// but the production tree passes explicit dependencies into each command.
+func composeApplicationDependencies(deps ApplicationDependencies) ApplicationDependencies {
+	deps.Stdin = commandStdin(deps.Stdin)
+	deps.Stdout = commandStdout(deps.Stdout)
+	deps.Stderr = commandStderr(deps.Stderr)
+	if deps.Resolver == nil {
+		deps.Resolver = rootpkg.NewResolver()
 	}
-	stdout := dependencies.Stdout
-	if stdout == nil {
-		stdout = os.Stdout
-	}
-	stderr := dependencies.Stderr
-	if stderr == nil {
-		stderr = os.Stderr
-	}
-
-	resolver := dependencies.Resolver
-	if resolver == nil {
-		resolver = rootpkg.NewResolver()
-	}
-	git := dependencies.Git
-	if git == nil {
-		git = &gitcmd.Runner{
+	if deps.Git == nil {
+		deps.Git = &gitcmd.Runner{
 			Executable: "git",
-			Stdout:     stderr,
-			Stderr:     stderr,
+			Stdout:     deps.Stderr,
+			Stderr:     deps.Stderr,
 		}
 	}
-	gh := dependencies.Gh
-	if gh == nil {
-		gh = &ghcmd.Runner{
-			Stdout: stderr,
-			Stderr: stderr,
+	if deps.Gh == nil {
+		deps.Gh = &ghcmd.Runner{Stdout: deps.Stderr, Stderr: deps.Stderr}
+	}
+	if deps.GitFactory == nil {
+		// A fake needing get-specific output streams must supply GitFactory.
+		// Do not discard stdout/stderr arguments for non-runner fakes.
+		deps.GitFactory = func(stdout, stderr io.Writer) GetGitOperations {
+			return &ghcmd.Runner{Stdout: stdout, Stderr: stderr}
 		}
 	}
-	gitFactory := dependencies.GitFactory
-	if gitFactory == nil {
-		gitFactory = applicationGhFactory(gh)
+	if deps.API == nil {
+		deps.API = ghapi.NewClient(deps.Stderr)
 	}
-
-	apiClient := dependencies.API
-	if apiClient == nil {
-		apiClient = ghapi.NewClient(stderr)
+	if deps.Discover == nil {
+		deps.Discover = local.DiscoverRepositories
 	}
-	discover := dependencies.Discover
-	if discover == nil {
-		discover = local.DiscoverRepositories
+	if deps.Version == "" {
+		deps.Version = developmentVersion
 	}
-	version := dependencies.Version
-	if version == "" {
-		version = developmentVersion
-	}
-
-	return applicationRuntime{
-		resolver:   resolver,
-		git:        git,
-		gh:         gh,
-		gitFactory: gitFactory,
-		api:        apiClient,
-		discover:   discover,
-		stdin:      stdin,
-		stdout:     stdout,
-		stderr:     stderr,
-		version:    version,
-	}
-}
-
-func applicationGhFactory(gh ApplicationGh) GetGitFactory {
-	if runner, ok := gh.(*ghcmd.Runner); ok {
-		template := *runner
-		return func(stdout, stderr io.Writer) GetGitOperations {
-			clone := template
-			clone.Stdout = stdout
-			clone.Stderr = stderr
-			return &clone
-		}
-	}
-	return func(_, _ io.Writer) GetGitOperations {
-		return gh
-	}
+	return deps
 }
 
 func wrapArgumentErrors(command *cobra.Command) {

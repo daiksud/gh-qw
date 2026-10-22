@@ -19,7 +19,6 @@ import (
 	"github.com/daiksud/gh-qw/internal/gitcmd"
 	"github.com/daiksud/gh-qw/internal/local"
 	"github.com/daiksud/gh-qw/internal/physicalpath"
-	"github.com/daiksud/gh-qw/internal/repospec"
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
 	"github.com/spf13/cobra"
 )
@@ -106,27 +105,7 @@ type worktreePruneRequest struct {
 	expire      string
 }
 
-type worktreePruneUsageError struct {
-	err error
-}
-
-func (err *worktreePruneUsageError) Error() string {
-	if err == nil || err.err == nil {
-		return repospec.ErrUsage.Error()
-	}
-	return err.err.Error()
-}
-
-func (err *worktreePruneUsageError) Unwrap() error {
-	if err == nil {
-		return nil
-	}
-	return err.err
-}
-
-func (err *worktreePruneUsageError) Is(target error) bool {
-	return target == repospec.ErrUsage
-}
+type worktreePruneUsageError = repositoryUsageError
 
 type worktreePruneSnapshot struct {
 	existing map[string]struct{}
@@ -391,7 +370,7 @@ func worktreePruneRun(
 		return fmt.Errorf("prune Git worktrees for %q: %w", repository.Identity, err)
 	}
 
-	if err := worktreePruneWriteAll(runtime.stderr, setupDiagnostics.Bytes()); err != nil {
+	if err := commandWriteAll(runtime.stderr, setupDiagnostics.Bytes()); err != nil {
 		return fmt.Errorf("write prune warnings: %w", err)
 	}
 	if baseWarning != "" || adminWarning != "" {
@@ -419,7 +398,7 @@ func worktreePruneRun(
 		return err
 	}
 
-	if err := worktreePruneWriteAll(runtime.stderr, planner.diagnostics.Bytes()); err != nil {
+	if err := commandWriteAll(runtime.stderr, planner.diagnostics.Bytes()); err != nil {
 		return fmt.Errorf("write prune diagnostics: %w", err)
 	}
 	if request.dryRun || len(planner.actions) == 0 {
@@ -434,7 +413,7 @@ func worktreePruneRun(
 		}
 		var latestDiagnostics []byte
 		latest, latestDiagnostics = worktreePruneIndexRegistered(runtime, latestWorktrees)
-		if err := worktreePruneWriteAll(runtime.stderr, latestDiagnostics); err != nil {
+		if err := commandWriteAll(runtime.stderr, latestDiagnostics); err != nil {
 			return fmt.Errorf("write worktree revalidation warnings: %w", err)
 		}
 	}
@@ -1551,24 +1530,7 @@ func worktreePruneWriteDiscoveryWarnings(
 	for _, warning := range warnings {
 		worktreePruneWarning(&output, warning.Error())
 	}
-	return worktreePruneWriteAll(writer, output.Bytes())
-}
-
-func worktreePruneWriteAll(writer io.Writer, data []byte) error {
-	for len(data) > 0 {
-		written, err := writer.Write(data)
-		if written < 0 || written > len(data) {
-			return io.ErrShortWrite
-		}
-		data = data[written:]
-		if err != nil {
-			return err
-		}
-		if written == 0 {
-			return io.ErrShortWrite
-		}
-	}
-	return nil
+	return commandWriteAll(writer, output.Bytes())
 }
 
 func worktreePruneWrapError(operation string, err error) error {

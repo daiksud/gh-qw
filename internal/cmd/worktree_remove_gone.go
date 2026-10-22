@@ -107,7 +107,7 @@ func worktreeRemoveGoneRun(
 			return fmt.Errorf("confirm gone-worktree removal: %w", confirmErr)
 		}
 		if !confirmed {
-			if writeErr := removeWriteAll(commandRuntime.stderr, []byte("removal declined\n")); writeErr != nil {
+			if writeErr := commandWriteAll(commandRuntime.stderr, []byte("removal declined\n")); writeErr != nil {
 				return fmt.Errorf("write removal-declined diagnostic: %w", writeErr)
 			}
 			return newSilentStatusError(1)
@@ -174,7 +174,7 @@ func worktreeRemoveGonePreflightWithRoots(
 	)
 	var warningErr error
 	if emitWarnings {
-		warningErr = worktreeRemoveWriteWarnings(commandRuntime.stderr, discovery.Warnings)
+		warningErr = commandWriteWarnings(commandRuntime.stderr, discovery.Warnings)
 	}
 	if discoveryErr != nil || warningErr != nil {
 		return worktreeRemoveGonePlan{}, errors.Join(
@@ -482,7 +482,7 @@ func worktreeRemoveGoneWritePlan(writer io.Writer, plan worktreeRemoveGonePlan) 
 			"No linked worktrees with missing upstream refs for %s.\n",
 			plan.repository.Identity,
 		)
-		return removeWriteAll(writer, output.Bytes())
+		return commandWriteAll(writer, output.Bytes())
 	}
 
 	_, _ = fmt.Fprintf(&output, "Gone-worktree removal plan for %s:\n", plan.repository.Identity)
@@ -505,7 +505,7 @@ func worktreeRemoveGoneWritePlan(writer io.Writer, plan worktreeRemoveGonePlan) 
 		}
 		_, _ = fmt.Fprintln(&output)
 	}
-	return removeWriteAll(writer, output.Bytes())
+	return commandWriteAll(writer, output.Bytes())
 }
 
 func worktreeRemoveGoneComparePlans(
@@ -793,7 +793,7 @@ func worktreeRemoveGoneWriteFailure(
 	operation, slot string,
 	err error,
 ) error {
-	return removeWriteAll(
+	return commandWriteAll(
 		writer,
 		[]byte(fmt.Sprintf("%s worktree %q: %v\n", operation, slot, err)),
 	)
