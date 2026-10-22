@@ -53,10 +53,10 @@ it appear that the new choice was always in effect.
 | [0010](0010-public-api-and-semantic-versioning/) | Declare a public API and follow Semantic Versioning | Accepted |
 | [0011](0011-type-named-release-labels/) | Name release labels after Conventional Commits types | Accepted |
 | [0012](0012-github-settings-as-code/) | Manage repository settings as code with local-only apply | Accepted |
-| [0013](0013-node-pnpm-viteplus-toolchain/) | Use Node, pnpm, and Vite+ for the documentation toolchain | Accepted |
+| [0013](0013-node-pnpm-viteplus-toolchain/) | Use Node, pnpm, and Vite+ for the former documentation site | Deprecated |
 | [0014](0014-mdx-documentation-components/) | Use MDX components for the documentation homepage | Superseded by [0015](0015-mdx-presentation-props/) |
-| [0015](0015-mdx-presentation-props/) | Separate presentation-only props from reader-facing content | Accepted |
+| [0015](0015-mdx-presentation-props/) | Separate presentation-only props from reader-facing content | Deprecated |
 | [0016](0016-ubuntu-slim-runners/) | Use ubuntu-slim for lightweight GitHub Actions jobs | Accepted |
-| [0017](0017-dependabot-ci-gate-and-auto-merge/) | Gate Dependabot merges on site validation | Accepted |
+| [0017](0017-dependabot-ci-gate-and-auto-merge/) | Gate Dependabot merges on CI success | Accepted |
 | [0018](0018-herdr-workspace-integration/) | Leave workspace management to callers | Accepted |
 | [0019](0019-remove-gone-worktrees/) | Add planned bulk removal for gone-upstream worktrees | Accepted |

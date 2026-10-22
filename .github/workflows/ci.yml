@@ -93,32 +93,6 @@ jobs:
       - name: Test with race detector
         run: go test -race ./...
 
-  docs:
-    name: Validate documentation
-    # Documentation validation uses Node tooling without a browser or privileged access.
-    runs-on: ubuntu-slim
-    timeout-minutes: 10
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Set up Vite+
-        uses: voidzero-dev/setup-vp@68f39c78aaf39be468cabd2afb09c162574c84af # v1.21.2
-        with:
-          version: "0.2.8"
-          node-version: "24.19.0"
-          working-directory: .pages
-          cache: true
-          run-install: false
-
-      - name: Install documentation dependencies
-        working-directory: .pages
-        run: vp install --frozen-lockfile
-
-      - name: Validate documentation
-        working-directory: .pages
-        run: vp run validate
-
   settings:
     name: Validate repository settings
     # Offline manifest validation is a lightweight ubuntu-slim workload.
@@ -159,7 +133,6 @@ jobs:
       - lint
       - test
       - race
-      - docs
       - settings
       - release-tests
     # The aggregate gate is a lightweight status-only job.
@@ -172,7 +145,6 @@ jobs:
             needs.lint.result != 'success' ||
             needs.test.result != 'success' ||
             needs.race.result != 'success' ||
-            needs.docs.result != 'success' ||
             needs.settings.result != 'success' ||
             needs.release-tests.result != 'success'
           }}
@@ -181,7 +153,6 @@ jobs:
           echo "lint=${{ needs.lint.result }}"
           echo "test=${{ needs.test.result }}"
           echo "race=${{ needs.race.result }}"
-          echo "docs=${{ needs.docs.result }}"
           echo "settings=${{ needs.settings.result }}"
           echo "release-tests=${{ needs.release-tests.result }}"
           exit 1

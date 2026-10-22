@@ -9,10 +9,16 @@ timestamp: 2026-08-07
 
 # ADR-0013: Use Node, pnpm, and Vite+ for the documentation toolchain
 
-- **Status:** Accepted
+- **Status:** Deprecated (hosted documentation site retired 2026-10-22)
 - **Date:** 2026-08-07
 - **Deciders:** gh-qw maintainers
 - **Related:** [ADR-0001](../0001-record-architecture-decisions/), [ADR-0012](../0012-github-settings-as-code/)
+
+## Retirement (2026-10-22)
+
+The GitHub Pages site, `.pages/` build sources, and its Node/pnpm/Vite+ CI
+were removed. The Markdown reference remains available in `docs/` on GitHub.
+This ADR describes the former site, not an active toolchain.
 
 ## Context
 

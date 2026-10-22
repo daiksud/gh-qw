@@ -9,10 +9,15 @@ timestamp: 2026-08-08
 
 # ADR-0015: Separate presentation-only props from reader-facing content
 
-- **Status:** Accepted
+- **Status:** Deprecated (hosted documentation site retired 2026-10-22)
 - **Date:** 2026-08-08
 - **Deciders:** gh-qw maintainers
 - **Supersedes:** [ADR-0014](../0014-mdx-documentation-components/)
+
+## Retirement (2026-10-22)
+
+The `.pages/` components and MDX homepage are removed. Documentation remains
+ordinary Markdown under `docs/`; no JSX/MDX presentation rules remain in force.
 
 ## Context
 

@@ -12,14 +12,13 @@ timestamp: 2026-08-08
 - **Status:** Accepted
 - **Date:** 2026-08-08
 - **Deciders:** gh-qw maintainers
-- **Related:** [ADR-0012](../0012-github-settings-as-code/) and [ADR-0013](../0013-node-pnpm-viteplus-toolchain/)
+- **Related:** [ADR-0012](../0012-github-settings-as-code/)
 
 ## Context
 
 The Linux jobs in `gh-qw` use `ubuntu-latest`, a four-CPU runner with substantially more
 resources than the workflows need. Recent successful runs completed each Linux job in less than
-one minute, including Go builds, the race detector, documentation validation, release builds, and
-Pages artifact creation. The repository is public, so changing runner size is not a cost-saving
+one minute, including Go builds, the race detector, and release builds. The repository is public, so changing runner size is not a cost-saving
 requirement; it is a better fit between the workload and the runner.
 
 GitHub's `ubuntu-slim` is a single-CPU, 5 GB RAM, 14 GB SSD, x64 Linux container with a 15-minute
@@ -36,21 +35,18 @@ consolidated onto the slim image without losing coverage.
 ## Decision
 
 All lightweight x64 Linux jobs use `ubuntu-slim`: CI formatting and vetting, the amd64 build and
-test matrix entry, race detection, documentation validation, settings validation, pull-request
-labeling, Pages build and deployment, and release version validation, cross-compilation, and
-release creation. The arm64 test entry remains on `ubuntu-24.04-arm`; macOS and Windows entries
+test matrix entry, race detection, settings validation, pull-request labeling, and release
+version validation, cross-compilation, and release creation. The arm64 test entry remains on `ubuntu-24.04-arm`; macOS and Windows entries
 remain on their existing runners.
 
 Release artifacts are cross-compiled with `CGO_ENABLED=0`, so an x64 slim host can produce the
 darwin, linux, and windows targets, including the linux arm64 artifact. No privileged operation or
 host-native build is required.
 
-Each slim job declares a timeout below the platform's 15-minute limit. API- and action-oriented
-jobs use five minutes, except Pages deployment, which uses fourteen minutes to leave one minute
-below the platform cap and four minutes beyond the deploy-pages action's ten-minute deployment
-timeout for setup and API overhead. Jobs that install toolchains or build and test use ten
-minutes. The `test` matrix declares its timeout at job scope, so the same ten-minute limit applies
-to its Linux, arm64, macOS, and Windows entries.
+Each slim job declares a timeout below the platform's 15-minute limit. API- and
+action-oriented jobs use five minutes; jobs that install toolchains or build
+and test use ten minutes. The `test` matrix applies that ten-minute limit on
+all supported operating systems and architectures.
 
 The workflow files retain SHA-pinned actions and document the slim-image rationale inline. If a
 job's resource needs grow beyond these limits, it must be moved to a suitable full runner rather
@@ -68,13 +64,9 @@ than weakening the timeout without a new decision.
 
 ### Negative
 
-- A single CPU can increase wall-clock time for Go tests, race detection, and documentation
-  builds; the current measurements provide margin but must be revisited as the repository grows.
+- A single CPU can increase wall-clock time for Go tests and race detection; the current measurements provide margin but must be revisited as the repository grows.
 - The race detector is the tightest resource fit because instrumentation increases memory use
   within the slim container's 5 GB limit.
-- Pages deployment has four minutes of headroom beyond the action's ten-minute wait but only one
-  minute below ubuntu-slim's 15-minute platform limit; changes to the deploy-pages action's
-  timeout must trigger a reconsideration of this value.
 - A manually dispatched release now validates and builds before creating a tag, and the job
   budgets must remain sufficient as the project grows.
 - `ubuntu-slim` remains unsuitable for arm64-native jobs and privileged operations.
@@ -82,7 +74,6 @@ than weakening the timeout without a new decision.
 ### Neutral
 
 - The public repository receives no change in runner billing from this decision.
-- The Go toolchain remains managed by `actions/setup-go`, and the documentation toolchain remains
-  managed by the existing Vite+ setup.
+- The Go toolchain remains managed by `actions/setup-go`. The retired documentation site has no CI toolchain.
 - This decision changes runner selection and timeouts only; action versions, permissions, and
   workflow behavior remain otherwise unchanged.
