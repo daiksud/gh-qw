@@ -338,7 +338,7 @@ func TestNewListCommandWorktreesAndWorktreeQueries(t *testing.T) {
 	}{
 		{
 			name: "all registered",
-			args: []string{"--worktree"},
+			args: []string{"--all"},
 			want: []string{
 				"github.com/acme/widget",
 				"github.com/acme/widget@feature/x",
@@ -347,12 +347,12 @@ func TestNewListCommandWorktreesAndWorktreeQueries(t *testing.T) {
 		},
 		{
 			name: "slot substring",
-			args: []string{"--worktree", "feature"},
+			args: []string{"--all", "feature"},
 			want: []string{"github.com/acme/widget@feature/x"},
 		},
 		{
 			name: "exact repository includes main and linked",
-			args: []string{"--worktree", "-e", "widget"},
+			args: []string{"--all", "-e", "widget"},
 			want: []string{
 				"github.com/acme/widget",
 				"github.com/acme/widget@feature/x",
@@ -361,21 +361,21 @@ func TestNewListCommandWorktreesAndWorktreeQueries(t *testing.T) {
 		},
 		{
 			name: "exact slot narrows",
-			args: []string{"--worktree", "--exact", "acme/widget@feature/x"},
+			args: []string{"--all", "--exact", "acme/widget@feature/x"},
 			want: []string{"github.com/acme/widget@feature/x"},
 		},
 		{
 			name: "exact URL slot canonicalizes",
-			args: []string{"--worktree", "-e", "https://github.com/acme/widget.git@feature/x"},
+			args: []string{"--all", "-e", "https://github.com/acme/widget.git@feature/x"},
 			want: []string{"github.com/acme/widget@feature/x"},
 		},
 		{
 			name: "exact slot is case sensitive",
-			args: []string{"--worktree", "-e", "widget@Feature/x"},
+			args: []string{"--all", "-e", "widget@Feature/x"},
 		},
 		{
 			name: "paths",
-			args: []string{"--worktree", "--full-path"},
+			args: []string{"--all", "--full-path"},
 			want: []string{
 				local.NormalizePathForOutput(mainPath),
 				local.NormalizePathForOutput(featurePath),
@@ -463,7 +463,7 @@ func TestNewListCommandUniqueWorktreeSuffixCollisions(t *testing.T) {
 		Stdout:             &stdout,
 		Stderr:             io.Discard,
 	})
-	command.SetArgs([]string{"--worktree", "--unique", "@feature"})
+	command.SetArgs([]string{"--all", "--unique", "@feature"})
 
 	if err := command.Execute(); err != nil {
 		t.Fatalf("Execute() error = %v", err)
@@ -609,7 +609,7 @@ func TestNewListCommandSurfacesErrorsWithoutPartialOutput(t *testing.T) {
 			Stdout:             &stdout,
 			Stderr:             io.Discard,
 		})
-		command.SetArgs([]string{"--worktree", "does-not-match"})
+		command.SetArgs([]string{"--all", "does-not-match"})
 
 		if gotErr := command.Execute(); !errors.Is(gotErr, wantErr) {
 			t.Fatalf("Execute() error = %v, want %v", gotErr, wantErr)

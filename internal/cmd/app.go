@@ -11,6 +11,7 @@ import (
 	"github.com/daiksud/gh-qw/internal/ghcmd"
 	"github.com/daiksud/gh-qw/internal/gitcmd"
 	"github.com/daiksud/gh-qw/internal/local"
+	"github.com/daiksud/gh-qw/internal/locations"
 	"github.com/daiksud/gh-qw/internal/repospec"
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
 	"github.com/spf13/cobra"
@@ -49,6 +50,7 @@ type ApplicationDependencies struct {
 	Gh         ApplicationGh
 	GitFactory GetGitFactory
 	API        ApplicationAPI
+	Registry   locations.Store
 	Discover   func(
 		context.Context,
 		[]string,
@@ -133,10 +135,13 @@ func NewCommand(dependencies ApplicationDependencies) *cobra.Command {
 		GitFactory:       deps.GitFactory,
 		Discover:         discover,
 		IdentityResolver: deps.API,
+		Register:         deps.Registry.Add,
 		Stdin:            deps.Stdin,
 		Stdout:           deps.Stdout,
 		Stderr:           deps.Stderr,
 	})
+	getCommand.Use = "clone [flags] [<repo>...]"
+	getCommand.Aliases = nil
 	listCommand := NewListCommand(ListDependencies{
 		Resolver:             deps.Resolver,
 		DiscoverRepositories: discover,
@@ -145,6 +150,23 @@ func NewCommand(dependencies ApplicationDependencies) *cobra.Command {
 		Stderr:               deps.Stderr,
 	})
 	rootCommand := NewRootCommand(deps.Resolver, deps.Stdout)
+	addCommand := NewAddCommand(AddDependencies{
+		Resolver: deps.Resolver,
+		Git: deps.Git,
+		Store: deps.Registry,
+		Worktree: WorktreeAddDependencies{
+			Resolver: deps.Resolver,
+			Discover: deps.Discover,
+			Git: deps.Git,
+			Gh: deps.Gh,
+			API: deps.API,
+			Stdout: deps.Stdout,
+			Stderr: deps.Stderr,
+		},
+		Stdout: deps.Stdout,
+		Stderr: deps.Stderr,
+	})
+	forgetCommand := NewForgetCommand(deps.Registry, deps.Stdout)
 	removeCommand := NewRemoveCommand(RemoveDependencies{
 		Resolver: deps.Resolver,
 		Discover: deps.Discover,
@@ -204,6 +226,8 @@ func NewCommand(dependencies ApplicationDependencies) *cobra.Command {
 
 	command.AddCommand(
 		getCommand,
+		addCommand,
+		forgetCommand,
 		listCommand,
 		rootCommand,
 		removeCommand,
@@ -294,7 +318,7 @@ func composeApplicationDependencies(deps ApplicationDependencies) ApplicationDep
 		deps.API = ghapi.NewClient(deps.Stderr)
 	}
 	if deps.Discover == nil {
-		deps.Discover = local.DiscoverRepositories
+		deps.Discover = deps.Registry.Discover
 	}
 	if deps.Version == "" {
 		deps.Version = developmentVersion

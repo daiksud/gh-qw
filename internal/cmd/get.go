@@ -150,6 +150,7 @@ type GetDependencies struct {
 	MkdirAll         func(string, fs.FileMode) error
 	Discover         GetDiscoverFunc
 	IdentityResolver GetIdentityResolver
+	Register         func(string, string) error
 	Stdin            io.Reader
 	Stdout           io.Writer
 	Stderr           io.Writer
@@ -719,6 +720,11 @@ func getAcquire(
 
 	state.exists = true
 	state.repository.Path = path
+	if deps.Register != nil {
+		if err := deps.Register(spec.Identity.String(), path); err != nil {
+			return "", fmt.Errorf("repository cloned to %q but registration failed (use gh qw add to register it): %w", path, err)
+		}
+	}
 	return getAbsolutePath(path)
 }
 

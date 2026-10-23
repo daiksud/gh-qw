@@ -35,8 +35,9 @@ func TestNewCommandWiresCompleteSurface(t *testing.T) {
 	}
 
 	for _, path := range [][]string{
-		{"get"},
 		{"clone"},
+		{"add"},
+		{"forget"},
 		{"list"},
 		{"root"},
 		{"rm"},
@@ -53,11 +54,8 @@ func TestNewCommandWiresCompleteSurface(t *testing.T) {
 		if len(remaining) != 0 {
 			t.Fatalf("Find(%q) remaining = %q, want none", path, remaining)
 		}
-		if got, want := found.Name(), path[len(path)-1]; path[0] != "clone" && got != want {
+		if got, want := found.Name(), path[len(path)-1]; got != want {
 			t.Fatalf("Find(%q) name = %q, want %q", path, got, want)
-		}
-		if path[0] == "clone" && found.Name() != "get" {
-			t.Fatalf("Find(%q) name = %q, want get alias", path, found.Name())
 		}
 	}
 }
@@ -76,7 +74,8 @@ func TestNewCommandHelpAndVersionUseExtensionName(t *testing.T) {
 			want: []string{
 				"Usage:",
 				"gh qw [command]",
-				"get",
+				"clone",
+				"add",
 				"worktree",
 			},
 		},
@@ -125,7 +124,7 @@ func TestListHelpShowsSupportedOptions(t *testing.T) {
 	if status != 0 {
 		t.Fatalf("Execute() status = %d, want 0", status)
 	}
-	for _, want := range []string{"Usage:", "--full-path", "--exact", "--unique", "--worktree"} {
+	for _, want := range []string{"Usage:", "--full-path", "--exact", "--unique", "--worktree", "--all"} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("help = %q, want substring %q", stdout.String(), want)
 		}

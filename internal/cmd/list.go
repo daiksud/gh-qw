@@ -52,7 +52,8 @@ func NewListCommand(deps ListDependencies) *cobra.Command {
 	var exact bool
 	var fullPath bool
 	var unique bool
-	var includeWorktrees bool
+	var onlyWorktrees bool
+	var all bool
 
 	command := &cobra.Command{
 		Use:           "list [query]",
@@ -61,6 +62,9 @@ func NewListCommand(deps ListDependencies) *cobra.Command {
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		PreRunE: func(_ *cobra.Command, _ []string) error {
+			if onlyWorktrees && all {
+				return &listUsageError{message: "--worktree and --all are mutually exclusive"}
+			}
 			if fullPath && unique {
 				return &listUsageError{
 					message: "--full-path and --unique are mutually exclusive",
@@ -90,7 +94,7 @@ func NewListCommand(deps ListDependencies) *cobra.Command {
 				command.Context(),
 				repositories,
 				roots.WorktreeRoot,
-				includeWorktrees,
+				onlyWorktrees || all,
 				deps.EnumerateWorktrees,
 			)
 			if err != nil {
@@ -104,7 +108,16 @@ func NewListCommand(deps ListDependencies) *cobra.Command {
 					return err
 				}
 			}
-			entries = listFilterEntries(entries, query, exact, includeWorktrees)
+			if onlyWorktrees {
+				filtered := make([]listEntry, 0, len(entries))
+				for _, entry := range entries {
+					if entry.slot != "" {
+						filtered = append(filtered, entry)
+					}
+				}
+				entries = filtered
+			}
+			entries = listFilterEntries(entries, query, exact, onlyWorktrees || all)
 
 			lines, err := listOutputLines(entries, fullPath, unique)
 			if err != nil {
@@ -122,7 +135,8 @@ func NewListCommand(deps ListDependencies) *cobra.Command {
 	command.Flags().BoolVarP(&exact, "exact", "e", false, "Match exact identity suffixes")
 	command.Flags().BoolVarP(&fullPath, "full-path", "p", false, "Print absolute paths")
 	command.Flags().BoolVar(&unique, "unique", false, "Print shortest unique identity suffixes")
-	command.Flags().BoolVar(&includeWorktrees, "worktree", false, "Include registered linked worktrees")
+	command.Flags().BoolVar(&onlyWorktrees, "worktree", false, "List linked worktrees only")
+	command.Flags().BoolVar(&all, "all", false, "List repositories and linked worktrees")
 	command.SetOut(deps.Stdout)
 	command.SetErr(deps.Stderr)
 
