@@ -42,6 +42,15 @@ func managedRepositoryFixture(t *testing.T) (string, string) {
 	return path, root
 }
 
+func managedPath(t *testing.T, path string) string {
+	t.Helper()
+	physical, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return filepath.ToSlash(physical)
+}
+
 func managedExecute(t *testing.T, args ...string) (int, string, string) {
 	t.Helper()
 	var out, diag bytes.Buffer
@@ -60,7 +69,7 @@ func TestRegisteredRepositoryIsTheOnlyManagedSet(t *testing.T) {
 		t.Fatalf("unregistered list: %d, %q, %q", status, output, diag)
 	}
 	status, output, diag = managedExecute(t, "add", path)
-	if status != 0 || strings.TrimSpace(output) != filepath.ToSlash(path) || diag != "" {
+	if status != 0 || strings.TrimSpace(output) != managedPath(t, path) || diag != "" {
 		t.Fatalf("add: %d, %q, %q", status, output, diag)
 	}
 	status, output, diag = managedExecute(t, "list")
@@ -95,7 +104,7 @@ func TestAddMoveRegistersNewLocation(t *testing.T) {
 	path, root := managedRepositoryFixture(t)
 	status, output, diag := managedExecute(t, "add", "--move", path)
 	destination := filepath.Join(root, "github.com", "acme", "api")
-	if status != 0 || strings.TrimSpace(output) != filepath.ToSlash(destination) || diag != "" {
+	if status != 0 || strings.TrimSpace(output) != managedPath(t, destination) || diag != "" {
 		t.Fatalf("add --move: %d, %q, %q", status, output, diag)
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
@@ -105,7 +114,7 @@ func TestAddMoveRegistersNewLocation(t *testing.T) {
 		t.Fatalf("moved destination: %v", err)
 	}
 	status, output, diag = managedExecute(t, "list", "--full-path")
-	if status != 0 || strings.TrimSpace(output) != filepath.ToSlash(destination) || diag != "" {
+	if status != 0 || strings.TrimSpace(output) != managedPath(t, destination) || diag != "" {
 		t.Fatalf("list moved path: %d, %q, %q", status, output, diag)
 	}
 }
