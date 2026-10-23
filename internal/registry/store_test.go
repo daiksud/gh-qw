@@ -153,7 +153,7 @@ func TestWriterLockPreventsUncoordinatedUpdate(t *testing.T) {
 	if _, err := store.List(); err == nil {
 		t.Fatal("read succeeded while exclusive lock was held")
 	}
-	if err := os.Remove(path+".lock"); err != nil {
+	if err := os.Remove(path + ".lock"); err != nil {
 		t.Fatal(err)
 	}
 	entries, err := store.List()
