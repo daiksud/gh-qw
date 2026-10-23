@@ -46,7 +46,7 @@ func managedExecute(t *testing.T, args ...string) (int, string, string) {
 	t.Helper()
 	var out, diag bytes.Buffer
 	status := cmd.Execute(context.Background(), args, cmd.ApplicationDependencies{
-		Stdin: strings.NewReader(""),
+		Stdin:  strings.NewReader(""),
 		Stdout: &out,
 		Stderr: &diag,
 	})

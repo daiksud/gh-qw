@@ -14,7 +14,7 @@ func TestDefaultPath(t *testing.T) {
 	data := filepath.Join(t.TempDir(), "data")
 	for _, tc := range []struct {
 		name string
-		env string
+		env  string
 		want string
 	}{
 		{"unset", "", filepath.Join(home, ".local", "share", "ghqw", "repositories.toml")},

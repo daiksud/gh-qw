@@ -64,9 +64,9 @@ func TestNativeRefFailuresRemainRuntimeErrors(t *testing.T) {
 		{"worktree", "add", "topic"},
 		{"worktree", "remove", "topic"},
 		{"rm", "owner/widget@topic"},
-		{"get", "--branch", "topic", "owner/widget"},
-		{"get", "owner/widget@topic"},
-		{"get", "--parallel", "owner/widget@topic"},
+		{"clone", "--branch", "topic", "owner/widget"},
+		{"clone", "owner/widget@topic"},
+		{"clone", "--parallel", "owner/widget@topic"},
 		{"list", "https://github.com/owner/widget@topic"},
 	} {
 		for _, canceled := range []bool{false, true} {

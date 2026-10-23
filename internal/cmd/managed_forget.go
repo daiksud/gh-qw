@@ -13,11 +13,11 @@ import (
 // NewForgetCommand removes only an explicit repository-location registration.
 func NewForgetCommand(store locations.Store, output io.Writer) *cobra.Command {
 	command := &cobra.Command{
-		Use: "forget <repository>",
-		Short: "Stop managing a repository location without deleting files",
-		Args: cobra.ExactArgs(1),
+		Use:           "forget <repository>",
+		Short:         "Stop managing a repository location without deleting files",
+		Args:          cobra.ExactArgs(1),
 		SilenceErrors: true,
-		SilenceUsage: true,
+		SilenceUsage:  true,
 		RunE: func(_ *cobra.Command, args []string) error {
 			registered, err := store.Read()
 			if err != nil {
@@ -31,10 +31,10 @@ func NewForgetCommand(store locations.Store, output io.Writer) *cobra.Command {
 				}
 				repositories = append(repositories, local.Repository{
 					Identity: identity,
-					Host: parts.Host,
-					Owner: parts.Owner,
-					Repo: parts.Repo,
-					Path: registered[identity],
+					Host:     parts.Host,
+					Owner:    parts.Owner,
+					Repo:     parts.Repo,
+					Path:     registered[identity],
 				})
 			}
 			repository, err := local.ResolveRepositoryForMutation(repositories, args[0])

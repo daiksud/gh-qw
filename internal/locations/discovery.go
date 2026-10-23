@@ -28,12 +28,12 @@ func (s Store) Discover(ctx context.Context, roots []string, _ ...local.Discover
 		}
 		path := entries[identity]
 		repository := local.Repository{
-			Identity: identity,
-			Host: parts.Host,
-			Owner: parts.Owner,
-			Repo: parts.Repo,
-			Path: path,
-			Root: filepath.Dir(path),
+			Identity:  identity,
+			Host:      parts.Host,
+			Owner:     parts.Owner,
+			Repo:      parts.Repo,
+			Path:      path,
+			Root:      filepath.Dir(path),
 			RootIndex: len(roots),
 		}
 		for index, root := range roots {

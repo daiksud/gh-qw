@@ -22,7 +22,7 @@ func TestCLIExcludesAmbientAuthenticationAndGitConfiguration(t *testing.T) {
 	fixture := newCLIFixture(t)
 	env := append(fixture.envWithPathPrepended(fakeGhDir),
 		"GHQW_TEST_ASSERT_CLEAN_ENV=1", "GHQW_TEST_API_OUTPUT=isolated-user")
-	result := fixture.runCLIWithEnv(t, env, "get", "widget")
+	result := fixture.runCLIWithEnv(t, env, "clone", "widget")
 	assertStatus(t, result, 0)
 	want := filepath.Join(fixture.repository, "github.com", "isolated-user", "widget")
 	assertStdout(t, result, filepath.ToSlash(want)+"\n")
@@ -47,7 +47,7 @@ func TestCLIFixturesShareExecutablesButNotMutableState(t *testing.T) {
 		{first, firstEnv, "first-user"},
 		{second, secondEnv, "second-user"},
 	} {
-		result := test.fixture.runCLIWithEnv(t, test.env, "get", "widget")
+		result := test.fixture.runCLIWithEnv(t, test.env, "clone", "widget")
 		assertStatus(t, result, 0)
 		want := filepath.Join(test.fixture.repository, "github.com", test.owner, "widget")
 		assertStdout(t, result, filepath.ToSlash(want)+"\n")
@@ -59,13 +59,13 @@ func TestCLIFixturesShareExecutablesButNotMutableState(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(first.home, ".gitconfig"), []byte("not a valid Git configuration\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	failed := first.runCLIWithEnv(t, append(firstEnv, "GHQW_TEST_GH_FAIL=1"), "get", "acme/rejected")
+	failed := first.runCLIWithEnv(t, append(firstEnv, "GHQW_TEST_GH_FAIL=1"), "clone", "acme/rejected")
 	assertStatus(t, failed, 1)
 	assertStdout(t, failed, "")
 	assertContains(t, failed.stderr, "fake-gh: simulated failure")
 	assertPathMissing(t, filepath.Join(first.repository, "github.com", "acme", "rejected"))
 
-	succeeded := second.runCLIWithEnv(t, secondEnv, "get", "acme/accepted")
+	succeeded := second.runCLIWithEnv(t, secondEnv, "clone", "acme/accepted")
 	assertStatus(t, succeeded, 0)
 	assertPathExists(t, filepath.Join(second.repository, "github.com", "acme", "accepted", ".git"))
 	result := second.runCLI(t, "list")

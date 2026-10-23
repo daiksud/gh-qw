@@ -50,20 +50,20 @@ func NewAddCommand(deps AddDependencies) *cobra.Command {
 	worktreeRuntime := worktreeAddPrepareRuntime(deps.Worktree)
 
 	var (
-		worktree bool
-		move bool
-		selector string
-		newMode bool
-		resetMode bool
+		worktree   bool
+		move       bool
+		selector   string
+		newMode    bool
+		resetMode  bool
 		detachMode bool
 		orphanMode bool
-		force bool
+		force      bool
 	)
 	command := &cobra.Command{
-		Use: "add [--move|--worktree] <path-or-slot> [commit-ish]",
-		Short: "Register a repository or add a linked worktree",
+		Use:           "add [--move|--worktree] <path-or-slot> [commit-ish]",
+		Short:         "Register a repository or add a linked worktree",
 		SilenceErrors: true,
-		SilenceUsage: true,
+		SilenceUsage:  true,
 		Args: func(command *cobra.Command, args []string) error {
 			if !worktree {
 				if err := cobra.ExactArgs(1)(command, args); err != nil {
@@ -82,7 +82,9 @@ func NewAddCommand(deps AddDependencies) *cobra.Command {
 			}
 			count := 0
 			for _, mode := range []bool{newMode, resetMode, detachMode, orphanMode} {
-				if mode { count++ }
+				if mode {
+					count++
+				}
 			}
 			if count > 1 || (orphanMode && len(args) == 2) {
 				return newCommandUsageError(errors.New("conflicting worktree creation options"))
@@ -98,17 +100,21 @@ func NewAddCommand(deps AddDependencies) *cobra.Command {
 			}
 			mode := worktreeAddModeAutomatic
 			switch {
-			case newMode: mode = worktreeAddModeNew
-			case resetMode: mode = worktreeAddModeReset
-			case detachMode: mode = worktreeAddModeDetach
-			case orphanMode: mode = worktreeAddModeOrphan
+			case newMode:
+				mode = worktreeAddModeNew
+			case resetMode:
+				mode = worktreeAddModeReset
+			case detachMode:
+				mode = worktreeAddModeDetach
+			case orphanMode:
+				mode = worktreeAddModeOrphan
 			}
 			request := worktreeAddRequest{
-				selector: selector,
+				selector:    selector,
 				selectorSet: command.Flags().Changed("repo"),
-				branch: args[0],
-				mode: mode,
-				force: force,
+				branch:      args[0],
+				mode:        mode,
+				force:       force,
 			}
 			if len(args) == 2 {
 				request.commitish = args[1]
@@ -137,9 +143,9 @@ func addManagedRepository(ctx context.Context, deps AddDependencies, rawPath str
 	}
 	migrateDeps := MigrateDependencies{
 		Resolver: deps.Resolver,
-		Git: deps.Git,
-		Stdout: deps.Stdout,
-		Stderr: deps.Stderr,
+		Git:      deps.Git,
+		Stdout:   deps.Stdout,
+		Stderr:   deps.Stderr,
 	}
 	migrateApplyDefaults(&migrateDeps)
 

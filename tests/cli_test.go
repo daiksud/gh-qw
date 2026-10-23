@@ -99,12 +99,17 @@ func TestCLIRepositoryAndWorktreeLifecycle(t *testing.T) {
 	mainPath := filepath.Join(fixture.repository, "github.com", "acme", "widget")
 	mainOutput := filepath.ToSlash(mainPath)
 
-	// `gh qw get` requires a real GitHub host and gh authentication, so its
+	// `gh qw clone` requires a real GitHub host and gh authentication, so its
 	// cloning path is covered by internal/cmd and internal/ghcmd unit tests.
 	// This local, network-free fixture seeds an ordinary clone with `origin`
 	// pointing at remoteURL and the default branch checked out.
 	fixture.cloneMain(t, remoteURL, mainPath)
 	assertPathExists(t, mainPath)
+	// Seeded local clones are not managed until explicitly added.
+	fixture.runGit(t, mainPath, "remote", "set-url", "origin", "https://github.com/acme/widget.git")
+	added := fixture.runCLI(t, "add", mainPath)
+	assertStatus(t, added, 0)
+	assertStdout(t, added, mainOutput+"\n")
 
 	result := fixture.runCLI(t, "list")
 	assertStatus(t, result, 0)
@@ -137,11 +142,12 @@ func TestCLIRepositoryAndWorktreeLifecycle(t *testing.T) {
 
 	result = fixture.runCLI(t, "list", "--worktree")
 	assertStatus(t, result, 0)
-	assertStdout(
-		t,
-		result,
-		testIdentity+"\n"+testIdentity+"@"+featureBranch+"\n",
-	)
+	assertStdout(t, result, testIdentity+"@"+featureBranch+"\n")
+	assertStderr(t, result, "")
+
+	result = fixture.runCLI(t, "list", "--all")
+	assertStatus(t, result, 0)
+	assertStdout(t, result, testIdentity+"\n"+testIdentity+"@"+featureBranch+"\n")
 	assertStderr(t, result, "")
 
 	head := strings.TrimSpace(fixture.runGit(t, mainPath, "rev-parse", "HEAD"))
@@ -387,6 +393,8 @@ func TestCLIRepositoryAndWorktreeLifecycle(t *testing.T) {
 		assertContains(t, result.stderr, "removed main repository")
 		assertPathMissing(t, wholePath)
 		assertPathMissing(t, mainPath)
+		forgotten := fixture.runCLI(t, "forget", testIdentity)
+		assertStatus(t, forgotten, 0)
 
 		result = fixture.runCLI(t, "list")
 		assertStatus(t, result, 0)
@@ -417,7 +425,7 @@ func TestCLIRepositoryAndWorktreeLifecycle(t *testing.T) {
 	assertPathMissing(t, migrateDestination)
 }
 
-func TestCLIGetUsesGhWithoutAccountPreflight(t *testing.T) {
+func TestCLICloneUsesGhWithoutAccountPreflight(t *testing.T) {
 	fixture := newCLIFixture(t)
 	env := fixture.envWithPathPrepended(fixture.buildFakeGh(t))
 	cache := filepath.Join(fixture.home, "xdg-cache", "ghqw", "accounts.json")
@@ -429,9 +437,9 @@ func TestCLIGetUsesGhWithoutAccountPreflight(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, args := range [][]string{
-		{"get", "acme/serial"},
-		{"get", "--parallel", "acme/parallel", "other/widget"},
-		{"get", "--update", "acme/serial"},
+		{"clone", "acme/serial"},
+		{"clone", "--parallel", "acme/parallel", "other/widget"},
+		{"clone", "--update", "acme/serial"},
 	} {
 		result := fixture.runCLIWithEnv(t, env, args...)
 		assertStatus(t, result, 0)
@@ -457,7 +465,7 @@ func TestCLIAPILookupsUseGHPathAndKeepStdoutPure(t *testing.T) {
 	env := append(fixture.env, "GH_PATH="+ghPath, "GH_HOST=ghe.example.com", "GHQW_TEST_API_OUTPUT=octocat")
 	mainPath := filepath.Join(fixture.repository, "ghe.example.com", "octocat", "widget")
 
-	result := fixture.runCLIWithEnv(t, env, "get", "widget")
+	result := fixture.runCLIWithEnv(t, env, "clone", "widget")
 	assertStatus(t, result, 0)
 	assertStdout(t, result, filepath.ToSlash(mainPath)+"\n")
 	assertContains(t, result.stderr, "fake gh: api ghe.example.com/user")
@@ -483,7 +491,7 @@ func TestCLIAPILookupsUseGHPathAndKeepStdoutPure(t *testing.T) {
 	localEnv := append(env, "GH_PATH="+filepath.Join(fixture.base, "missing-gh"))
 	fixture.runGit(t, mainPath, "branch", "feature/existing", "main")
 	for _, args := range [][]string{
-		{"--help"}, {"--version"}, {"root"}, {"list"}, {"get", "ghe.example.com/octocat/widget"},
+		{"--help"}, {"--version"}, {"root"}, {"list"}, {"clone", "ghe.example.com/octocat/widget"},
 		{"worktree", "add", "-R", "ghe.example.com/octocat/widget", "feature/existing"},
 	} {
 		result := fixture.runCLIWithEnv(t, localEnv, args...)
@@ -494,18 +502,18 @@ func TestCLIAPILookupsUseGHPathAndKeepStdoutPure(t *testing.T) {
 	}
 }
 
-// TestCLIGetDoesNotBlockOnAnOpenCallerStandardInput verifies that `gh qw get`
+// TestCLICloneDoesNotBlockOnAnOpenCallerStandardInput verifies that `gh qw clone`
 // completes without waiting for EOF from the calling process. The test keeps
 // gh-qw's standard input connected to an open pipe and uses a fake gh on PATH
 // so the scenario remains local and network-free.
-func TestCLIGetDoesNotBlockOnAnOpenCallerStandardInput(t *testing.T) {
+func TestCLICloneDoesNotBlockOnAnOpenCallerStandardInput(t *testing.T) {
 	fixture := newCLIFixture(t)
 	fakeGhDir := fixture.buildFakeGh(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	command := exec.CommandContext(ctx, fixture.binary, "get", "acme/widget")
+	command := exec.CommandContext(ctx, fixture.binary, "clone", "acme/widget")
 	command.Dir = fixture.base
 	command.Env = fixture.envWithPathPrepended(fakeGhDir)
 
@@ -525,7 +533,7 @@ func TestCLIGetDoesNotBlockOnAnOpenCallerStandardInput(t *testing.T) {
 	command.Stderr = &stderr
 
 	if err := command.Start(); err != nil {
-		t.Fatalf("start gh qw get: %v", err)
+		t.Fatalf("start gh qw clone: %v", err)
 	}
 
 	done := make(chan error, 1)
@@ -537,13 +545,13 @@ func TestCLIGetDoesNotBlockOnAnOpenCallerStandardInput(t *testing.T) {
 	case err := <-done:
 		if err != nil {
 			t.Fatalf(
-				"gh qw get failed: %v\nstdout:\n%s\nstderr:\n%s",
+				"gh qw clone failed: %v\nstdout:\n%s\nstderr:\n%s",
 				err, stdout.String(), stderr.String(),
 			)
 		}
 	case <-ctx.Done():
 		t.Fatalf(
-			"gh qw get did not exit within 30s while its standard input stayed open;"+
+			"gh qw clone did not exit within 30s while its standard input stayed open;"+
 				" it appears to be blocking on the caller's standard input again\nstdout:\n%s\nstderr:\n%s",
 			stdout.String(), stderr.String(),
 		)
@@ -556,13 +564,13 @@ func TestCLIGetDoesNotBlockOnAnOpenCallerStandardInput(t *testing.T) {
 	}
 }
 
-// TestCLIGetFailsClearlyWhenGhIsNotInstalled verifies that cloning requires
+// TestCLICloneFailsClearlyWhenGhIsNotInstalled verifies that cloning requires
 // `gh` on PATH. The command must report a runtime failure on stderr without
 // printing a path or creating the requested repository.
-func TestCLIGetFailsClearlyWhenGhIsNotInstalled(t *testing.T) {
+func TestCLICloneFailsClearlyWhenGhIsNotInstalled(t *testing.T) {
 	fixture := newCLIFixture(t)
 
-	result := fixture.runCLIWithEnv(t, fixture.envWithoutGh(t), "get", "acme/widget")
+	result := fixture.runCLIWithEnv(t, fixture.envWithoutGh(t), "clone", "acme/widget")
 
 	assertStatus(t, result, 1)
 	if trimmed := strings.TrimSpace(result.stdout); trimmed != "" {
@@ -580,15 +588,15 @@ func TestCLIGetFailsClearlyWhenGhIsNotInstalled(t *testing.T) {
 	assertPathMissing(t, wantPath)
 }
 
-// TestCLIGetFailsClearlyWhenGhSubprocessFails verifies that a failing gh
+// TestCLICloneFailsClearlyWhenGhSubprocessFails verifies that a failing gh
 // subprocess produces a clear runtime diagnostic without stdout, repository
 // creation, or a panic.
-func TestCLIGetFailsClearlyWhenGhSubprocessFails(t *testing.T) {
+func TestCLICloneFailsClearlyWhenGhSubprocessFails(t *testing.T) {
 	fixture := newCLIFixture(t)
 	fakeGhDir := fixture.buildFakeGh(t)
 
 	env := append(fixture.envWithPathPrepended(fakeGhDir), "GHQW_TEST_GH_FAIL=1")
-	result := fixture.runCLIWithEnv(t, env, "get", "acme/widget")
+	result := fixture.runCLIWithEnv(t, env, "clone", "acme/widget")
 
 	assertStatus(t, result, 1)
 	if trimmed := strings.TrimSpace(result.stdout); trimmed != "" {
