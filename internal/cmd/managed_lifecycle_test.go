@@ -49,9 +49,9 @@ func TestManagedRepositoryLifecycle(t *testing.T) {
 		code := cmd.Execute(context.Background(), args, cmd.ApplicationDependencies{
 			Resolver: managedRootResolver{result: roots},
 			Registry: store,
-			Stdout: &stdout,
-			Stderr: &stderr,
-			Stdin: strings.NewReader(""),
+			Stdout:   &stdout,
+			Stderr:   &stderr,
+			Stdin:    strings.NewReader(""),
 		})
 		return code, stdout.String(), stderr.String()
 	}
@@ -118,5 +118,5 @@ func TestManagedRepositoryLifecycle(t *testing.T) {
 }
 
 type managedRootResolver struct{ result rootpkg.Result }
-func (m managedRootResolver) Resolve() (rootpkg.Result, error) { return m.result, nil }
 
+func (m managedRootResolver) Resolve() (rootpkg.Result, error) { return m.result, nil }

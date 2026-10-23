@@ -38,20 +38,20 @@ func NewAddCommand(deps AddDependencies) *cobra.Command {
 	}
 	migrate := MigrateDependencies{
 		Resolver: deps.Resolver,
-		Git: deps.Git,
-		Getwd: deps.Getwd,
-		Stdout: deps.Stdout,
-		Stderr: deps.Stderr,
+		Git:      deps.Git,
+		Getwd:    deps.Getwd,
+		Stdout:   deps.Stdout,
+		Stderr:   deps.Stderr,
 	}
 	migrateApplyDefaults(&migrate)
 
 	var move, worktree, makeBranch, resetBranch, detach, orphan, force bool
 	var selector string
 	command := &cobra.Command{
-		Use: "add [--move|--worktree] <path-or-slot> [start-point]",
-		Short: "Register an existing repository or add a linked worktree",
+		Use:           "add [--move|--worktree] <path-or-slot> [start-point]",
+		Short:         "Register an existing repository or add a linked worktree",
 		SilenceErrors: true,
-		SilenceUsage: true,
+		SilenceUsage:  true,
 		Args: func(command *cobra.Command, args []string) error {
 			if worktree {
 				if move {
@@ -97,11 +97,11 @@ func NewAddCommand(deps AddDependencies) *cobra.Command {
 					mode = worktreeAddModeOrphan
 				}
 				request := worktreeAddRequest{
-					selector: selector,
+					selector:    selector,
 					selectorSet: command.Flags().Changed("repo"),
-					branch: args[0],
-					mode: mode,
-					force: force,
+					branch:      args[0],
+					mode:        mode,
+					force:       force,
 				}
 				if len(args) == 2 {
 					request.commitish = args[1]

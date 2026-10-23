@@ -150,16 +150,16 @@ func NewCommand(dependencies ApplicationDependencies) *cobra.Command {
 	rootCommand := NewRootCommand(deps.Resolver, deps.Stdout)
 	addCommand := NewAddCommand(AddDependencies{
 		Resolver: deps.Resolver,
-		Git: deps.Git,
+		Git:      deps.Git,
 		Registry: deps.Registry,
 		Worktree: WorktreeAddDependencies{
 			Resolver: deps.Resolver,
 			Discover: deps.Discover,
-			Git: deps.Git,
-			Gh: deps.Gh,
-			API: deps.API,
-			Stdout: deps.Stdout,
-			Stderr: deps.Stderr,
+			Git:      deps.Git,
+			Gh:       deps.Gh,
+			API:      deps.API,
+			Stdout:   deps.Stdout,
+			Stderr:   deps.Stderr,
 		},
 		Stdout: deps.Stdout,
 		Stderr: deps.Stderr,

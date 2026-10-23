@@ -60,12 +60,12 @@ func registeredRepositories(ctx context.Context, store LocationRegistry, roots [
 			}
 		}
 		result = append(result, local.Repository{
-			Identity: parts.String(),
-			Host: parts.Host,
-			Owner: parts.Owner,
-			Repo: parts.Repo,
-			Path: path,
-			Root: root,
+			Identity:  parts.String(),
+			Host:      parts.Host,
+			Owner:     parts.Owner,
+			Repo:      parts.Repo,
+			Path:      path,
+			Root:      root,
 			RootIndex: rootIndex,
 		})
 	}

@@ -13,11 +13,11 @@ import (
 // It deliberately does not inspect, move, or delete the Git repository.
 func NewForgetCommand(store LocationRegistry, stderr io.Writer) *cobra.Command {
 	command := &cobra.Command{
-		Use: "forget <repo>",
-		Short: "Forget a managed repository without deleting its files",
+		Use:           "forget <repo>",
+		Short:         "Forget a managed repository without deleting its files",
 		SilenceErrors: true,
-		SilenceUsage: true,
-		Args: cobra.ExactArgs(1),
+		SilenceUsage:  true,
+		Args:          cobra.ExactArgs(1),
 		RunE: func(command *cobra.Command, args []string) error {
 			selected := store
 			if selected == nil {

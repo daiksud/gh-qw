@@ -150,7 +150,7 @@ type GetDependencies struct {
 	MkdirAll         func(string, fs.FileMode) error
 	Discover         GetDiscoverFunc
 	IdentityResolver GetIdentityResolver
-	OnAcquired      func(string, string) error
+	OnAcquired       func(string, string) error
 	Stdin            io.Reader
 	Stdout           io.Writer
 	Stderr           io.Writer
