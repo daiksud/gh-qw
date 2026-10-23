@@ -1,8 +1,29 @@
 # gh-qw
 
-A GitHub CLI extension for managing repositories and linked Git worktrees in
-predictable directories. Git owns branches and worktree registrations; gh owns
-GitHub network operations and authentication.
+Spend less time thinking about working directories and more time on development.
+
+gh-qw is a GitHub CLI extension for developers working across repositories and
+parallel tasks. It gives repositories and linked Git worktrees predictable
+locations, so starting, resuming, and finishing work does not depend on
+remembering where each directory was placed.
+
+## Why gh-qw?
+
+- **Prepare a place to work:** reuse an existing checkout or create one in a
+  consistent layout; give a parallel task its own named worktree slot without
+  choosing a filesystem destination each time.
+- **Find the right place again:** discover repositories and worktrees by
+  identity, and pass their paths to your shell, editor, or other tools.
+- **Clean up deliberately:** identify the intended repository or worktree,
+  remove it with the documented safety checks, and see what completed when an
+  operation only partly succeeds.
+
+Git owns branches and worktree registrations; gh owns GitHub network operations
+and authentication. gh-qw adds consistent placement, discovery, and cleanup,
+not a replacement for either tool.
+
+[Purpose and scope](docs/purpose.md) defines the problem, user outcomes, and
+criteria for deciding what belongs in gh-qw.
 
 ## Install
 

@@ -1,5 +1,21 @@
 # Agent instructions
 
+## Product direction
+
+Read [Purpose and scope](docs/purpose.md) before proposing features or
+refactoring. gh-qw exists to reduce the effort of thinking about working
+directories: preparing them, finding them again, and cleaning them up.
+
+For a change, identify the concrete user decision or manual step it removes,
+or the current safety or failure-handling contract it protects. For internal
+refactoring, explain how it makes that behavior simpler to maintain. Apply the
+scope and decision criteria in the purpose document; more features or fewer
+lines alone are not success. Do not add new configuration, bookkeeping, or
+workflow ownership without a concrete benefit to that purpose.
+
+Keep the purpose document as the owner of product direction, README as its
+user-facing summary, and these instructions as guidance for applying it.
+
 ## Current contract
 
 Maintain only the current implementation and specification in
