@@ -27,6 +27,7 @@ var (
 // Nil fields use production implementations and process streams.
 type ListDependencies struct {
 	Resolver             RootResolver
+	Registry             LocationRegistry
 	DiscoverRepositories func(context.Context, []string) (local.DiscoveryResult, error)
 	EnumerateWorktrees   func(context.Context, local.Repository, string) ([]local.Worktree, error)
 	Stdout               io.Writer
@@ -52,7 +53,8 @@ func NewListCommand(deps ListDependencies) *cobra.Command {
 	var exact bool
 	var fullPath bool
 	var unique bool
-	var includeWorktrees bool
+	var worktreesOnly bool
+	var all bool
 
 	command := &cobra.Command{
 		Use:           "list [query]",
@@ -66,6 +68,9 @@ func NewListCommand(deps ListDependencies) *cobra.Command {
 					message: "--full-path and --unique are mutually exclusive",
 				}
 			}
+			if worktreesOnly && all {
+				return &listUsageError{message: "--worktree and --all are mutually exclusive"}
+			}
 			return nil
 		},
 		RunE: func(command *cobra.Command, args []string) error {
@@ -74,27 +79,41 @@ func NewListCommand(deps ListDependencies) *cobra.Command {
 				return err
 			}
 
-			discovery, discoveryErr := deps.DiscoverRepositories(
-				command.Context(),
-				roots.RepositoryRoots,
-			)
-			if err := commandWriteWarnings(command.ErrOrStderr(), discovery.Warnings); err != nil {
-				return fmt.Errorf("write discovery warnings: %w", err)
-			}
-			if discoveryErr != nil {
-				return discoveryErr
+			var repositories []local.Repository
+			if deps.Registry != nil {
+				repositories, err = registeredRepositories(command.Context(), deps.Registry, roots.RepositoryRoots)
+				if err != nil {
+					return err
+				}
+			} else {
+				discovery, discoveryErr := deps.DiscoverRepositories(command.Context(), roots.RepositoryRoots)
+				if err := commandWriteWarnings(command.ErrOrStderr(), discovery.Warnings); err != nil {
+					return fmt.Errorf("write discovery warnings: %w", err)
+				}
+				if discoveryErr != nil {
+					return discoveryErr
+				}
+				repositories = listEarliestRepositories(discovery.Repositories)
 			}
 
-			repositories := listEarliestRepositories(discovery.Repositories)
 			entries, err := listCollectEntries(
 				command.Context(),
 				repositories,
 				roots.WorktreeRoot,
-				includeWorktrees,
+				worktreesOnly || all,
 				deps.EnumerateWorktrees,
 			)
 			if err != nil {
 				return err
+			}
+			if worktreesOnly {
+				linked := make([]listEntry, 0, len(entries))
+				for _, entry := range entries {
+					if entry.slot != "" {
+						linked = append(linked, entry)
+					}
+				}
+				entries = linked
 			}
 
 			query := ""
@@ -104,7 +123,7 @@ func NewListCommand(deps ListDependencies) *cobra.Command {
 					return err
 				}
 			}
-			entries = listFilterEntries(entries, query, exact, includeWorktrees)
+			entries = listFilterEntries(entries, query, exact, worktreesOnly || all)
 
 			lines, err := listOutputLines(entries, fullPath, unique)
 			if err != nil {
@@ -122,7 +141,8 @@ func NewListCommand(deps ListDependencies) *cobra.Command {
 	command.Flags().BoolVarP(&exact, "exact", "e", false, "Match exact identity suffixes")
 	command.Flags().BoolVarP(&fullPath, "full-path", "p", false, "Print absolute paths")
 	command.Flags().BoolVar(&unique, "unique", false, "Print shortest unique identity suffixes")
-	command.Flags().BoolVar(&includeWorktrees, "worktree", false, "Include registered linked worktrees")
+	command.Flags().BoolVar(&worktreesOnly, "worktree", false, "List linked worktrees only")
+	command.Flags().BoolVar(&all, "all", false, "List both repositories and linked worktrees")
 	command.SetOut(deps.Stdout)
 	command.SetErr(deps.Stderr)
 

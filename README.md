@@ -9,14 +9,13 @@ remembering where each directory was placed.
 
 ## Why gh-qw?
 
-- **Prepare a place to work:** reuse an existing checkout or create one in a
-  consistent layout; give a parallel task its own named worktree slot without
-  choosing a filesystem destination each time.
-- **Find the right place again:** discover repositories and worktrees by
-  identity, and pass their paths to your shell, editor, or other tools.
-- **Clean up deliberately:** identify the intended repository or worktree,
-  remove it with the documented safety checks, and see what completed when an
-  operation only partly succeeds.
+- **Prepare a place to work:** clone to a predictable destination or register
+  an existing checkout in place with `add`. Use `add --move` to relocate it,
+  or `add --worktree` for parallel work.
+- **Find the right place again:** list explicitly registered repositories,
+  linked worktrees, or both, and pass their paths to other tools.
+- **Clean up deliberately:** `forget` unregisters a location without removing
+  its files; actual deletion remains separate and explicit.
 
 Git owns branches and worktree registrations; gh owns GitHub network operations
 and authentication. gh-qw adds consistent placement, discovery, and cleanup,
@@ -38,11 +37,11 @@ Configure authentication with `gh auth login` for network operations.
 ## Use
 
 ```sh
-gh qw get cli/cli
+gh qw clone cli/cli
+gh qw add ~/projects/my-api
 gh qw list --full-path
-cd ~/ghqw/github.com/cli/cli
-gh qw worktree add -b feature/docs
-gh qw worktree list
+gh qw add --worktree -R cli/cli -b feature/docs
+gh qw list --all
 ```
 
 Main repositories live at `<root>/<host>/<owner>/<repo>`. Linked worktrees live
@@ -63,8 +62,10 @@ multiple roots are described in the [configuration reference](docs/configuration
 
 | Command | Result |
 | --- | --- |
-| `get` (`clone`) | Clone or update repositories and print their paths. |
-| `list` | List repository identities or paths; `--worktree` includes linked worktrees. |
+| `get` (`clone`) | Clone or update and register repositories, then print their paths. |
+| `add` | Register a local repository; `--move` relocates it; `--worktree` adds a linked worktree. |
+| `list` | List registered repositories; `--worktree` selects worktrees only and `--all` both. |
+| `forget` | Unregister a repository without deleting its files. |
 | `root` | Print repository roots. |
 | `rm` | Remove a selected repository or linked worktree after confirmation. |
 | `migrate` | Move repositories into the primary root and repair their worktree registrations. |

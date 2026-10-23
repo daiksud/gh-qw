@@ -7,6 +7,7 @@
 | `cmd` | CLI arguments, narrow dependency composition, orchestration, diagnostics, and exit classification. |
 | `repospec` | Input syntax, canonical repository identity, transport separation, and native literal-ref validation. |
 | `config`, `root`, `xdg` | TOML loading, environment precedence, root normalization, and XDG defaults. |
+| `registry` | Explicit identity-to-location mappings under XDG data; no Git metadata. |
 | `local` | Read-only repository/worktree discovery, selectors, slots, and Git associations. |
 | `gitcmd`, `ghcmd`, `ghapi` | Native command arguments and structured output interpretation. |
 | `procio` | Context-bound processes, descriptors, captured output, bounded diagnostic tails, and typed failures. |
@@ -37,8 +38,10 @@ separate from host/login and filesystem-based input resolution.
 
 Repository identity is `<host>/<owner>/<repo>` and excludes transport details.
 Linked worktrees have deterministic slots independent of their current branch.
-Directories and Git registrations are the sources of truth; there is no second
-repository registry.
+The explicit XDG location registry owns gh-qw's managed main-repository set.
+Git remains the source of truth for actual worktree registrations, and the
+filesystem for existing files. Configured roots determine default placement;
+their contents are never imported into the managed set automatically.
 
 Configured-path normalization and runtime validation against an established
 physical root are distinct. Capture filesystem identity before mutation,

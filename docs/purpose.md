@@ -24,9 +24,9 @@ not a provisioned development environment.
 
 | User activity | Burden gh-qw reduces | Current support |
 | --- | --- | --- |
-| Start work | Check for an existing clone and choose where to put a missing one. | `get` reuses an existing checkout or clones into the configured layout, then returns its path. |
+| Start work | Choose where to put a missing checkout or remember an existing one. | `clone` acquires a repository at a managed destination; `add` registers an existing checkout in place or moves it with `--move`. |
 | Work in parallel | Choose and keep track of a separate directory for another task. | `worktree add` places a linked worktree at a predictable, user-named slot. |
-| Resume work | Remember a full path or search directories across repositories. | Repository and worktree listings expose identities and paths that other tools can use. |
+| Resume work | Remember a full path or search directories across repositories. | Registered repository identities and Git's worktree information expose their locations to other tools. |
 | Finish work | Identify the intended cleanup target and understand what was removed. | Removal and prune operations apply their documented selection and safety rules and report failures or partial results. |
 
 The value is the consistent arrangement across repositories and worktrees, not
@@ -37,10 +37,16 @@ Exact command behavior belongs in the [CLI reference](cli.md), not here.
 ## Scope and boundaries
 
 Git owns branches and worktree registrations. gh owns GitHub authentication and
-network operations. gh-qw adds predictable placement, cross-repository discovery,
-and managed cleanup using those tools, without redefining their authentication
-or branch semantics. It does not keep a second registry alongside directories
-and Git registrations.
+network operations. gh-qw stores exactly one explicit registry of **main
+repository identities and local locations**, under XDG data. This is the sole
+source of truth for gh-qw's managed repository set; configured roots are
+placement defaults, not automatic registration. A missing registry represents
+an empty managed set; there is no first-run scan or automatic migration.
+`forget` removes the location mapping even if the checkout remains on disk.
+
+Git, not gh-qw, owns the actual state of branches and linked worktrees. gh-qw
+never persists a second copy of Git's worktree registrations, and does not
+redefine branch, remote, or authentication semantics.
 
 Return useful identities and paths for composition with existing tools. Shell
 navigation, interactive selection, and editors can consume those results; gh-qw
@@ -70,8 +76,9 @@ Use these questions when considering a feature, removal, or refactoring:
 
 An existing feature is not justified merely because it already exists, and a
 shorter implementation is not automatically better. Evaluate proposed changes
-against this purpose without silently changing the current CLI contract. Update
-the owning specification and tests when an approved behavior change is needed.
+against this purpose. During v0.x, do not preserve old command or storage
+behavior solely for backward compatibility; update the owning specification
+and observable tests when changing an approved behavior.
 
 ## What success looks like
 

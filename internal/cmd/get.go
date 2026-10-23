@@ -150,6 +150,7 @@ type GetDependencies struct {
 	MkdirAll         func(string, fs.FileMode) error
 	Discover         GetDiscoverFunc
 	IdentityResolver GetIdentityResolver
+	OnAcquired      func(string, string) error
 	Stdin            io.Reader
 	Stdout           io.Writer
 	Stderr           io.Writer
@@ -390,6 +391,11 @@ func getRunOrdered(
 		if err != nil {
 			return fmt.Errorf("get %q: %w", input, err)
 		}
+		if deps.OnAcquired != nil {
+			if err := deps.OnAcquired(spec.Identity.String(), path); err != nil {
+				return fmt.Errorf("repository acquired at %q but location registration failed: %w", path, err)
+			}
+		}
 		if err := getWritePath(stdout, path); err != nil {
 			return err
 		}
@@ -515,6 +521,11 @@ func getRunParallel(
 				stderr,
 			)
 			<-semaphore
+			if err == nil && deps.OnAcquired != nil {
+				if registerErr := deps.OnAcquired(job.item.spec.Identity.String(), path); registerErr != nil {
+					err = fmt.Errorf("repository acquired at %q but location registration failed: %w", path, registerErr)
+				}
+			}
 			results <- getParallelResult{input: job.item.input, path: path, err: err}
 			close(job.done)
 		}(job)

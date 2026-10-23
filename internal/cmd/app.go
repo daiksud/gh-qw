@@ -49,6 +49,7 @@ type ApplicationDependencies struct {
 	Gh         ApplicationGh
 	GitFactory GetGitFactory
 	API        ApplicationAPI
+	Registry   LocationRegistry
 	Discover   func(
 		context.Context,
 		[]string,
@@ -129,6 +130,7 @@ func NewCommand(dependencies ApplicationDependencies) *cobra.Command {
 	}
 
 	getCommand := NewGetCommand(GetDependencies{
+		OnAcquired:       deps.Registry.Register,
 		RootResolver:     deps.Resolver,
 		GitFactory:       deps.GitFactory,
 		Discover:         discover,
@@ -138,6 +140,7 @@ func NewCommand(dependencies ApplicationDependencies) *cobra.Command {
 		Stderr:           deps.Stderr,
 	})
 	listCommand := NewListCommand(ListDependencies{
+		Registry:             deps.Registry,
 		Resolver:             deps.Resolver,
 		DiscoverRepositories: discover,
 		EnumerateWorktrees:   enumerate,
@@ -145,6 +148,23 @@ func NewCommand(dependencies ApplicationDependencies) *cobra.Command {
 		Stderr:               deps.Stderr,
 	})
 	rootCommand := NewRootCommand(deps.Resolver, deps.Stdout)
+	addCommand := NewAddCommand(AddDependencies{
+		Resolver: deps.Resolver,
+		Git: deps.Git,
+		Registry: deps.Registry,
+		Worktree: WorktreeAddDependencies{
+			Resolver: deps.Resolver,
+			Discover: deps.Discover,
+			Git: deps.Git,
+			Gh: deps.Gh,
+			API: deps.API,
+			Stdout: deps.Stdout,
+			Stderr: deps.Stderr,
+		},
+		Stdout: deps.Stdout,
+		Stderr: deps.Stderr,
+	})
+	forgetCommand := NewForgetCommand(deps.Registry, deps.Stderr)
 	removeCommand := NewRemoveCommand(RemoveDependencies{
 		Resolver: deps.Resolver,
 		Discover: deps.Discover,
@@ -204,6 +224,8 @@ func NewCommand(dependencies ApplicationDependencies) *cobra.Command {
 
 	command.AddCommand(
 		getCommand,
+		addCommand,
+		forgetCommand,
 		listCommand,
 		rootCommand,
 		removeCommand,
@@ -293,8 +315,11 @@ func composeApplicationDependencies(deps ApplicationDependencies) ApplicationDep
 	if deps.API == nil {
 		deps.API = ghapi.NewClient(deps.Stderr)
 	}
+	if deps.Registry == nil {
+		deps.Registry = dynamicLocationRegistry{}
+	}
 	if deps.Discover == nil {
-		deps.Discover = local.DiscoverRepositories
+		deps.Discover = registryDiscovery(deps.Registry)
 	}
 	if deps.Version == "" {
 		deps.Version = developmentVersion

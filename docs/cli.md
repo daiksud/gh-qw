@@ -92,9 +92,11 @@ gh qw get [-u|--update] [-p] [--shallow] [-b|--branch <branch>]
           [--partial blobless|treeless] [<repo>...]
 ```
 
-Clone missing repositories into the primary root using `gh repo clone`. Reuse
-the earliest existing copy in configured-root order; without `--update`, leave
-it unchanged. Print its absolute path on success in either case.
+Clone missing repositories into the primary root using `gh repo clone`.
+Reuse only existing **explicitly registered** checkouts; without `--update`,
+leave them unchanged. Register each successfully acquired location before
+printing its absolute path. An unregistered checkout at the destination is not
+adopted implicitly or overwritten.
 
 | Option | Effect |
 | --- | --- |
@@ -118,25 +120,62 @@ first failure; parallel mode attempts valid items and emits completion-order
 paths. Syntax is checked before root resolution, discovery, or authentication.
 Earlier completed items remain complete if a later item is invalid.
 
+## add
+
+```text
+gh qw add [--move] <local-repository-path>
+gh qw add --worktree [-R|--repo <repo>] [-b|-B] [--detach] [--orphan] [-f] <slot> [<commit-ish>]
+```
+
+By default, validate an existing nonbare main Git repository, derive its
+canonical identity from its configured remote, and register its current
+absolute path in the XDG location registry. The directory is not moved.
+`--move` instead moves it into the configured primary root, delegates linked
+worktree repair to Git, and then registers the destination. Never overwrite
+another destination. The `--move` flag explicitly authorizes that movement;
+failed registration after a completed move reports the resulting path and error.
+
+`--worktree` selects a registered repository via `-R` or the current
+directory, determines the deterministic slot path, and delegates creation
+to Git. Git owns branch and worktree behavior; see the worktree-add details
+below for the remaining flags. Both successful modes print the resulting
+absolute path.
+
+## forget
+
+```text
+gh qw forget <repository-selector>
+```
+
+Remove exactly one repository mapping from the XDG registry. Leave the actual
+checkout, its Git metadata, branches, and linked worktrees untouched. A
+forgotten directory is not automatically rediscovered as managed. Successful
+stdout is empty.
+
 ## list
 
 ```text
-gh qw list [-e|--exact] [-p|--full-path] [--unique] [--worktree] [<query>]
+gh qw list [-e|--exact] [-p|--full-path] [--unique] [--worktree|--all] [<query>]
 ```
 
-Discover ordinary main repositories, optionally including registered linked
-worktrees. Match substrings against the non-host identity using smartcase:
+List explicitly registered main repositories by default. `--worktree`
+lists only their linked worktrees; `--all` includes both main repositories
+and linked worktrees. These mode flags are mutually exclusive. Worktree
+registration comes from Git, not the location registry.
+Match substrings against the non-host identity using smartcase:
 lowercase queries ignore case; uppercase queries match case. A host-looking
 first component followed by `/` restricts the host (`github.com/`, not bare
 `github.com`). URL queries are canonicalized first.
 
-`--exact` matches a case-sensitive identity suffix. With `--worktree`, `@slot`
-narrows the match; without that suffix, main and linked entries can match.
+`--exact` matches a case-sensitive identity suffix. With `--worktree` or
+`--all`, `@slot` narrows the match; otherwise entries of the selected types
+can match.
 
 Default output is canonical identities. `--full-path` prints physical paths;
 `--unique` prints the shortest unambiguous identity suffix among selected
 entries, retaining linked slots. Those two flags are mutually exclusive.
-Deduplicate by identity/slot with the earliest root winning, then sort emitted
+The XDG registry is the sole source of managed-repository membership.
+Missing registrations are never imported from configured roots. Sort emitted
 strings bytewise. No matches succeeds with empty stdout.
 
 Managed linked slots come from the path relative to the repository's worktree

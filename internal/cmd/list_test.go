@@ -337,8 +337,16 @@ func TestNewListCommandWorktreesAndWorktreeQueries(t *testing.T) {
 		want []string
 	}{
 		{
-			name: "all registered",
+			name: "linked worktrees only",
 			args: []string{"--worktree"},
+			want: []string{
+				"github.com/acme/widget@feature/x",
+				"github.com/acme/widget@review",
+			},
+		},
+		{
+			name: "all repositories and worktrees",
+			args: []string{"--all"},
 			want: []string{
 				"github.com/acme/widget",
 				"github.com/acme/widget@feature/x",
@@ -352,7 +360,7 @@ func TestNewListCommandWorktreesAndWorktreeQueries(t *testing.T) {
 		},
 		{
 			name: "exact repository includes main and linked",
-			args: []string{"--worktree", "-e", "widget"},
+			args: []string{"--all", "-e", "widget"},
 			want: []string{
 				"github.com/acme/widget",
 				"github.com/acme/widget@feature/x",
@@ -375,7 +383,7 @@ func TestNewListCommandWorktreesAndWorktreeQueries(t *testing.T) {
 		},
 		{
 			name: "paths",
-			args: []string{"--worktree", "--full-path"},
+			args: []string{"--all", "--full-path"},
 			want: []string{
 				local.NormalizePathForOutput(mainPath),
 				local.NormalizePathForOutput(featurePath),
