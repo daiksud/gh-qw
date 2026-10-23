@@ -4,6 +4,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -162,5 +164,58 @@ func TestUnexpectedKeysAreNotIgnored(t *testing.T) {
 	store, _ := NewStoreAt(path)
 	if _, err := store.List(); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("unexpected key accepted: %v", err)
+	}
+}
+
+func TestSymlinkAliasRegistrationIsRejected(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink privileges vary on Windows")
+	}
+	base := t.TempDir()
+	real := filepath.Join(base, "real")
+	alias := filepath.Join(base, "alias")
+	if err := os.MkdirAll(real, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(real, alias); err != nil {
+		t.Fatal(err)
+	}
+	store, err := NewStoreAt(filepath.Join(base, "repositories.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Register("github.com/acme/first", real); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Register("github.com/acme/second", alias); !errors.Is(err, ErrConflict) {
+		t.Fatalf("alias registration: %v", err)
+	}
+}
+
+func TestSymlinkAliasesInStoredRegistryFailClosed(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlink privileges vary on Windows")
+	}
+	base := t.TempDir()
+	real := filepath.Join(base, "real")
+	alias := filepath.Join(base, "alias")
+	if err := os.Mkdir(real, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(real, alias); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(base, "repositories.toml")
+	data := "[repositories]\n\"github.com/acme/first\" = " + strconv.Quote(real) +
+		"\n\"github.com/acme/second\" = " + strconv.Quote(alias) + "\n"
+	if err := os.WriteFile(path, []byte(data), 0600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := NewStoreAt(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.List(); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("duplicate physical path accepted: %v", err)
 	}
 }

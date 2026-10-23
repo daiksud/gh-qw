@@ -10,9 +10,10 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
+	"github.com/daiksud/gh-qw/internal/physicalpath"
 	"github.com/daiksud/gh-qw/internal/repospec"
 	"github.com/daiksud/gh-qw/internal/xdg"
 )
@@ -63,11 +64,18 @@ func (s *Store) List() (map[string]string, error) {
 	if s == nil {
 		return nil, errors.New("nil registry store")
 	}
-	result, err := s.read()
-	if err != nil {
-		return nil, err
+	// An uninitialized registry must not create its XDG parent on a read.
+	if _, err := os.Stat(filepath.Dir(s.path)); errors.Is(err, fs.ErrNotExist) {
+		return make(map[string]string), nil
+	} else if err != nil {
+		return nil, fmt.Errorf("inspect registry directory: %w", err)
 	}
-	return result, nil
+	var entries map[string]string
+	err := s.withLock(false, func() (err error) {
+		entries, err = s.read()
+		return err
+	})
+	return entries, err
 }
 
 // Register records an existing main repository after the caller has validated
@@ -82,13 +90,21 @@ func (s *Store) Register(identity, path string) error {
 	path = filepath.Clean(path)
 	return s.modify(func(entries map[string]string) error {
 		if previous, exists := entries[identity]; exists {
-			if samePath(previous, path) {
+			equal, err := equivalentLocation(previous, path)
+			if err != nil {
+				return fmt.Errorf("compare registered repository location: %w", err)
+			}
+			if equal {
 				return nil
 			}
 			return fmt.Errorf("%w: %q is registered at %q", ErrConflict, identity, previous)
 		}
 		for other, existing := range entries {
-			if samePath(existing, path) {
+			equal, err := equivalentLocation(existing, path)
+			if err != nil {
+				return fmt.Errorf("compare registered repository location: %w", err)
+			}
+			if equal {
 				return fmt.Errorf("%w: %q is already registered as %q", ErrConflict, path, other)
 			}
 		}
@@ -116,27 +132,42 @@ func (s *Store) modify(change func(map[string]string) error) error {
 	if s == nil {
 		return errors.New("nil registry store")
 	}
-	parent := filepath.Dir(s.path)
-	if err := os.MkdirAll(parent, 0700); err != nil {
-		return fmt.Errorf("create registry directory: %w", err)
-	}
-	// The exclusive directory prevents concurrent writers from losing updates.
-	// If a process dies while holding it, intervention is required instead of
-	// risking a second writer clobbering data.
-	lock := s.path + ".lock"
-	if err := os.Mkdir(lock, 0700); err != nil {
-		return fmt.Errorf("acquire repository registry lock %q: %w", lock, err)
-	}
-	defer os.Remove(lock)
+	return s.withLock(true, func() error {
+		entries, err := s.read()
+		if err != nil {
+			return err
+		}
+		if err := change(entries); err != nil {
+			return err
+		}
+		return s.write(entries)
+	})
+}
 
-	entries, err := s.read()
-	if err != nil {
-		return err
+// Readers and writers coordinate through one cross-process lock. This also
+// prevents Windows readers from mistaking a non-atomic replacement for an
+// empty registry. A stale lock left by a crashed process is not removed
+// automatically: fail closed rather than allowing concurrent writers.
+func (s *Store) withLock(createParent bool, action func() error) error {
+	parent := filepath.Dir(s.path)
+	if createParent {
+		if err := os.MkdirAll(parent, 0700); err != nil {
+			return fmt.Errorf("create registry directory: %w", err)
+		}
 	}
-	if err := change(entries); err != nil {
-		return err
+	lock := s.path + ".lock"
+	for attempt := 0; attempt < 100; attempt++ {
+		err := os.Mkdir(lock, 0700)
+		if err == nil {
+			defer os.Remove(lock)
+			return action()
+		}
+		if !errors.Is(err, fs.ErrExist) {
+			return fmt.Errorf("acquire repository registry lock %q: %w", lock, err)
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
-	return s.write(entries)
+	return fmt.Errorf("repository registry is busy or has a stale lock at %q", lock)
 }
 
 func (s *Store) read() (map[string]string, error) {
@@ -175,7 +206,14 @@ func (s *Store) read() (map[string]string, error) {
 	}
 	for first, path := range document.Repositories {
 		for second, other := range document.Repositories {
-			if first < second && samePath(path, other) {
+			if first >= second {
+				continue
+			}
+			equal, err := equivalentLocation(path, other)
+			if err != nil {
+				return nil, fmt.Errorf("%w: compare %q and %q: %v", ErrInvalid, first, second, err)
+			}
+			if equal {
 				return nil, fmt.Errorf("%w: %q and %q refer to the same location", ErrInvalid, first, second)
 			}
 		}
@@ -211,10 +249,26 @@ func (s *Store) write(entries map[string]string) error {
 	if err := os.Rename(temporary.Name(), s.path); err != nil {
 		return fmt.Errorf("replace registry: %w", err)
 	}
+	// On POSIX, a successful rename does not by itself make the directory
+	// entry durable after a crash. Windows directory fsync is unsupported;
+	// readers still coordinate with writers using withLock.
+	if runtime.GOOS != "windows" {
+		parent, err := os.Open(filepath.Dir(s.path))
+		if err != nil {
+			return fmt.Errorf("open registry directory for sync after replacement: %w", err)
+		}
+		syncErr := parent.Sync()
+		closeErr := parent.Close()
+		if err := errors.Join(syncErr, closeErr); err != nil {
+			return fmt.Errorf("sync registry directory after replacement: %w", err)
+		}
+	}
 	return nil
 }
 
-func samePath(left, right string) bool {
-	left, right = filepath.Clean(left), filepath.Clean(right)
-	return left == right || (runtime.GOOS == "windows" && strings.EqualFold(left, right))
+func equivalentLocation(left, right string) (bool, error) {
+	if physicalpath.SamePath(left, right) {
+		return true, nil
+	}
+	return (physicalpath.Filesystem{}).Equivalent(left, right)
 }
