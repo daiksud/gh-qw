@@ -105,6 +105,10 @@ func TestCLIRepositoryAndWorktreeLifecycle(t *testing.T) {
 	// pointing at remoteURL and the default branch checked out.
 	fixture.cloneMain(t, remoteURL, mainPath)
 	assertPathExists(t, mainPath)
+	// Explicit registration replaces the former implicit root scan.
+	registration := fixture.runCLI(t, "add", mainPath)
+	assertStatus(t, registration, 0)
+	assertStdout(t, registration, mainOutput+"\n")
 
 	result := fixture.runCLI(t, "list")
 	assertStatus(t, result, 0)
@@ -137,11 +141,7 @@ func TestCLIRepositoryAndWorktreeLifecycle(t *testing.T) {
 
 	result = fixture.runCLI(t, "list", "--worktree")
 	assertStatus(t, result, 0)
-	assertStdout(
-		t,
-		result,
-		testIdentity+"\n"+testIdentity+"@"+featureBranch+"\n",
-	)
+	assertStdout(t, result, testIdentity+"@"+featureBranch+"\n")
 	assertStderr(t, result, "")
 
 	head := strings.TrimSpace(fixture.runGit(t, mainPath, "rev-parse", "HEAD"))

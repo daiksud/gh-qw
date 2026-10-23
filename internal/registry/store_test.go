@@ -149,8 +149,15 @@ func TestWriterLockPreventsUncoordinatedUpdate(t *testing.T) {
 	if err := store.Register("github.com/acme/second", filepath.Join(base, "second")); err == nil {
 		t.Fatal("registration succeeded while locked")
 	}
+	// Reads must not bypass the writer lock and see an inconsistent state.
+	if _, err := store.List(); err == nil {
+		t.Fatal("read succeeded while exclusive lock was held")
+	}
+	if err := os.Remove(path+".lock"); err != nil {
+		t.Fatal(err)
+	}
 	entries, err := store.List()
-	if err != nil || len(entries) != 1 {
+	if err != nil || len(entries) != 1 || entries["github.com/acme/first"] == "" {
 		t.Fatalf("lock failure changed data: %v, %v", entries, err)
 	}
 }

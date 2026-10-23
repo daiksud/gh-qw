@@ -166,6 +166,7 @@ func NewCommand(dependencies ApplicationDependencies) *cobra.Command {
 	})
 	forgetCommand := NewForgetCommand(deps.Registry, deps.Stderr)
 	removeCommand := NewRemoveCommand(RemoveDependencies{
+		Forget:   deps.Registry.Forget,
 		Resolver: deps.Resolver,
 		Discover: deps.Discover,
 		Git:      deps.Git,

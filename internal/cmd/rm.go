@@ -67,6 +67,7 @@ type RemoveDependencies struct {
 		...local.AssociationOptions,
 	) error
 	Git          RemoveGit
+	Forget       func(string) error
 	Filesystem   local.FilesystemOptions
 	Prompt       RemovePrompt
 	OpenTerminal func() (io.ReadCloser, error)
@@ -218,7 +219,15 @@ func NewRemoveCommand(dependencies RemoveDependencies) *cobra.Command {
 			}
 
 			if revalidated.whole {
-				return removeExecuteWhole(command.Context(), commandRuntime, revalidated)
+				if err := removeExecuteWhole(command.Context(), commandRuntime, revalidated); err != nil {
+					return err
+				}
+				if dependencies.Forget != nil {
+					if err := dependencies.Forget(revalidated.Repository.Identity); err != nil {
+						return fmt.Errorf("repository was removed at %q but its registration could not be forgotten: %w", revalidated.Repository.Path, err)
+					}
+				}
+				return nil
 			}
 			return removeExecuteLinked(command.Context(), commandRuntime, revalidated)
 		},
