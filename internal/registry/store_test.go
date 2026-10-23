@@ -162,6 +162,34 @@ func TestWriterLockPreventsUncoordinatedUpdate(t *testing.T) {
 	}
 }
 
+func TestIdempotentRegistrationDoesNotReplaceRegistryFile(t *testing.T) {
+	base := t.TempDir()
+	registryPath := filepath.Join(base, "repositories.toml")
+	store, err := NewStoreAt(registryPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := "github.com/acme/api"
+	location := filepath.Join(base, "api")
+	if err := store.Register(id, location); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.Stat(registryPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Register(id, location); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.Stat(registryPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !os.SameFile(before, after) {
+		t.Fatal("idempotent registration replaced the data file")
+	}
+}
+
 func TestUnexpectedKeysAreNotIgnored(t *testing.T) {
 	base := t.TempDir()
 	path := filepath.Join(base, "repositories.toml")

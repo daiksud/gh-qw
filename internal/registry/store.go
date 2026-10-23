@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -88,28 +89,28 @@ func (s *Store) Register(identity, path string) error {
 		return fmt.Errorf("register repository: %w: location must be absolute", ErrInvalid)
 	}
 	path = filepath.Clean(path)
-	return s.modify(func(entries map[string]string) error {
+	return s.modify(func(entries map[string]string) (bool, error) {
 		if previous, exists := entries[identity]; exists {
 			equal, err := equivalentLocation(previous, path)
 			if err != nil {
-				return fmt.Errorf("compare registered repository location: %w", err)
+				return false, fmt.Errorf("compare registered repository location: %w", err)
 			}
 			if equal {
-				return nil
+				return false, nil
 			}
-			return fmt.Errorf("%w: %q is registered at %q", ErrConflict, identity, previous)
+			return false, fmt.Errorf("%w: %q is registered at %q", ErrConflict, identity, previous)
 		}
 		for other, existing := range entries {
 			equal, err := equivalentLocation(existing, path)
 			if err != nil {
-				return fmt.Errorf("compare registered repository location: %w", err)
+				return false, fmt.Errorf("compare registered repository location: %w", err)
 			}
 			if equal {
-				return fmt.Errorf("%w: %q is already registered as %q", ErrConflict, path, other)
+				return false, fmt.Errorf("%w: %q is already registered as %q", ErrConflict, path, other)
 			}
 		}
 		entries[identity] = path
-		return nil
+		return true, nil
 	})
 }
 
@@ -119,16 +120,16 @@ func (s *Store) Forget(identity string) error {
 	if _, err := repospec.ParseIdentity(identity); err != nil {
 		return fmt.Errorf("forget repository: %w: invalid identity: %v", ErrInvalid, err)
 	}
-	return s.modify(func(entries map[string]string) error {
+	return s.modify(func(entries map[string]string) (bool, error) {
 		if _, exists := entries[identity]; !exists {
-			return fmt.Errorf("%w: %q", ErrNotFound, identity)
+			return false, fmt.Errorf("%w: %q", ErrNotFound, identity)
 		}
 		delete(entries, identity)
-		return nil
+		return true, nil
 	})
 }
 
-func (s *Store) modify(change func(map[string]string) error) error {
+func (s *Store) modify(change func(map[string]string) (bool, error)) error {
 	if s == nil {
 		return errors.New("nil registry store")
 	}
@@ -137,8 +138,12 @@ func (s *Store) modify(change func(map[string]string) error) error {
 		if err != nil {
 			return err
 		}
-		if err := change(entries); err != nil {
+		changed, err := change(entries)
+		if err != nil {
 			return err
+		}
+		if !changed {
+			return nil
 		}
 		return s.write(entries)
 	})
@@ -148,7 +153,7 @@ func (s *Store) modify(change func(map[string]string) error) error {
 // prevents Windows readers from mistaking a non-atomic replacement for an
 // empty registry. A stale lock left by a crashed process is not removed
 // automatically: fail closed rather than allowing concurrent writers.
-func (s *Store) withLock(createParent bool, action func() error) error {
+func (s *Store) withLock(createParent bool, action func() error) (result error) {
 	parent := filepath.Dir(s.path)
 	if createParent {
 		if err := os.MkdirAll(parent, 0700); err != nil {
@@ -159,7 +164,11 @@ func (s *Store) withLock(createParent bool, action func() error) error {
 	for attempt := 0; attempt < 100; attempt++ {
 		err := os.Mkdir(lock, 0700)
 		if err == nil {
-			defer os.Remove(lock)
+			defer func() {
+				if removeErr := os.Remove(lock); removeErr != nil {
+					result = errors.Join(result, fmt.Errorf("release repository registry lock %q: %w", lock, removeErr))
+				}
+			}()
 			return action()
 		}
 		if !errors.Is(err, fs.ErrExist) {
@@ -204,20 +213,43 @@ func (s *Store) read() (map[string]string, error) {
 			return nil, fmt.Errorf("%w: %q must have a normalized absolute path", ErrInvalid, identity)
 		}
 	}
-	for first, path := range document.Repositories {
-		for second, other := range document.Repositories {
-			if first >= second {
-				continue
-			}
-			equal, err := equivalentLocation(path, other)
-			if err != nil {
-				return nil, fmt.Errorf("%w: compare %q and %q: %v", ErrInvalid, first, second, err)
-			}
-			if equal {
-				return nil, fmt.Errorf("%w: %q and %q refer to the same location", ErrInvalid, first, second)
+	// Resolve each registered location only once. This avoids O(n²)
+	// filesystem lookups under the cross-process registry lock.
+	resolved := make(map[string]string, len(document.Repositories))
+	type observed struct {
+		identity string
+		info     fs.FileInfo
+	}
+	var observedLocations []observed
+	for identity, path := range document.Repositories {
+		physical, err := (physicalpath.Filesystem{}).ResolveAbsolute(path)
+		if err != nil {
+			return nil, fmt.Errorf("%w: resolve registered location for %q: %v", ErrInvalid, identity, err)
+		}
+		key := physical
+		if runtime.GOOS == "windows" {
+			key = strings.ToLower(key)
+		}
+		if previous, exists := resolved[key]; exists {
+			return nil, fmt.Errorf("%w: %q and %q refer to the same location", ErrInvalid, previous, identity)
+		}
+		resolved[key] = identity
+
+		info, err := os.Stat(physical)
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("%w: stat registered location for %q: %v", ErrInvalid, identity, err)
+		}
+		for _, previous := range observedLocations {
+			if os.SameFile(info, previous.info) {
+				return nil, fmt.Errorf("%w: %q and %q refer to the same location", ErrInvalid, previous.identity, identity)
 			}
 		}
+		observedLocations = append(observedLocations, observed{identity: identity, info: info})
 	}
+
 	return document.Repositories, nil
 }
 
