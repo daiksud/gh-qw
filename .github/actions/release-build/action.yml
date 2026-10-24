@@ -1,0 +1,88 @@
+name: Build gh-qw release artifact
+description: Validate frozen source, cross-build one binary, and upload its identity manifest.
+inputs:
+  target:
+    description: Allowlisted release target.
+    required: true
+  version:
+    description: Validated release version.
+    required: true
+  source-sha:
+    description: Frozen full source commit SHA.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Validate frozen source and target
+      id: target
+      shell: bash
+      env:
+        TARGET: ${{ inputs.target }}
+        VERSION: ${{ inputs.version }}
+        SOURCE_SHA: ${{ inputs.source-sha }}
+      run: |
+        set -euo pipefail
+        [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+        [[ "$VERSION" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+        [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]]
+        bash .github/scripts/release-artifacts.sh target "$TARGET" >> "$GITHUB_OUTPUT"
+    - name: Set up Go
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version-file: go.mod
+        cache: true
+    - name: Validate primary Linux release source
+      if: inputs.target == 'linux-amd64'
+      shell: bash
+      run: |
+        set -euo pipefail
+        unformatted="$(gofmt -l .)"
+        [[ -z "$unformatted" ]] || {
+          printf 'Unformatted Go files:\n%s\n' "$unformatted" >&2
+          exit 1
+        }
+        go vet ./...
+        go test -race ./...
+
+        validator="$RUNNER_TEMP/gh-infra-v0.13.0"
+        curl --proto '=https' --tlsv1.2 --location --fail --silent --show-error \
+          --output "$validator" \
+          https://github.com/babarot/gh-infra/releases/download/v0.13.0/gh-infra_linux-amd64
+        printf '%s  %s\n' \
+          ecf6dc47e6c51312308de3c514705990a3a8f24e47fb43da34425470c9a117e4 \
+          "$validator" | sha256sum --check --strict
+        chmod +x "$validator"
+        "$validator" validate .github/settings.yml
+
+        bash .github/scripts/prepare-release.test.sh
+        bash .github/scripts/release-notes.test.sh
+        bash .github/scripts/release-artifacts.test.sh
+    - name: Cross-build release binary and manifest
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+        SOURCE_SHA: ${{ inputs.source-sha }}
+        TARGET: ${{ inputs.target }}
+        TARGET_GOOS: ${{ steps.target.outputs.goos }}
+        TARGET_GOARCH: ${{ steps.target.outputs.goarch }}
+        TARGET_ASSET: ${{ steps.target.outputs.asset }}
+      run: |
+        set -euo pipefail
+        mkdir -p dist
+        CGO_ENABLED=0 GOOS="$TARGET_GOOS" GOARCH="$TARGET_GOARCH" \
+          go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" \
+          -o "dist/$TARGET_ASSET" .
+        bash .github/scripts/release-artifacts.sh manifest \
+          "$TARGET" "$VERSION" "$SOURCE_SHA" dist
+        bash .github/scripts/release-artifacts.sh verify \
+          "$TARGET" "$VERSION" "$SOURCE_SHA" dist
+    - name: Upload exact release artifact
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: release-${{ inputs.target }}-${{ inputs.source-sha }}
+        path: |
+          dist/${{ steps.target.outputs.asset }}
+          dist/${{ steps.target.outputs.asset }}.manifest
+        if-no-files-found: error
+        retention-days: 1
+        compression-level: 0

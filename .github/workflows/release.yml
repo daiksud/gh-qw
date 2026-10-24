@@ -1,169 +1,139 @@
-name: Release
-
+name: release
 on:
   workflow_dispatch:
-
-permissions:
-  contents: read
-  pull-requests: read
-
+    inputs:
+      source_sha:
+        description: Optional immutable main commit to require (for reviewed dispatch)
+        required: false
+        type: string
+permissions: {}
 defaults:
   run:
     shell: bash
-
 concurrency:
-  group: gh-qw-release
+  # Serialize publication without cancelling an active release; ordering is not FIFO.
+  group: release-${{ github.repository }}
   cancel-in-progress: false
-
 jobs:
-  prepare:
-    name: Prepare release
+  resolve:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-slim
     timeout-minutes: 10
+    permissions: {contents: read}
     outputs:
-      tag: ${{ steps.version.outputs.tag }}
-      previous_tag: ${{ steps.version.outputs.previous_tag }}
-      sha: ${{ steps.version.outputs.sha }}
+      source-sha: ${{ steps.source.outputs.source-sha }}
+      version: ${{ steps.metadata.outputs.version }}
+      previous-tag: ${{ steps.metadata.outputs.previous-tag }}
+      previous-sha: ${{ steps.metadata.outputs.previous-sha }}
+      build-matrix: ${{ steps.metadata.outputs.build-matrix }}
+      acceptance-matrix: ${{ steps.metadata.outputs.acceptance-matrix }}
     steps:
-      - name: Require main
-        run: |
-          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
-            echo "::error::Run the Release workflow from main."
-            exit 1
-          fi
-
-      - name: Check out the selected commit
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.sha }}
-          fetch-depth: 0
-
-      - name: Compute next version from reviewed labels
-        id: version
+      - name: Freeze latest main
+        id: source
         env:
           GH_TOKEN: ${{ github.token }}
-        run: bash .github/scripts/prepare-release.sh >> "$GITHUB_OUTPUT"
-
-      - name: Summarize release
-        env:
-          RELEASE_TAG: ${{ steps.version.outputs.tag }}
-          PREVIOUS_TAG: ${{ steps.version.outputs.previous_tag }}
-          TARGET_SHA: ${{ steps.version.outputs.sha }}
+          EXPECTED_SOURCE_SHA: ${{ inputs.source_sha }}
         run: |
-          printf '## Release plan\n\nVersion: %s\n\nPrevious release: %s\n\nCommit: %s\n' \
-            "$RELEASE_TAG" "$PREVIOUS_TAG" "$TARGET_SHA" >> "$GITHUB_STEP_SUMMARY"
-
-  validate:
-    name: Validate release
-    needs: prepare
-    permissions:
-      contents: read
-    uses: ./.github/workflows/ci.yml
-
-  build:
-    name: Build ${{ matrix.asset }}
-    needs: prepare
-    runs-on: ubuntu-slim
-    timeout-minutes: 10
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - goos: darwin
-            goarch: amd64
-            asset: gh-qw-darwin-amd64
-          - goos: darwin
-            goarch: arm64
-            asset: gh-qw-darwin-arm64
-          - goos: linux
-            goarch: amd64
-            asset: gh-qw-linux-amd64
-          - goos: linux
-            goarch: arm64
-            asset: gh-qw-linux-arm64
-          - goos: windows
-            goarch: amd64
-            asset: gh-qw-windows-amd64.exe
-    steps:
-      - name: Check out repository
+          sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+          if [[ -n "$EXPECTED_SOURCE_SHA" ]]; then
+            [[ "$EXPECTED_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+              echo 'invalid source_sha (expected full 40-character SHA)' >&2; exit 1
+            }
+            [[ "$sha" == "$EXPECTED_SOURCE_SHA" ]] || {
+              echo 'main moved since approved source_sha; refusing a different release source' >&2; exit 1
+            }
+          fi
+          printf 'source-sha=%s\n' "$sha" >> "$GITHUB_OUTPUT"
+      - name: Checkout frozen main and complete release history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.prepare.outputs.sha }}
-
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Build
-        env:
-          RELEASE_VERSION: ${{ needs.prepare.outputs.tag }}
-          CGO_ENABLED: "0"
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-        run: go build -trimpath -ldflags="-s -w -X main.version=${RELEASE_VERSION}" -o 'dist/${{ matrix.asset }}' .
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: ${{ matrix.asset }}
-          path: dist/${{ matrix.asset }}
-          if-no-files-found: error
-          retention-days: 1
-
-  release:
-    name: Create GitHub Release
-    needs: [prepare, validate, build]
-    runs-on: ubuntu-slim
-    timeout-minutes: 5
-    permissions:
-      contents: write
-    steps:
-      - name: Check out selected commit and current tags
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ needs.prepare.outputs.sha }}
+          ref: ${{ steps.source.outputs.source-sha }}
           fetch-depth: 0
           persist-credentials: false
-
-      - name: Download assets
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      - name: Resolve release metadata and validated target matrices
+        id: metadata
+        uses: ./.github/actions/release-metadata
         with:
-          path: dist
-          merge-multiple: true
-
-      - name: Publish validated binaries
+          source-sha: ${{ steps.source.outputs.source-sha }}
         env:
           GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
-          PREVIOUS_TAG: ${{ needs.prepare.outputs.previous_tag }}
-          TARGET_SHA: ${{ needs.prepare.outputs.sha }}
-        run: |
-          set -euo pipefail
-          latest_tag="$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq .tag_name)"
-          if [ "$latest_tag" != "$PREVIOUS_TAG" ]; then
-            echo "::error::The published baseline changed. Start a new Release workflow."
-            exit 1
-          fi
-          existing_tag="$(git tag --list "$RELEASE_TAG")"
-          if [ -n "$existing_tag" ]; then
-            existing_sha="$(git rev-parse "refs/tags/${RELEASE_TAG}^{commit}")"
-            if [ "$existing_sha" != "$TARGET_SHA" ]; then
-              echo "::error::The release tag already points to a different commit."
-              exit 1
-            fi
-          fi
-          # gh creates a draft, uploads artifacts, then publishes.
-          # Any tag is created only during this final publishing phase.
-          gh release create "$RELEASE_TAG" \
-            --target "$TARGET_SHA" \
-            --title "$RELEASE_TAG" \
-            --generate-notes \
-            --notes-start-tag "$PREVIOUS_TAG" \
-            "dist/gh-qw-darwin-amd64" \
-            "dist/gh-qw-darwin-arm64" \
-            "dist/gh-qw-linux-amd64" \
-            "dist/gh-qw-linux-arm64" \
-            "dist/gh-qw-windows-amd64.exe"
+  commit-stage:
+    needs: resolve
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    permissions: {contents: read}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.resolve.outputs.build-matrix) }}
+    steps:
+      - name: Checkout frozen main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.resolve.outputs.source-sha }}
+          persist-credentials: false
+      - name: Check source and build release artifact
+        uses: ./.github/actions/release-build
+        with:
+          target: ${{ matrix.target }}
+          version: ${{ needs.resolve.outputs.version }}
+          source-sha: ${{ needs.resolve.outputs.source-sha }}
+  acceptance-stage:
+    needs: [resolve, commit-stage]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    permissions: {contents: read}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.resolve.outputs.acceptance-matrix) }}
+    steps:
+      - name: Checkout frozen source separately from the consumer
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.resolve.outputs.source-sha }}
+          path: .action
+          persist-credentials: false
+      - name: Accept the transferred release artifact
+        uses: ./.action/.github/actions/release-acceptance
+        with:
+          target: ${{ matrix.target }}
+          version: ${{ needs.resolve.outputs.version }}
+          source-sha: ${{ needs.resolve.outputs.source-sha }}
+  release:
+    needs: [resolve, commit-stage, acceptance-stage]
+    runs-on: ubuntu-slim
+    timeout-minutes: 15
+    permissions: {contents: write}
+    steps:
+      - name: Checkout frozen main and complete release history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.resolve.outputs.source-sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Publish accepted release artifacts
+        uses: ./.github/actions/release-publish
+        with:
+          source-sha: ${{ needs.resolve.outputs.source-sha }}
+          version: ${{ needs.resolve.outputs.version }}
+          previous-tag: ${{ needs.resolve.outputs.previous-tag }}
+          previous-sha: ${{ needs.resolve.outputs.previous-sha }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+  verify-release:
+    needs: [resolve, release]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions: {contents: read}
+    steps:
+      - name: Checkout frozen verification source separately from the consumer
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.resolve.outputs.source-sha }}
+          path: .action
+          persist-credentials: false
+      - name: Verify immutable published release
+        uses: ./.action/.github/actions/release-verify
+        with:
+          source-sha: ${{ needs.resolve.outputs.source-sha }}
+          version: ${{ needs.resolve.outputs.version }}
