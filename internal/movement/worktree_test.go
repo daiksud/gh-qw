@@ -1,4 +1,4 @@
-package migrate
+package movement
 
 import (
 	"context"
@@ -15,23 +15,23 @@ import (
 func TestRealGitWorktreeRepairAfterMainMove(t *testing.T) {
 	t.Parallel()
 
-	base := migrateTestPhysical(t, t.TempDir())
+	base := worktreeTestPhysical(t, t.TempDir())
 	source := filepath.Join(base, "source")
 	destinationRoot := filepath.Join(base, "destination-root")
 	destination := filepath.Join(destinationRoot, "github.com", "owner", "repo")
 	external := filepath.Join(base, "external")
 	internal := filepath.Join(source, "internal")
 
-	migrateRunGit(t, "", "init", "-q", source)
-	migrateRunGit(t, source, "config", "user.email", "test@example.com")
-	migrateRunGit(t, source, "config", "user.name", "Test")
+	moveRunGit(t, "", "init", "-q", source)
+	moveRunGit(t, source, "config", "user.email", "test@example.com")
+	moveRunGit(t, source, "config", "user.name", "Test")
 	if err := os.WriteFile(filepath.Join(source, "README"), []byte("test"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	migrateRunGit(t, source, "add", "README")
-	migrateRunGit(t, source, "commit", "-qm", "initial")
-	migrateRunGit(t, source, "worktree", "add", "-qb", "internal", internal)
-	migrateRunGit(t, source, "worktree", "add", "-qb", "external", external)
+	moveRunGit(t, source, "add", "README")
+	moveRunGit(t, source, "commit", "-qm", "initial")
+	moveRunGit(t, source, "worktree", "add", "-qb", "internal", internal)
+	moveRunGit(t, source, "worktree", "add", "-qb", "external", external)
 	if err := os.Mkdir(destinationRoot, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +57,7 @@ func TestRealGitWorktreeRepairAfterMainMove(t *testing.T) {
 
 	movedInternal := filepath.Join(destination, "internal")
 	for _, worktree := range []string{movedInternal, external} {
-		output := migrateRunGit(t, worktree, "rev-parse", "--git-common-dir")
+		output := moveRunGit(t, worktree, "rev-parse", "--git-common-dir")
 		common := strings.TrimSpace(output)
 		if !filepath.IsAbs(common) {
 			common = filepath.Join(worktree, common)
@@ -76,7 +76,7 @@ func TestRealGitWorktreeRepairAfterMainMove(t *testing.T) {
 	}
 }
 
-func migrateRunGit(t *testing.T, dir string, arguments ...string) string {
+func moveRunGit(t *testing.T, dir string, arguments ...string) string {
 	t.Helper()
 	command := exec.Command("git", arguments...)
 	command.Dir = dir
@@ -87,7 +87,7 @@ func migrateRunGit(t *testing.T, dir string, arguments ...string) string {
 	return string(output)
 }
 
-func migrateTestPhysical(t *testing.T, path string) string {
+func worktreeTestPhysical(t *testing.T, path string) string {
 	t.Helper()
 	physical, err := filepath.EvalSymlinks(path)
 	if err != nil {
@@ -108,11 +108,11 @@ func TestWorktreeRepairPlanRevalidatesMissingPaths(t *testing.T) {
 		{name: "present becomes missing", removeAfter: true, wantError: true},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
-			base := migrateTestPhysical(t, t.TempDir())
+			base := worktreeTestPhysical(t, t.TempDir())
 			source, external := filepath.Join(base, "source"), filepath.Join(base, "external")
-			migrateRunGit(t, "", "init", "-q", source)
-			migrateRunGit(t, source, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-qm", "initial")
-			migrateRunGit(t, source, "worktree", "add", "-qb", "external", external)
+			moveRunGit(t, "", "init", "-q", source)
+			moveRunGit(t, source, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-qm", "initial")
+			moveRunGit(t, source, "worktree", "add", "-qb", "external", external)
 			if scenario.absentBefore {
 				if err := os.RemoveAll(external); err != nil {
 					t.Fatal(err)

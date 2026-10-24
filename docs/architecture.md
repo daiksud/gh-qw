@@ -13,7 +13,7 @@
 | `procio` | Context-bound processes, descriptors, captured output, bounded diagnostic tails, and typed failures. |
 | `physicalpath`, `fsidentity` | Physical paths, established boundaries, and filesystem object identity. |
 | `removal` | Shared observations, revalidation, native removal, verification, and bounded parent cleanup. |
-| `migrate` | Source discovery, destination planning, directory movement, and native registration repair. |
+| `movement` | Safe directory movement and native worktree-registration repair for `add --move`. |
 
 ## External commands
 
@@ -50,8 +50,8 @@ registrations, and unknown registration state.
 
 Share observations only within one read-only phase. Rebuild bulk removal plans
 after confirmation and revalidate each target immediately before deletion.
-Whole-repository, single-worktree, gone-upstream, and prune policies retain
-separate selection and continuation decisions.
+Whole-repository, single-worktree, and gone-upstream policies retain separate
+selection and continuation decisions.
 
 Git removes linked worktrees; gh-qw verifies path and registration absence
 before empty-parent cleanup. gh-qw deletes the main directory only after its
@@ -61,7 +61,7 @@ boundary. After confirmed main-directory deletion, unregister it even when a
 later cleanup or output step fails, provided the mapping still names the removed
 path. A checkout registered at an arbitrary path inside a configured root uses
 the same exact-path boundary; configured layout is not inferred from containment.
-Whole-repository removal and migration refuse a source that physically contains
+Whole-repository removal and `add --move` refuse a source that physically contains
 another registered repository, including registrations observed during removal
 revalidation after confirmation. Removal applies the same inventory protection
 to every linked worktree scheduled for deletion. Containment follows filesystem
@@ -69,11 +69,9 @@ identity rather than path spelling, including case-insensitive aliases.
 Single and gone-upstream worktree removal apply the same check to explicit
 repository registrations and refresh that inventory immediately before Git
 removes each linked directory.
-Prune's metadata/expiry evidence is not interchangeable with ordinary removal
-evidence.
 
 Report operations already completed when a later step fails. Do not undo a
-created branch, completed migration, or successful worktree creation merely
+created branch, completed repository move, or successful worktree creation merely
 because a subsequent checkout, repair, cleanup, or output write fails. A failed
 warning write prevents mutation; an output failure after mutation reports the
 actual partial result. See the [CLI reference](cli.md) for command-specific rules.

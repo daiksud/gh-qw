@@ -1,4 +1,4 @@
-package migrate
+package movement
 
 import (
 	"errors"
@@ -15,7 +15,7 @@ import (
 
 // ErrDestinationExists identifies a destination collision detected
 // immediately before movement.
-var ErrDestinationExists = errors.New("migration destination already exists")
+var ErrDestinationExists = errors.New("repository move destination already exists")
 
 // MoveOptions supplies boundaries and filesystem seams for Move.
 type MoveOptions struct {
@@ -48,13 +48,13 @@ func Move(source, destination string, options MoveOptions) error {
 	filesystem := newFilesystem(options.Filesystem)
 	sourceInfo, err := filesystem.lstat(source)
 	if err != nil {
-		return fmt.Errorf("inspect migration source %q: %w", source, err)
+		return fmt.Errorf("inspect repository move source %q: %w", source, err)
 	}
 	if sourceInfo.Mode()&fs.ModeSymlink != 0 || !sourceInfo.IsDir() {
-		return fmt.Errorf("migration source %q is not a physical directory", source)
+		return fmt.Errorf("repository move source %q is not a physical directory", source)
 	}
 	if err := fsidentity.Prime(sourceInfo, filesystem.sameFile); err != nil {
-		return fmt.Errorf("capture migration source identity %q: %w", source, err)
+		return fmt.Errorf("capture repository move source identity %q: %w", source, err)
 	}
 
 	physicalDestination, exists, err := CheckDestination(
@@ -67,7 +67,7 @@ func Move(source, destination string, options MoveOptions) error {
 	}
 	if physicalDestination != destination {
 		return fmt.Errorf(
-			"migration destination changed from %q to %q",
+			"repository move destination changed from %q to %q",
 			destination,
 			physicalDestination,
 		)
@@ -77,17 +77,17 @@ func Move(source, destination string, options MoveOptions) error {
 	}
 
 	if err := filesystem.mkdirAll(filepath.Dir(destination), 0o755); err != nil {
-		return fmt.Errorf("create migration destination parent: %w", err)
+		return fmt.Errorf("create repository move destination parent: %w", err)
 	}
 
 	currentSource, err := filesystem.lstat(source)
 	if err != nil {
-		return fmt.Errorf("revalidate migration source %q: %w", source, err)
+		return fmt.Errorf("revalidate repository move source %q: %w", source, err)
 	}
 	if currentSource.Mode()&fs.ModeSymlink != 0 ||
 		!currentSource.IsDir() ||
 		!filesystem.sameFile(sourceInfo, currentSource) {
-		return fmt.Errorf("revalidate migration source %q: source changed", source)
+		return fmt.Errorf("revalidate repository move source %q: source changed", source)
 	}
 	physicalDestination, exists, err = CheckDestination(
 		options.DestinationRoot,
@@ -99,7 +99,7 @@ func Move(source, destination string, options MoveOptions) error {
 	}
 	if physicalDestination != destination {
 		return fmt.Errorf(
-			"migration destination changed from %q to %q",
+			"repository move destination changed from %q to %q",
 			destination,
 			physicalDestination,
 		)
@@ -111,13 +111,13 @@ func Move(source, destination string, options MoveOptions) error {
 	destinationParent := filepath.Dir(destination)
 	parentInfo, err := filesystem.lstat(destinationParent)
 	if err != nil {
-		return fmt.Errorf("inspect migration destination parent %q: %w", destinationParent, err)
+		return fmt.Errorf("inspect repository move destination parent %q: %w", destinationParent, err)
 	}
 	if parentInfo.Mode()&fs.ModeSymlink != 0 || !parentInfo.IsDir() {
-		return fmt.Errorf("migration destination parent %q is not a physical directory", destinationParent)
+		return fmt.Errorf("repository move destination parent %q is not a physical directory", destinationParent)
 	}
 	if err := fsidentity.Prime(parentInfo, filesystem.sameFile); err != nil {
-		return fmt.Errorf("capture migration destination parent identity %q: %w", destinationParent, err)
+		return fmt.Errorf("capture repository move destination parent identity %q: %w", destinationParent, err)
 	}
 
 	renameErr := filesystem.rename(source, destination)

@@ -62,7 +62,7 @@ func TestCloneSyntaxErrorHasNoResolutionOrCloneSideEffects(t *testing.T) {
 func TestNativeRefFailuresRemainRuntimeErrors(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	for _, args := range [][]string{
-		{"worktree", "add", "topic"},
+		{"add", "--worktree", "topic"},
 		{"remove", "--worktree", "topic"},
 		{"clone", "--branch", "topic", "owner/widget"},
 		{"clone", "owner/widget@topic"},
@@ -255,32 +255,33 @@ func TestListCanonicalizationNeedsNoExternalCommands(t *testing.T) {
 	}
 }
 
-func TestMigrateRemoteResolutionNeedsNoGh(t *testing.T) {
+func TestAddMoveRemoteResolutionNeedsNoGh(t *testing.T) {
 	gitExecutable, err := exec.LookPath("git")
 	if err != nil {
 		t.Fatal(err)
 	}
-	base := migrateTestPhysical(t, t.TempDir())
+	base := moveTestPhysical(t, t.TempDir())
 	primary, source := filepath.Join(base, "primary"), filepath.Join(base, "source")
 	if err := os.Mkdir(primary, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	migrateTestInitRepository(t, source, "ssh://git@github.com/Owner/Widget.git")
-	git := migrateTestGitRunner(io.Discard)
+	moveTestInitRepository(t, source, "ssh://git@github.com/Owner/Widget.git")
+	git := moveTestGitRunner(io.Discard)
 	git.runner.Executable = gitExecutable
 	t.Setenv("PATH", t.TempDir())
 	var stdout, stderr bytes.Buffer
-	command := cmd.NewMigrateCommand(cmd.MigrateDependencies{
-		Resolver: &migrateRootResolver{result: rootpkg.Result{RepositoryRoots: []string{primary}}},
+	command := newAddMoveCommand(t, cmd.RepositoryMoveDependencies{
+		Resolver: &moveRootResolver{result: rootpkg.Result{RepositoryRoots: []string{primary}}},
 		Git:      git,
 		Stdout:   &stdout,
 		Stderr:   &stderr,
 	})
-	command.SetArgs([]string{"--dry-run", source})
+	command.SetArgs([]string{"--move", source})
 	if err := command.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	if stdout.Len() != 0 || !bytes.Contains(stderr.Bytes(), []byte("github.com/Owner/Widget")) {
-		t.Fatalf("dry-run output: stdout %q, stderr %q", stdout.String(), stderr.String())
+	destination := filepath.Join(primary, "github.com", "Owner", "Widget")
+	if stdout.String() != filepath.ToSlash(destination)+"\n" {
+		t.Fatalf("stdout = %q, want %q", stdout.String(), destination)
 	}
 }

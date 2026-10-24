@@ -1,16 +1,15 @@
-package migrate
+package movement
 
 import (
 	"io/fs"
 	"os"
 	"path/filepath"
 
-	"github.com/daiksud/gh-qw/internal/local"
 	"github.com/daiksud/gh-qw/internal/physicalpath"
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
 )
 
-// Filesystem supplies the filesystem seams used by migration. Nil functions
+// Filesystem supplies the filesystem seams used by repository movement. Nil functions
 // use their operating-system equivalents.
 type Filesystem struct {
 	ReadDir      func(string) ([]os.DirEntry, error)
@@ -100,19 +99,6 @@ func newFilesystem(options Filesystem) filesystem {
 		result.removeAll = os.RemoveAll
 	}
 	return result
-}
-
-// LocalFilesystemOptions converts migration seams for local repository
-// discovery.
-func LocalFilesystemOptions(options Filesystem) local.FilesystemOptions {
-	filesystem := newFilesystem(options)
-	return local.FilesystemOptions{
-		ReadDir:      filesystem.readDir,
-		Lstat:        filesystem.lstat,
-		Stat:         filesystem.stat,
-		EvalSymlinks: filesystem.evalSymlinks,
-		SameFile:     filesystem.sameFile,
-	}
 }
 
 func rootOptions(filesystem filesystem) rootpkg.Options {

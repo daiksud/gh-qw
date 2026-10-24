@@ -69,8 +69,8 @@ Relative identity input must physicalize inside a configured repository root
 at exactly `<host>/<owner>/<repo>[.git]` depth. It is not a destination override.
 For local `file://` URLs (empty authority or `localhost`), those relative path
 components supply identity. A nonlocal file URL requires exactly
-`file://<host>/<owner>/<repo>[.git]`, with no user or port. Local discovery and
-migration can resolve file URLs; `clone` rejects them as usage errors.
+`file://<host>/<owner>/<repo>[.git]`, with no user or port. Local repository
+inspection can resolve file URLs; `clone` rejects them as usage errors.
 
 Network operations use native gh authentication for the selected host. See
 [environment and authentication](configuration.md#git-and-github-cli-environment),
@@ -136,6 +136,15 @@ another destination or a different registered location. Refuse movement when
 another registered repository is physically nested inside the source. The
 `--move` flag explicitly authorizes that movement; a registry or repair failure
 after a completed move reports the resulting path and error.
+
+Movement requires an ordinary nonbare main repository and derives its identity
+from `origin` or the first configured remote. Revalidate the repository,
+destination, registry inventory, and linked-worktree metadata before mutation.
+Try an atomic rename first; across filesystems, copy files, directories, modes,
+and symlinks, remove an incomplete copy on failure, and delete the source only
+after a successful copy. Run `git worktree repair` with mapped internal and
+unchanged external worktree paths from the new main repository. A repair failure
+leaves the completed move in place and reports the paths needed for recovery.
 
 `--worktree` selects a registered repository via `-R` or the current
 directory, determines the deterministic slot path, and delegates creation
@@ -262,44 +271,7 @@ No candidates succeeds. Declined confirmation, any kept candidate, or partial
 failure returns `1`, including a dry-run with kept candidates. Invalid flag or
 argument combinations return `2`.
 
-## migrate
-
-```text
-gh qw migrate [-y] [--dry-run] [<directory>]
-```
-
-Move repositories into the primary root. With a directory, require an ordinary
-nonbare main repository and derive identity from `origin` or the first remote.
-Linked worktrees, submodules, and nonrepositories are not independent sources.
-Without a directory, use [configured source roots](configuration.md#sources-for-migrate)
-and scan exactly `<host>/<owner>/<repo>` depth, in root and canonical-path order.
-
-A distinct existing destination is an error in single-directory mode. Bulk mode
-warns and skips collisions, bare repositories, and nonrepositories; collision-only
-skips do not fail an otherwise successful run. Never overwrite a destination.
-
-Show the plan and confirm unless `-y` is supplied. Dry-run validates and prints
-the plan but never prompts or changes files. Try rename first; cross-device
-movement copies files/directories/modes/symlinks, removes an incomplete copy on
-failure, and deletes the source only after a successful copy.
-
-Capture Git registrations before moving, map paths inside the source to their
-new locations, leave external paths unchanged, and revalidate before movement.
-When the source is registered, require that exact registration before mutation
-and update it to the destination immediately after a successful move.
-Refuse migration before mutation when another registered repository is physically
-nested inside the source.
-Run `git worktree repair` with all mapped paths from the new main repository.
-A repair failure leaves the moved repository in place, returns status `1`, and
-reports the paths needed for repair. Each successful migration prints its new
-absolute path; warnings and partial results use stderr.
-
-## worktree add
-
-```text
-gh qw worktree add [-R|--repo <repo>] [-b|-B] [--detach] [--orphan]
-                  [-f] <branch> [<commit-ish>]
-```
+### Linked-worktree creation
 
 The path is always `<worktree-root>/<identity>/<branch>`. Validate its slot,
 existing-path and prefix collisions, physical boundary, and parent directories
@@ -325,54 +297,3 @@ or the branch itself when no start point is given. `--orphan` creates an unborn
 branch and accepts no start point. `-b`, `-B`, detach, and orphan are mutually
 exclusive; `-f` may accompany a mode and delegates one force flag to Git.
 On success, print the new absolute worktree path.
-
-## worktree list
-
-```text
-gh qw worktree list [-R|--repo <repo>] [-v] [--porcelain] [--full-path]
-```
-
-Print main first, then linked worktrees sorted by identity. Human columns are
-identity (or absolute path), full HEAD object ID, and `[branch]` or `[detached]`.
-Verbose mode adds lock/prune diagnostics; human spacing is not a machine format.
-
-Porcelain is gh-qw's own format and cannot combine with verbose or full-path:
-
-```text
-identity <host>/<owner>/<repo>[@<slot>]
-path <absolute-path>
-head <full-object-id>
-kind main|linked
-branch <short-branch>
-locked <reason>
-prunable <reason>
-
-```
-
-The first four keys are required in that order. Exactly one `branch` line or
-value-less `detached` line follows. Optional `locked` and `prunable` appear in
-that order. Separate records with an empty LF line, including after the last
-record. Unborn HEAD uses zeros at Git's object-ID width.
-
-Values are printable UTF-8 tokens or C-style double-quoted strings. Quote empty
-values or those containing whitespace, backslashes, quotes, controls, or invalid
-UTF-8 bytes. Escapes are `\\`, `\"`, `\n`, `\r`, `\t`, and `\xHH`; literal newlines
-never occur inside values. Unescape once. Buffer the complete output: any
-unrepresentable/uninspectable record produces status `1` and no partial set.
-
-## worktree prune
-
-```text
-gh qw worktree prune [-R|--repo <repo>] [-n|--dry-run] [-v] [--expire <expire>]
-```
-
-Run Git pruning, then examine deterministic slots. Git interprets expiry;
-without an override, use effective `gc.worktreePruneExpire` and Git's default.
-Dry-run validates/reports without deleting; verbose mode reports decisions.
-
-A nonempty slot is eligible only if absent from the current registration list,
-its `.git` pointer names this repository's common directory, and its metadata
-is prunable or already absent with a slot older than the effective expiry.
-Do not independently remove a worktree whose metadata Git retains. Empty
-managed directories may be cleaned. Unknown files, unrelated pointers, and
-unsafe paths are warned about and preserved. Stdout is empty.

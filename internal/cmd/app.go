@@ -24,10 +24,9 @@ var ErrCommandUsage = errors.New("invalid command usage")
 // ApplicationGit combines every local Git operation used by the command
 // tree. Network-capable operations are delegated to gh; see ApplicationGh.
 type ApplicationGit interface {
-	MigrateGit
+	RepositoryMoveGit
 	WorktreeAddGit
 	WorktreeRemoveGit
-	WorktreePruneGit
 }
 
 // ApplicationGh combines every gh operation used by the command tree.
@@ -181,50 +180,6 @@ func NewCommand(dependencies ApplicationDependencies) *cobra.Command {
 			Stderr:   deps.Stderr,
 		},
 	})
-	migrateCommand := NewMigrateCommand(MigrateDependencies{
-		Resolver: deps.Resolver,
-		Git:      deps.Git,
-		Registry: deps.Registry,
-		Stdout:   deps.Stdout,
-		Stderr:   deps.Stderr,
-	})
-
-	worktreeCommand := &cobra.Command{
-		Use:           "worktree",
-		Short:         "Manage linked Git worktrees",
-		Args:          cobra.NoArgs,
-		SilenceErrors: true,
-		SilenceUsage:  true,
-		RunE: func(command *cobra.Command, _ []string) error {
-			return command.Help()
-		},
-	}
-	worktreeCommand.AddCommand(
-		NewWorktreeAddCommand(WorktreeAddDependencies{
-			Resolver: deps.Resolver,
-			Discover: deps.Discover,
-			Git:      deps.Git,
-			Gh:       deps.Gh,
-			API:      deps.API,
-			Stdout:   deps.Stdout,
-			Stderr:   deps.Stderr,
-		}),
-		NewWorktreeListCommand(WorktreeListDependencies{
-			Resolver: deps.Resolver,
-			Discover: deps.Discover,
-			Git:      deps.Git,
-			Stdout:   deps.Stdout,
-			Stderr:   deps.Stderr,
-		}),
-		NewWorktreePruneCommand(WorktreePruneDependencies{
-			Resolver: deps.Resolver,
-			Discover: deps.Discover,
-			Git:      deps.Git,
-			Stdout:   deps.Stdout,
-			Stderr:   deps.Stderr,
-		}),
-	)
-
 	command.AddCommand(
 		cloneCommand,
 		addCommand,
@@ -232,8 +187,6 @@ func NewCommand(dependencies ApplicationDependencies) *cobra.Command {
 		listCommand,
 		rootCommand,
 		removeCommand,
-		migrateCommand,
-		worktreeCommand,
 	)
 	wrapArgumentErrors(command)
 	return command

@@ -8,7 +8,7 @@ import (
 	"os"
 
 	"github.com/daiksud/gh-qw/internal/local"
-	migratepkg "github.com/daiksud/gh-qw/internal/migrate"
+	movementpkg "github.com/daiksud/gh-qw/internal/movement"
 	"github.com/daiksud/gh-qw/internal/physicalpath"
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
 	"github.com/spf13/cobra"
@@ -18,7 +18,8 @@ import (
 // registering a checkout in place, moving it, or adding a linked worktree.
 type AddDependencies struct {
 	Resolver RootResolver
-	Git      MigrateGit
+	Git      RepositoryMoveGit
+	Move     RepositoryMoveDependencies
 	Worktree WorktreeAddDependencies
 	Registry LocationRegistry
 	Stdout   io.Writer
@@ -38,15 +39,26 @@ func NewAddCommand(deps AddDependencies) *cobra.Command {
 	if deps.Getwd == nil {
 		deps.Getwd = os.Getwd
 	}
-	migrate := MigrateDependencies{
-		Resolver: deps.Resolver,
-		Git:      deps.Git,
-		Registry: deps.Registry,
-		Getwd:    deps.Getwd,
-		Stdout:   deps.Stdout,
-		Stderr:   deps.Stderr,
+	movement := deps.Move
+	if movement.Resolver == nil {
+		movement.Resolver = deps.Resolver
 	}
-	migrateApplyDefaults(&migrate)
+	if movement.Git == nil {
+		movement.Git = deps.Git
+	}
+	if movement.Registry == nil {
+		movement.Registry = deps.Registry
+	}
+	if movement.Getwd == nil {
+		movement.Getwd = deps.Getwd
+	}
+	if movement.Stdout == nil {
+		movement.Stdout = deps.Stdout
+	}
+	if movement.Stderr == nil {
+		movement.Stderr = deps.Stderr
+	}
+	repositoryMoveApplyDefaults(&movement)
 
 	var move, worktree, makeBranch, resetBranch, detach, orphan, force bool
 	var selector string
@@ -75,7 +87,7 @@ func NewAddCommand(deps AddDependencies) *cobra.Command {
 				if orphan && len(args) == 2 {
 					return newCommandUsageError(errors.New("--orphan cannot have a start point"))
 				}
-				if err := local.ValidateSlot(command.Context(), args[0]); err != nil {
+				if err := local.ValidateSlotLayout(command.Context(), args[0]); err != nil {
 					if errors.Is(err, local.ErrInvalidBranch) {
 						return newCommandUsageError(err)
 					}
@@ -93,6 +105,12 @@ func NewAddCommand(deps AddDependencies) *cobra.Command {
 		},
 		RunE: func(command *cobra.Command, args []string) error {
 			if worktree {
+				if err := local.ValidateSlot(command.Context(), args[0]); err != nil {
+					if errors.Is(err, local.ErrInvalidBranch) {
+						return newCommandUsageError(err)
+					}
+					return err
+				}
 				runtime := worktreeAddPrepareRuntime(deps.Worktree)
 				mode := worktreeAddModeAutomatic
 				switch {
@@ -121,8 +139,8 @@ func NewAddCommand(deps AddDependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			migrate.Registry = store
-			return addRepository(command.Context(), migrate, store, args[0], move, command.OutOrStdout())
+			movement.Registry = store
+			return addRepository(command.Context(), movement, store, args[0], move, command.OutOrStdout())
 		},
 	}
 	flags := command.Flags()
@@ -139,13 +157,13 @@ func NewAddCommand(deps AddDependencies) *cobra.Command {
 	return command
 }
 
-func addRepository(ctx context.Context, deps MigrateDependencies, store LocationRegistry, source string, move bool, stdout io.Writer) error {
+func addRepository(ctx context.Context, deps RepositoryMoveDependencies, store LocationRegistry, source string, move bool, stdout io.Writer) error {
 	roots, err := deps.Resolver.Resolve()
 	if err != nil {
 		return err
 	}
 	if move {
-		item, err := migratePlanSingle(ctx, deps, roots, source)
+		item, err := repositoryMovePlanSingle(ctx, deps, roots, source)
 		if err != nil {
 			return fmt.Errorf("plan repository move: %w", err)
 		}
@@ -162,7 +180,7 @@ func addRepository(ctx context.Context, deps MigrateDependencies, store Location
 				return fmt.Errorf("repository %q is registered at %q instead of move source %q", item.identity, previous, item.source)
 			}
 		}
-		moved, err := migrateExecuteItem(ctx, deps, roots, item)
+		moved, err := repositoryMoveExecute(ctx, deps, roots, item)
 		if err != nil {
 			return err
 		}
@@ -175,15 +193,15 @@ func addRepository(ctx context.Context, deps MigrateDependencies, store Location
 		return commandWritePath(stdout, item.destination)
 	}
 
-	absolute, err := migrateAbsoluteInput(source, deps.Getwd)
+	absolute, err := repositoryMoveAbsoluteInput(source, deps.Getwd)
 	if err != nil {
 		return err
 	}
-	snapshot, err := migratepkg.InspectRepository(ctx, absolute, deps.Git, deps.Filesystem)
+	snapshot, err := movementpkg.InspectRepository(ctx, absolute, deps.Git, deps.Filesystem)
 	if err != nil {
 		return fmt.Errorf("inspect repository to add: %w", err)
 	}
-	spec, err := migrateRemoteSpec(ctx, deps.Git, snapshot.Path, roots.RepositoryRoots)
+	spec, err := repositoryMoveRemoteSpec(ctx, deps.Git, snapshot.Path, roots.RepositoryRoots)
 	if err != nil {
 		return fmt.Errorf("identify repository to add: %w", err)
 	}

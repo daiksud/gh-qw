@@ -1,4 +1,4 @@
-package migrate
+package movement
 
 import (
 	"context"
@@ -14,22 +14,22 @@ import (
 func TestInspectRepositoryAcceptsOnlyOrdinaryMainWorktree(t *testing.T) {
 	t.Parallel()
 
-	base := migrateTestPhysical(t, t.TempDir())
+	base := worktreeTestPhysical(t, t.TempDir())
 	main := filepath.Join(base, "main")
 	linked := filepath.Join(base, "linked")
 	bare := filepath.Join(base, "bare")
 	nonGit := filepath.Join(base, "not-git")
 
-	migrateRunGit(t, "", "init", "-q", main)
-	migrateRunGit(t, main, "config", "user.email", "test@example.com")
-	migrateRunGit(t, main, "config", "user.name", "Test")
+	moveRunGit(t, "", "init", "-q", main)
+	moveRunGit(t, main, "config", "user.email", "test@example.com")
+	moveRunGit(t, main, "config", "user.name", "Test")
 	if err := os.WriteFile(filepath.Join(main, "README"), []byte("test"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	migrateRunGit(t, main, "add", "README")
-	migrateRunGit(t, main, "commit", "-qm", "initial")
-	migrateRunGit(t, main, "worktree", "add", "-qb", "linked", linked)
-	migrateRunGit(t, "", "init", "--bare", "-q", bare)
+	moveRunGit(t, main, "add", "README")
+	moveRunGit(t, main, "commit", "-qm", "initial")
+	moveRunGit(t, main, "worktree", "add", "-qb", "linked", linked)
+	moveRunGit(t, "", "init", "--bare", "-q", bare)
 	if err := os.Mkdir(nonGit, 0o755); err != nil {
 		t.Fatal(err)
 	}

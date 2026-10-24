@@ -307,7 +307,7 @@ func TestWorktreeAddRejectsConflictingOptions(t *testing.T) {
 	}
 }
 
-func TestWorktreeRemovePruneAndRepairArguments(t *testing.T) {
+func TestWorktreeRemoveAndRepairArguments(t *testing.T) {
 	dir := t.TempDir()
 	tests := []struct {
 		name string
@@ -323,22 +323,6 @@ func TestWorktreeRemovePruneAndRepairArguments(t *testing.T) {
 				})
 			},
 			want: []string{"worktree", "remove", "--force", "--", "/worktrees/-feature"},
-		},
-		{
-			name: "prune",
-			run: func(r *Runner) error {
-				return r.WorktreePrune(context.Background(), dir, WorktreePruneOptions{
-					DryRun:  true,
-					Verbose: true,
-					Expire:  "2.weeks.ago",
-				})
-			},
-			want: []string{
-				"worktree", "prune",
-				"--dry-run",
-				"--verbose",
-				"--expire", "2.weeks.ago",
-			},
 		},
 		{
 			name: "repair paths",
@@ -450,7 +434,7 @@ func TestListWorktreesRealSHA256RepositoryPreservesObjectFormatWidth(t *testing.
 // directory when dir is empty), failing the test on error. It isolates the
 // subprocess from ambient user/system Git configuration, mirroring the
 // hermetic env used by internal/local's runGit and
-// internal/migrate/backpointer_test.go's migrateRunGit test helpers.
+// internal/movement/backpointer_test.go's moveRunGit test helpers.
 func gitcmdRunRealGit(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	output, err := gitcmdTryRealGit(dir, args...)

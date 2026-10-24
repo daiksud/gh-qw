@@ -31,7 +31,7 @@ type Options struct {
 	// RejectFileScheme rejects a file:// input (local or non-local
 	// authority) as a usage error. clone sets this because it delegates to
 	// `gh repo clone`, which never accepts a file:// URL; other callers such
-	// as list and migrate leave it unset because they support file:// input.
+	// as list and add --move leave it unset because they support file:// input.
 	RejectFileScheme bool
 }
 

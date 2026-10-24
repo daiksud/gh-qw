@@ -17,7 +17,6 @@ import (
 	"github.com/daiksud/gh-qw/internal/gitcmd"
 	"github.com/daiksud/gh-qw/internal/local"
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
-	"github.com/spf13/cobra"
 )
 
 // WorktreeAddGit is the Git capability required by worktree add.
@@ -112,94 +111,6 @@ type worktreeAddPlanner struct {
 	git        WorktreeAddGit
 	api        WorktreeAddAPI
 	repository local.Repository
-}
-
-// NewWorktreeAddCommand returns the command that creates one deterministic
-// linked worktree.
-func NewWorktreeAddCommand(dependencies WorktreeAddDependencies) *cobra.Command {
-	runtime := worktreeAddPrepareRuntime(dependencies)
-
-	var (
-		selector   string
-		newMode    bool
-		resetMode  bool
-		detachMode bool
-		orphanMode bool
-		force      bool
-	)
-
-	command := &cobra.Command{
-		Use: "add [-R|--repo selector] [-b] [-B] [--detach] [--orphan] [-f] " +
-			"<branch> [commit-ish]",
-		Short:         "Add a linked worktree",
-		SilenceErrors: true,
-		SilenceUsage:  true,
-		Args: func(command *cobra.Command, args []string) error {
-			if err := cobra.RangeArgs(1, 2)(command, args); err != nil {
-				return worktreeAddNewUsageError(err)
-			}
-			modeCount := 0
-			for _, enabled := range []bool{newMode, resetMode, detachMode, orphanMode} {
-				if enabled {
-					modeCount++
-				}
-			}
-			if modeCount > 1 {
-				return worktreeAddNewUsageError(
-					errors.New("-b, -B, --detach, and --orphan are mutually exclusive"),
-				)
-			}
-			if orphanMode && len(args) == 2 {
-				return worktreeAddNewUsageError(
-					errors.New("--orphan does not accept a commit-ish"),
-				)
-			}
-			return nil
-		},
-		RunE: func(command *cobra.Command, args []string) error {
-			if err := local.ValidateSlot(command.Context(), args[0]); err != nil {
-				if errors.Is(err, local.ErrInvalidBranch) {
-					return worktreeAddNewUsageError(err)
-				}
-				return err
-			}
-			mode := worktreeAddModeAutomatic
-			switch {
-			case newMode:
-				mode = worktreeAddModeNew
-			case resetMode:
-				mode = worktreeAddModeReset
-			case detachMode:
-				mode = worktreeAddModeDetach
-			case orphanMode:
-				mode = worktreeAddModeOrphan
-			}
-
-			request := worktreeAddRequest{
-				selector:    selector,
-				selectorSet: command.Flags().Changed("repo"),
-				branch:      args[0],
-				mode:        mode,
-				force:       force,
-			}
-			if len(args) == 2 {
-				request.commitish = args[1]
-			}
-			return worktreeAddRun(command.Context(), runtime, request)
-		},
-	}
-
-	flags := command.Flags()
-	flags.StringVarP(&selector, "repo", "R", "", "Select an existing repository")
-	flags.BoolVarP(&newMode, "b", "b", false, "Create a new branch")
-	flags.BoolVarP(&resetMode, "B", "B", false, "Create or reset a branch")
-	flags.BoolVar(&detachMode, "detach", false, "Create a detached worktree")
-	flags.BoolVar(&orphanMode, "orphan", false, "Create an unborn orphan branch")
-	flags.BoolVarP(&force, "force", "f", false, "Override Git checkout safety")
-	command.SetOut(runtime.Stdout)
-	command.SetErr(runtime.Stderr)
-
-	return command
 }
 
 func worktreeAddPrepareRuntime(deps WorktreeAddDependencies) WorktreeAddDependencies {
