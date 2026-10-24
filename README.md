@@ -67,11 +67,10 @@ multiple roots are described in the [configuration reference](docs/configuration
 | `list` | List registered repositories; `--worktree` selects worktrees only and `--all` both. |
 | `forget` | Unregister a repository without deleting its files. |
 | `root` | Print repository roots. |
-| `rm` | Remove a selected repository or linked worktree after confirmation. |
+| `remove` | Remove a repository, one linked worktree, or gone-upstream worktrees. |
 | `migrate` | Move repositories into the primary root and repair their worktree registrations. |
 | `worktree add` | Create a linked worktree at its deterministic slot. |
 | `worktree list` | Inspect a repository's worktrees. |
-| `worktree remove` | Remove a linked worktree; `--gone` selects absent upstreams. |
 | `worktree prune` | Prune Git metadata and eligible managed directories. |
 
 See the [CLI reference](docs/cli.md) for exact arguments, output, exit statuses,

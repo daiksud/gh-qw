@@ -172,6 +172,13 @@ func NewCommand(dependencies ApplicationDependencies) *cobra.Command {
 		Git:      deps.Git,
 		Stdout:   deps.Stdout,
 		Stderr:   deps.Stderr,
+		Worktree: WorktreeRemoveDependencies{
+			Resolver: deps.Resolver,
+			Discover: deps.Discover,
+			Git:      deps.Git,
+			Stdout:   deps.Stdout,
+			Stderr:   deps.Stderr,
+		},
 	})
 	migrateCommand := NewMigrateCommand(MigrateDependencies{
 		Resolver: deps.Resolver,
@@ -202,13 +209,6 @@ func NewCommand(dependencies ApplicationDependencies) *cobra.Command {
 			Stderr:   deps.Stderr,
 		}),
 		NewWorktreeListCommand(WorktreeListDependencies{
-			Resolver: deps.Resolver,
-			Discover: deps.Discover,
-			Git:      deps.Git,
-			Stdout:   deps.Stdout,
-			Stderr:   deps.Stderr,
-		}),
-		NewWorktreeRemoveCommand(WorktreeRemoveDependencies{
 			Resolver: deps.Resolver,
 			Discover: deps.Discover,
 			Git:      deps.Git,

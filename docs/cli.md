@@ -80,9 +80,10 @@ including the Enterprise-token trust boundary.
 
 Existing repositories are selected by exact `repo`, `owner/repo`, or full
 `host/owner/repo` suffixes. `-R/--repo` accepts selectors, not paths or URLs.
-Multiple matches are usage errors for mutating selection. Worktree commands use
-an explicit `-R` first; otherwise they resolve the discovered main repository
-from the current main or linked worktree. Outside one, supply `-R`.
+Multiple matches are usage errors for mutating selection. `add --worktree` and
+`remove --worktree` use an explicit `-R` first; otherwise they resolve the
+discovered main repository from the current main or linked worktree. Outside
+one, supply `-R`.
 
 ## clone
 
@@ -194,16 +195,18 @@ gh qw root [--all]
 Print the physical primary root, or every root in precedence order with `--all`.
 Do not create missing roots.
 
-## rm
+## remove
 
 ```text
-gh qw rm [--dry-run] <repository-selector>[@<slot>]
+gh qw remove [--dry-run] <repository-selector>
+gh qw remove --worktree [-R|--repo <repo>] [-f|--force] <slot>
+gh qw remove --worktree [-R|--repo <repo>] --gone
+                    [-n|--dry-run] [-y|--yes] [-f|--force]
 ```
 
-Without a slot, show the main repository and all registered linked worktrees
-and ask once for confirmation. Remove linked worktrees through Git first,
-then revalidate and remove the main directory. With a slot, remove only that
-registered linked path. No implicit force is applied.
+Repository mode shows the main repository and all registered linked worktrees
+and asks once for confirmation. Remove linked worktrees through Git first,
+then revalidate and remove the main directory. No implicit force is applied.
 
 `--dry-run` performs discovery and safety checks and prints the plan without
 prompting or changing anything. Successful stdout is empty. Refusals stop further
@@ -218,6 +221,42 @@ whole-repository removal when another registered repository is physically nested
 inside the main or any linked worktree scheduled for deletion, and recheck that
 condition after confirmation. The same protection applies to single-worktree
 removal.
+
+Single-worktree mode verifies the linked slot's association and invokes Git.
+It never removes the main worktree. Force supplies one level only; Git locks
+that require stronger intervention remain errors. Verify path and registration
+absence, then clean empty parents up to, but excluding, the per-repository
+worktree directory. Preserve nonempty directories and symlinks; reject replaced
+identities or boundaries. Refuse deletion when another explicitly registered
+repository is physically nested in the linked target, and re-read that managed
+inventory immediately before mutation. Cleanup failures still report a
+completed removal. Stdout is empty.
+
+### Gone-upstream selection
+
+`--gone` excludes a slot argument. Select registered linked worktrees attached
+to local branches whose configured, fully qualified upstream ref is absent
+from the local ref database. Use the attached branch, not the storage slot.
+Exclude main/detached worktrees, branches without upstreams, and existing refs.
+Never fetch; branches and commits remain after removal.
+
+Validate every candidate and emit one stable slot-sorted plan. Keep current,
+locked, prunable, unmanaged, misassociated, nested-registration, and dirty
+worktrees; force permits only the dirty case and keeps it annotated in the plan.
+Missing registered paths and symlink-resolved prefixes still protect nested
+registrations. `--yes` skips confirmation only; dry-run stops after validation
+and the plan, including when combined with yes.
+
+Rebuild the full plan and repository inventory after confirmation (or with yes)
+before deletion. Revalidate each target's slot/path, branch/HEAD/upstream,
+lock/prune/dirty state, association, filesystem identity, and nested registrations
+immediately before removal. Candidate-specific refusals/Git failures allow
+independent candidates to continue. Changed shared boundaries/inventory, unknown
+registration state, cancellation, and output failures stop the remainder.
+
+No candidates succeeds. Declined confirmation, any kept candidate, or partial
+failure returns `1`, including a dry-run with kept candidates. Invalid flag or
+argument combinations return `2`.
 
 ## migrate
 
@@ -316,50 +355,6 @@ values or those containing whitespace, backslashes, quotes, controls, or invalid
 UTF-8 bytes. Escapes are `\\`, `\"`, `\n`, `\r`, `\t`, and `\xHH`; literal newlines
 never occur inside values. Unescape once. Buffer the complete output: any
 unrepresentable/uninspectable record produces status `1` and no partial set.
-
-## worktree remove
-
-```text
-gh qw worktree remove [-R|--repo <repo>] [-f|--force] <slot>
-gh qw worktree remove [-R|--repo <repo>] --gone
-                     [-n|--dry-run] [-y|--yes] [-f|--force]
-```
-
-Single-target mode verifies the linked slot's association and invokes Git.
-It never removes the main worktree. Force supplies one level only; Git locks
-that require stronger intervention remain errors. Verify path and registration
-absence, then clean empty parents up to, but excluding, the per-repository
-worktree directory. Preserve nonempty directories and symlinks; reject replaced
-identities or boundaries. Refuse deletion when another explicitly registered
-repository is physically nested in the linked target, and re-read that managed
-inventory immediately before mutation. Cleanup failures still report a
-completed removal. Stdout is empty.
-
-### Gone-upstream selection
-
-`--gone` excludes a slot argument. Select registered linked worktrees attached
-to local branches whose configured, fully qualified upstream ref is absent
-from the local ref database. Use the attached branch, not the storage slot.
-Exclude main/detached worktrees, branches without upstreams, and existing refs.
-Never fetch; branches and commits remain after removal.
-
-Validate every candidate and emit one stable slot-sorted plan. Keep current,
-locked, prunable, unmanaged, misassociated, nested-registration, and dirty
-worktrees; force permits only the dirty case and keeps it annotated in the plan.
-Missing registered paths and symlink-resolved prefixes still protect nested
-registrations. `--yes` skips confirmation only; dry-run stops after validation
-and the plan, including when combined with yes.
-
-Rebuild the full plan and repository inventory after confirmation (or with yes)
-before deletion. Revalidate each target's slot/path, branch/HEAD/upstream,
-lock/prune/dirty state, association, filesystem identity, and nested registrations
-immediately before removal. Candidate-specific refusals/Git failures allow
-independent candidates to continue. Changed shared boundaries/inventory, unknown
-registration state, cancellation, and output failures stop the remainder.
-
-No candidates succeeds. Declined confirmation, any kept candidate, or partial
-failure returns `1`, including a dry-run with kept candidates. Invalid flag or
-argument combinations return `2`.
 
 ## worktree prune
 

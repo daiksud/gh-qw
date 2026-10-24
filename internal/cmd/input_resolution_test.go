@@ -63,8 +63,7 @@ func TestNativeRefFailuresRemainRuntimeErrors(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	for _, args := range [][]string{
 		{"worktree", "add", "topic"},
-		{"worktree", "remove", "topic"},
-		{"rm", "owner/widget@topic"},
+		{"remove", "--worktree", "topic"},
 		{"clone", "--branch", "topic", "owner/widget"},
 		{"clone", "owner/widget@topic"},
 		{"clone", "--parallel", "owner/widget@topic"},
