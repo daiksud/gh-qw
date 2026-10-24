@@ -1,5 +1,5 @@
-# Release-note categories use reviewed PR labels; first match wins.
-# Every merged PR is included. See docs/contributing.md#releases.
+# Release-note categories use reviewed PR labels. Highest priority wins.
+# Every merged PR is included.
 changelog:
   categories:
     - title: "💥 BREAKING CHANGE"
@@ -8,27 +8,33 @@ changelog:
     - title: "⚠️ DEPRECATED"
       labels:
         - "DEPRECATED"
-    - title: "🚀 Features"
+      exclude:
+        labels:
+          - "BREAKING CHANGE"
+    - title: "✨ New Feature"
       labels:
         - feat
         - perf
-    - title: "🐛 Bug Fixes"
+      exclude:
+        labels:
+          - "BREAKING CHANGE"
+          - "DEPRECATED"
+    - title: "🐛 Bug Fix"
       labels:
         - fix
-    - title: "⏪ Reverts"
-      labels:
-        - revert
-    - title: "📝 Documentation"
-      labels:
-        - docs
-    - title: "🧹 Maintenance"
-      labels:
-        - refactor
-        - style
-        - test
-        - build
-        - ci
-        - chore
-    - title: "🔧 Other Changes"
+      exclude:
+        labels:
+          - "BREAKING CHANGE"
+          - "DEPRECATED"
+          - feat
+          - perf
+    - title: "🛠️ Maintenance"
       labels:
         - "*"
+      exclude:
+        labels:
+          - "BREAKING CHANGE"
+          - "DEPRECATED"
+          - feat
+          - perf
+          - fix
