@@ -158,13 +158,17 @@ missing, a symlink is dangling, or the location cannot otherwise be resolved.
 ## list
 
 ```text
-gh qw list [-e|--exact] [-p|--full-path] [--unique] [--worktree|--all] [<query>]
+gh qw list [-e|--exact] [-p|--full-path] [--unique] [--worktree [--gone]|--all] [<query>]
 ```
 
 List explicitly registered main repositories by default. `--worktree`
 lists only their linked worktrees; `--all` includes both main repositories
 and linked worktrees. These mode flags are mutually exclusive. Worktree
 registration comes from Git, not the location registry.
+With `--worktree --gone`, include only attached linked worktrees whose local
+branch has a configured, fully qualified upstream ref that is absent from the
+local ref database. Do not fetch or infer remote state. `--gone` requires
+`--worktree`; it cannot be combined with `--all`.
 Match substrings against the non-host identity using smartcase:
 lowercase queries ignore case; uppercase queries match case. A host-looking
 first component followed by `/` restricts the host (`github.com/`, not bare

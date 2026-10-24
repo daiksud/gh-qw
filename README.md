@@ -64,7 +64,7 @@ multiple roots are described in the [configuration reference](docs/configuration
 | --- | --- |
 | `clone` | Acquire and register a new repository; existing checkouts use `add`. |
 | `add` | Register a local repository; `--move` relocates it; `--worktree` adds a linked worktree. |
-| `list` | List registered repositories; `--worktree` selects worktrees only and `--all` both. |
+| `list` | List registered repositories; `--worktree` selects worktrees, `--gone` filters them, and `--all` includes both. |
 | `forget` | Unregister a repository without deleting its files. |
 | `root` | Print repository roots. |
 | `remove` | Remove a repository, one linked worktree, or gone-upstream worktrees. |

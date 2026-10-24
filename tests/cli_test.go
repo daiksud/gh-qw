@@ -226,6 +226,14 @@ func TestCLIRepositoryAndWorktreeLifecycle(t *testing.T) {
 	fixture.runGit(t, mainPath, "update-ref", goneUpstream, "HEAD")
 	fixture.runGit(t, mainPath, "branch", "--set-upstream-to=origin/gone/e2e", goneBranch)
 	fixture.runGit(t, mainPath, "update-ref", "-d", goneUpstream)
+	result = fixture.runCLI(t, "list", "--worktree", "--gone")
+	assertStatus(t, result, 0)
+	assertStdout(t, result, testIdentity+"@"+goneBranch+"\n")
+	assertStderr(t, result, "")
+	result = fixture.runCLI(t, "list", "--worktree", "--gone", "--full-path")
+	assertStatus(t, result, 0)
+	assertStdout(t, result, filepath.ToSlash(gonePath)+"\n")
+	assertStderr(t, result, "")
 
 	result = fixture.runCLI(
 		t,

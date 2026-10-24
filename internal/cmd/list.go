@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/daiksud/gh-qw/internal/gitcmd"
 	"github.com/daiksud/gh-qw/internal/local"
 	"github.com/daiksud/gh-qw/internal/repospec"
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
@@ -28,10 +29,17 @@ var (
 type ListDependencies struct {
 	Resolver             RootResolver
 	Registry             LocationRegistry
+	Git                  ListGit
 	DiscoverRepositories func(context.Context, []string) (local.DiscoveryResult, error)
 	EnumerateWorktrees   func(context.Context, local.Repository, string) ([]local.Worktree, error)
 	Stdout               io.Writer
 	Stderr               io.Writer
+}
+
+// ListGit supplies the native Git queries used by gone-upstream filtering.
+type ListGit interface {
+	BranchUpstreams(context.Context, string) ([]gitcmd.BranchUpstream, error)
+	RefExists(context.Context, string, string) (bool, error)
 }
 
 type listEntry struct {
@@ -55,6 +63,7 @@ func NewListCommand(deps ListDependencies) *cobra.Command {
 	var unique bool
 	var worktreesOnly bool
 	var all bool
+	var gone bool
 
 	command := &cobra.Command{
 		Use:           "list [query]",
@@ -70,6 +79,9 @@ func NewListCommand(deps ListDependencies) *cobra.Command {
 			}
 			if worktreesOnly && all {
 				return &listUsageError{message: "--worktree and --all are mutually exclusive"}
+			}
+			if gone && !worktreesOnly {
+				return &listUsageError{message: "--gone requires --worktree"}
 			}
 			return nil
 		},
@@ -101,7 +113,9 @@ func NewListCommand(deps ListDependencies) *cobra.Command {
 				repositories,
 				roots.WorktreeRoot,
 				worktreesOnly || all,
+				gone,
 				deps.EnumerateWorktrees,
+				deps.Git,
 			)
 			if err != nil {
 				return err
@@ -143,6 +157,7 @@ func NewListCommand(deps ListDependencies) *cobra.Command {
 	command.Flags().BoolVar(&unique, "unique", false, "Print shortest unique identity suffixes")
 	command.Flags().BoolVar(&worktreesOnly, "worktree", false, "List linked worktrees only")
 	command.Flags().BoolVar(&all, "all", false, "List both repositories and linked worktrees")
+	command.Flags().BoolVar(&gone, "gone", false, "List worktrees whose upstream refs are gone")
 	command.SetOut(deps.Stdout)
 	command.SetErr(deps.Stderr)
 
@@ -150,6 +165,12 @@ func NewListCommand(deps ListDependencies) *cobra.Command {
 }
 
 func listDependenciesWithDefaults(deps ListDependencies) ListDependencies {
+	if deps.Stdout == nil {
+		deps.Stdout = os.Stdout
+	}
+	if deps.Stderr == nil {
+		deps.Stderr = os.Stderr
+	}
 	if deps.Resolver == nil {
 		deps.Resolver = rootpkg.NewResolver()
 	}
@@ -170,11 +191,8 @@ func listDependenciesWithDefaults(deps ListDependencies) ListDependencies {
 			return local.EnumerateWorktrees(ctx, repository, worktreeRoot)
 		}
 	}
-	if deps.Stdout == nil {
-		deps.Stdout = os.Stdout
-	}
-	if deps.Stderr == nil {
-		deps.Stderr = os.Stderr
+	if deps.Git == nil {
+		deps.Git = &gitcmd.Runner{Executable: "git", Stdout: io.Discard, Stderr: deps.Stderr}
 	}
 	return deps
 }
@@ -201,7 +219,9 @@ func listCollectEntries(
 	repositories []local.Repository,
 	worktreeRoot string,
 	includeWorktrees bool,
+	goneOnly bool,
 	enumerate func(context.Context, local.Repository, string) ([]local.Worktree, error),
+	git ListGit,
 ) ([]listEntry, error) {
 	if !includeWorktrees {
 		entries := make([]listEntry, 0, len(repositories))
@@ -218,6 +238,13 @@ func listCollectEntries(
 		if err != nil {
 			return nil, fmt.Errorf("enumerate worktrees for %q: %w", repository.Identity, err)
 		}
+		gonePaths := map[string]struct{}(nil)
+		if goneOnly {
+			gonePaths, err = listGoneWorktreePaths(ctx, repository, worktrees, git)
+			if err != nil {
+				return nil, err
+			}
+		}
 
 		sawMain := false
 		for _, worktree := range worktrees {
@@ -226,6 +253,14 @@ func listCollectEntries(
 				return nil, err
 			}
 			sawMain = sawMain || main
+			if goneOnly {
+				if main {
+					continue
+				}
+				if _, selected := gonePaths[worktree.Path]; !selected {
+					continue
+				}
+			}
 			if _, exists := seen[entry.identity]; exists {
 				continue
 			}
@@ -240,6 +275,78 @@ func listCollectEntries(
 		}
 	}
 	return entries, nil
+}
+
+func listGoneWorktreePaths(
+	ctx context.Context,
+	repository local.Repository,
+	worktrees []local.Worktree,
+	git ListGit,
+) (map[string]struct{}, error) {
+	attached := make(map[string]struct{}, len(worktrees))
+	for _, worktree := range worktrees {
+		if worktree.Main || worktree.Detached || worktree.Branch == "" {
+			continue
+		}
+		attached[worktree.Branch] = struct{}{}
+	}
+
+	upstreams, err := git.BranchUpstreams(ctx, repository.Path)
+	if err != nil {
+		return nil, fmt.Errorf("inspect branch upstreams for %q: %w", repository.Identity, err)
+	}
+	upstreamByBranch := make(map[string]string, len(attached))
+	for _, upstream := range upstreams {
+		if _, exists := attached[upstream.Branch]; !exists {
+			continue
+		}
+		if err := local.ValidateBranch(ctx, upstream.Branch); err != nil {
+			return nil, fmt.Errorf(
+				"inspect branch upstreams for %q: invalid branch %q: %w",
+				repository.Identity,
+				upstream.Branch,
+				err,
+			)
+		}
+		if _, duplicate := upstreamByBranch[upstream.Branch]; duplicate {
+			return nil, fmt.Errorf(
+				"inspect branch upstreams for %q: duplicate branch %q",
+				repository.Identity,
+				upstream.Branch,
+			)
+		}
+		upstreamByBranch[upstream.Branch] = upstream.Upstream
+	}
+
+	goneRefs := make(map[string]bool, len(upstreamByBranch))
+	selected := make(map[string]struct{}, len(worktrees))
+	for _, worktree := range worktrees {
+		if worktree.Main || worktree.Detached || worktree.Branch == "" {
+			continue
+		}
+		upstream := upstreamByBranch[worktree.Branch]
+		if upstream == "" {
+			continue
+		}
+		gone, inspected := goneRefs[upstream]
+		if !inspected {
+			exists, refErr := git.RefExists(ctx, repository.Path, upstream)
+			if refErr != nil {
+				return nil, fmt.Errorf(
+					"verify upstream ref %q for branch %q: %w",
+					upstream,
+					worktree.Branch,
+					refErr,
+				)
+			}
+			gone = !exists
+			goneRefs[upstream] = gone
+		}
+		if gone {
+			selected[worktree.Path] = struct{}{}
+		}
+	}
+	return selected, nil
 }
 
 func listRepositoryEntry(repository local.Repository, path string) listEntry {
