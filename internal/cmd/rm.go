@@ -453,7 +453,11 @@ func removeRejectNestedRegistrations(plan removePlan, repositories []local.Repos
 			return err
 		}
 		for index, target := range physicalTargets {
-			if physicalpath.StrictlyWithin(target, physical) {
+			within, withinErr := physicalRegisteredLocationStrictlyWithin(target, physical)
+			if withinErr != nil {
+				return withinErr
+			}
+			if within {
 				return fmt.Errorf(
 					"%w: registered repository %q at %q is nested inside removal target %q",
 					ErrRemoveSafety,

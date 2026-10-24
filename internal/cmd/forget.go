@@ -17,7 +17,9 @@ func NewForgetCommand(store LocationRegistry, stderr io.Writer) *cobra.Command {
 		Short:         "Forget a managed repository without deleting its files",
 		SilenceErrors: true,
 		SilenceUsage:  true,
-		Args:          cobra.ExactArgs(1),
+		Args: func(command *cobra.Command, args []string) error {
+			return newCommandUsageError(cobra.ExactArgs(1)(command, args))
+		},
 		RunE: func(command *cobra.Command, args []string) error {
 			selected := store
 			if selected == nil {

@@ -113,6 +113,25 @@ func physicalRegisteredLocation(path string) (string, error) {
 	return physical, nil
 }
 
+func physicalRegisteredLocationStrictlyWithin(base, candidate string) (bool, error) {
+	if physicalpath.StrictlyWithin(base, candidate) {
+		return true, nil
+	}
+	filesystem := physicalpath.Filesystem{}
+	for ancestor := filepath.Dir(candidate); ; ancestor = filepath.Dir(ancestor) {
+		equal, err := filesystem.Equivalent(base, ancestor)
+		if err != nil {
+			return false, fmt.Errorf("compare registered location ancestry: %w", err)
+		}
+		if equal {
+			return true, nil
+		}
+		if parent := filepath.Dir(ancestor); parent == ancestor {
+			return false, nil
+		}
+	}
+}
+
 // dynamicLocationRegistry resolves the XDG data path on first use, rather than
 // during help, version, or CLI argument parsing. Do not cache registrations.
 type dynamicLocationRegistry struct{}

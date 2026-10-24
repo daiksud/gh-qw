@@ -64,7 +64,8 @@ the same exact-path boundary; configured layout is not inferred from containment
 Whole-repository removal and migration refuse a source that physically contains
 another registered repository, including registrations observed during removal
 revalidation after confirmation. Removal applies the same inventory protection
-to every linked worktree scheduled for deletion.
+to every linked worktree scheduled for deletion. Containment follows filesystem
+identity rather than path spelling, including case-insensitive aliases.
 Prune's metadata/expiry evidence is not interchangeable with ordinary removal
 evidence.
 

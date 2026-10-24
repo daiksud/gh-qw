@@ -523,7 +523,11 @@ func migrateExecuteItem(
 			if resolveErr != nil {
 				return false, resolveErr
 			}
-			if physicalpath.StrictlyWithin(sourcePhysical, locationPhysical) {
+			within, withinErr := physicalRegisteredLocationStrictlyWithin(sourcePhysical, locationPhysical)
+			if withinErr != nil {
+				return false, withinErr
+			}
+			if within {
 				return false, fmt.Errorf("registered repository %q at %q is nested inside migration source %q", other, location, item.source)
 			}
 			equal, compareErr := (physicalpath.Filesystem{}).Equivalent(location, item.destination)
