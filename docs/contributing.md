@@ -52,10 +52,10 @@ identifiers only and do not determine labels or versions.
 Reviewers maintain semantic labels. The labeler adds `docs`, `test`, `build`, or
 `ci` only when every changed path matches a single category; remove stale labels
 when scope changes. Dependabot uses `build` for Go and `ci` for Actions updates.
-Keep the squash title and body consistent with the reviewed change.
+Keep the merge title and body consistent with the reviewed change.
 
 The independent [PRLint workflow](../.github/workflows/prlint.yml) validates the
-PR title and optional body together as the proposed squash commit message. The
+PR title and optional body together as the proposed merge commit message. The
 message follows Conventional Commits: use one of the types listed above, an
 optional lowercase scope, and a nonempty description without surrounding
 whitespace or a final period. Breaking headers, `BREAKING CHANGE` and the
@@ -81,6 +81,8 @@ gh infra apply .github/settings.yml
 Labels and rulesets reconcile authoritatively: omitted entries are deleted.
 Inspect the plan before applying. Keep administrative credentials out of CI.
 Settings not represented in the manifest are managed separately through GitHub.
+Both merge commits and squash merges are allowed, rebase merges are disabled,
+and either method uses the reviewed PR title and body for its commit message.
 
 The required status is `CI success`, aggregating Go builds/tests on Linux
 amd64/arm64, macOS arm64, Windows amd64, race, format/vet, settings validation,
