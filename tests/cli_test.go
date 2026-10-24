@@ -191,8 +191,8 @@ func TestCLIRepositoryAndWorktreeLifecycle(t *testing.T) {
 
 	result = fixture.runCLI(
 		t,
-		"worktree",
 		"remove",
+		"--worktree",
 		"-R",
 		testIdentity,
 		featureBranch,
@@ -229,8 +229,8 @@ func TestCLIRepositoryAndWorktreeLifecycle(t *testing.T) {
 
 	result = fixture.runCLI(
 		t,
-		"worktree",
 		"remove",
+		"--worktree",
 		"-R",
 		testIdentity,
 		"--gone",
@@ -308,13 +308,13 @@ func TestCLIRepositoryAndWorktreeLifecycle(t *testing.T) {
 		t.Fatalf("prune retained stale registered worktree metadata:\n%s", output)
 	}
 
-	rmBranch := "topic/rm@v2"
-	rmPath := filepath.Join(
+	removeBranch := "topic/remove@v2"
+	removePath := filepath.Join(
 		fixture.worktreeRoot,
 		"github.com",
 		"acme",
 		"widget",
-		filepath.FromSlash(rmBranch),
+		filepath.FromSlash(removeBranch),
 	)
 	result = fixture.runCLI(
 		t,
@@ -323,29 +323,18 @@ func TestCLIRepositoryAndWorktreeLifecycle(t *testing.T) {
 		"-R",
 		testIdentity,
 		"-b",
-		rmBranch,
+		removeBranch,
 		"main",
 	)
 	assertStatus(t, result, 0)
-	assertStdout(t, result, filepath.ToSlash(rmPath)+"\n")
+	assertStdout(t, result, filepath.ToSlash(removePath)+"\n")
 
-	if runtime.GOOS == "windows" {
-		result = fixture.runCLI(t, "rm", "--dry-run", testIdentity+"@"+rmBranch)
-		assertStatus(t, result, 0)
-		assertStdout(t, result, "")
-		assertContains(t, result.stderr, "Removal plan:")
-		assertContains(t, result.stderr, filepath.ToSlash(rmPath))
-		assertPathExists(t, rmPath)
-	} else {
-		result = fixture.runRemoveWithTTY(t, testIdentity+"@"+rmBranch)
-		assertStatus(t, result, 0)
-		assertStdout(t, result, "")
-		assertContains(t, result.stderr, "Removal plan:")
-		assertContains(t, result.stderr, filepath.ToSlash(rmPath))
-		assertContains(t, result.stderr, "removed linked worktree")
-		assertPathMissing(t, rmPath)
-		assertPathExists(t, mainPath)
-	}
+	result = fixture.runCLI(t, "remove", "--worktree", "-R", testIdentity, removeBranch)
+	assertStatus(t, result, 0)
+	assertStdout(t, result, "")
+	assertContains(t, result.stderr, "removed worktree "+filepath.ToSlash(removePath))
+	assertPathMissing(t, removePath)
+	assertPathExists(t, mainPath)
 
 	wholeBranch := "whole/linked"
 	wholePath := filepath.Join(
@@ -369,7 +358,7 @@ func TestCLIRepositoryAndWorktreeLifecycle(t *testing.T) {
 	assertStdout(t, result, filepath.ToSlash(wholePath)+"\n")
 
 	if runtime.GOOS == "windows" {
-		result = fixture.runCLI(t, "rm", "--dry-run", testIdentity)
+		result = fixture.runCLI(t, "remove", "--dry-run", testIdentity)
 		assertStatus(t, result, 0)
 		assertStdout(t, result, "")
 		assertContains(t, result.stderr, "Removal plan:")
@@ -1037,7 +1026,7 @@ func (fixture *cliFixture) runRemoveWithTTY(
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	shellCommand := `exec "$GHQW_TEST_BINARY" rm "$GHQW_TEST_SELECTOR" >"$GHQW_TEST_STDOUT"`
+	shellCommand := `exec "$GHQW_TEST_BINARY" remove "$GHQW_TEST_SELECTOR" >"$GHQW_TEST_STDOUT"`
 	arguments := []string{"-q", os.DevNull, "sh", "-c", shellCommand}
 	if runtime.GOOS == "linux" {
 		arguments = []string{"-q", "-c", shellCommand, os.DevNull}
@@ -1059,7 +1048,7 @@ func (fixture *cliFixture) runRemoveWithTTY(
 	command.Stdout = terminal
 	command.Stderr = &scriptStderr
 	if err := command.Start(); err != nil {
-		t.Fatalf("start rm with controlling terminal: %v", err)
+		t.Fatalf("start remove with controlling terminal: %v", err)
 	}
 
 	done := make(chan error, 1)
@@ -1078,18 +1067,18 @@ func (fixture *cliFixture) runRemoveWithTTY(
 			_ = stdin.Close()
 		case <-ctx.Done():
 			_ = stdin.Close()
-			t.Fatalf("rm did not finish after confirmation: %v\n%s", ctx.Err(), terminal.String())
+			t.Fatalf("remove did not finish after confirmation: %v\n%s", ctx.Err(), terminal.String())
 		}
 	case commandErr = <-done:
 		_ = stdin.Close()
 	case <-ctx.Done():
 		_ = stdin.Close()
-		t.Fatalf("rm did not reach confirmation prompt: %v\n%s", ctx.Err(), terminal.String())
+		t.Fatalf("remove did not reach confirmation prompt: %v\n%s", ctx.Err(), terminal.String())
 	}
 
 	stdout, err := os.ReadFile(stdoutPath)
 	if err != nil {
-		t.Fatalf("read captured rm stdout: %v", err)
+		t.Fatalf("read captured remove stdout: %v", err)
 	}
 	return commandResult{
 		status: exitStatus(t, commandErr),

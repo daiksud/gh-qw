@@ -22,7 +22,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func TestNewWorktreeRemoveCommandSelectsExplicitRepository(t *testing.T) {
+func TestNewRemoveCommandWorktreeSelectsExplicitRepository(t *testing.T) {
 	fixture := worktreeRemoveNewFixture(t, "feature/explicit")
 	fixture.current = func(
 		context.Context,
@@ -48,7 +48,7 @@ func TestNewWorktreeRemoveCommandSelectsExplicitRepository(t *testing.T) {
 	worktreeRemoveAssertSuccess(t, fixture)
 }
 
-func TestNewWorktreeRemoveCommandSelectsCurrentMainOrLinked(t *testing.T) {
+func TestNewRemoveCommandWorktreeSelectsCurrentMainOrLinked(t *testing.T) {
 	for _, main := range []bool{true, false} {
 		name := "linked"
 		if main {
@@ -80,7 +80,7 @@ func TestNewWorktreeRemoveCommandSelectsCurrentMainOrLinked(t *testing.T) {
 	}
 }
 
-func TestNewWorktreeRemoveCommandUsesCurrentRepositoryWithDuplicateIdentity(t *testing.T) {
+func TestNewRemoveCommandWorktreeUsesCurrentRepositoryWithDuplicateIdentity(t *testing.T) {
 	fixture := worktreeRemoveNewFixture(t, "feature/current-duplicate")
 	duplicate := fixture.repository
 	duplicate.Path = filepath.Join(fixture.repositoryRoot, "duplicate")
@@ -100,7 +100,7 @@ func TestNewWorktreeRemoveCommandUsesCurrentRepositoryWithDuplicateIdentity(t *t
 	worktreeRemoveAssertSuccess(t, fixture)
 }
 
-func TestNewWorktreeRemoveCommandPassesOneForceLevel(t *testing.T) {
+func TestNewRemoveCommandWorktreePassesOneForceLevel(t *testing.T) {
 	fixture := worktreeRemoveNewFixture(t, "feature/forced")
 
 	if err := fixture.worktreeRemoveExecute("--force", fixture.branch); err != nil {
@@ -114,7 +114,7 @@ func TestNewWorktreeRemoveCommandPassesOneForceLevel(t *testing.T) {
 	}
 }
 
-func TestNewWorktreeRemoveCommandRejectsUsageAndAmbiguity(t *testing.T) {
+func TestNewRemoveCommandWorktreeRejectsUsageAndAmbiguity(t *testing.T) {
 	tests := []struct {
 		name      string
 		args      []string
@@ -189,7 +189,7 @@ func TestNewWorktreeRemoveCommandRejectsUsageAndAmbiguity(t *testing.T) {
 	}
 }
 
-func TestNewWorktreeRemoveCommandRejectsUnsafeManagedResults(t *testing.T) {
+func TestNewRemoveCommandWorktreeRejectsUnsafeManagedResults(t *testing.T) {
 	tests := []struct {
 		name      string
 		configure func(*worktreeRemoveFixture)
@@ -277,7 +277,7 @@ func TestNewWorktreeRemoveCommandRejectsUnsafeManagedResults(t *testing.T) {
 	}
 }
 
-func TestNewWorktreeRemoveCommandRejectsNestedRegisteredRepository(t *testing.T) {
+func TestNewRemoveCommandWorktreeRejectsNestedRegisteredRepository(t *testing.T) {
 	fixture := worktreeRemoveNewFixture(t, "feature/nested-repository")
 	nestedPath := filepath.Join(fixture.target, "nested")
 	if err := os.MkdirAll(nestedPath, 0o755); err != nil {
@@ -304,7 +304,7 @@ func TestNewWorktreeRemoveCommandRejectsNestedRegisteredRepository(t *testing.T)
 	}
 }
 
-func TestNewWorktreeRemoveCommandRevalidatesNestedRegisteredRepository(t *testing.T) {
+func TestNewRemoveCommandWorktreeRevalidatesNestedRegisteredRepository(t *testing.T) {
 	fixture := worktreeRemoveNewFixture(t, "feature/late-nested-repository")
 	nestedPath := filepath.Join(fixture.target, "nested")
 	fixture.onDiscover = func(call int) {
@@ -336,7 +336,7 @@ func TestNewWorktreeRemoveCommandRevalidatesNestedRegisteredRepository(t *testin
 	}
 }
 
-func TestNewWorktreeRemoveCommandPropagatesGitSafetyFailures(t *testing.T) {
+func TestNewRemoveCommandWorktreePropagatesGitSafetyFailures(t *testing.T) {
 	for _, failure := range []struct {
 		name string
 		err  error
@@ -362,7 +362,7 @@ func TestNewWorktreeRemoveCommandPropagatesGitSafetyFailures(t *testing.T) {
 	}
 }
 
-func TestNewWorktreeRemoveCommandCleansNestedEmptyParentsToBoundary(t *testing.T) {
+func TestNewRemoveCommandWorktreeCleansNestedEmptyParentsToBoundary(t *testing.T) {
 	fixture := worktreeRemoveNewFixture(t, "feature/team/login")
 	firstParent := filepath.Dir(fixture.target)
 	secondParent := filepath.Dir(firstParent)
@@ -385,7 +385,7 @@ func TestNewWorktreeRemoveCommandCleansNestedEmptyParentsToBoundary(t *testing.T
 	worktreeRemoveAssertSuccess(t, fixture)
 }
 
-func TestNewWorktreeRemoveCommandStopsAtNonemptyParent(t *testing.T) {
+func TestNewRemoveCommandWorktreeStopsAtNonemptyParent(t *testing.T) {
 	fixture := worktreeRemoveNewFixture(t, "feature/nonempty/leaf")
 	parent := filepath.Dir(fixture.target)
 	sentinel := filepath.Join(parent, "keep.txt")
@@ -404,7 +404,7 @@ func TestNewWorktreeRemoveCommandStopsAtNonemptyParent(t *testing.T) {
 	}
 }
 
-func TestNewWorktreeRemoveCommandContinuesPastMissingParent(t *testing.T) {
+func TestNewRemoveCommandWorktreeContinuesPastMissingParent(t *testing.T) {
 	fixture := worktreeRemoveNewFixture(t, "feature/missing/parent/leaf")
 	missingParent := filepath.Dir(fixture.target)
 	firstExistingParent := filepath.Dir(missingParent)
@@ -425,7 +425,7 @@ func TestNewWorktreeRemoveCommandContinuesPastMissingParent(t *testing.T) {
 	}
 }
 
-func TestNewWorktreeRemoveCommandStopsAtSymlinkParent(t *testing.T) {
+func TestNewRemoveCommandWorktreeStopsAtSymlinkParent(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("symbolic-link setup is not portable on Windows")
 	}
@@ -464,7 +464,7 @@ func TestNewWorktreeRemoveCommandStopsAtSymlinkParent(t *testing.T) {
 	}
 }
 
-func TestNewWorktreeRemoveCommandErrorsWhenGitLeavesDirectory(t *testing.T) {
+func TestNewRemoveCommandWorktreeErrorsWhenGitLeavesDirectory(t *testing.T) {
 	fixture := worktreeRemoveNewFixture(t, "feature/remains")
 	fixture.git.leavePath = true
 
@@ -483,7 +483,7 @@ func TestNewWorktreeRemoveCommandErrorsWhenGitLeavesDirectory(t *testing.T) {
 	}
 }
 
-func TestNewWorktreeRemoveCommandRevalidatesCleanupBoundary(t *testing.T) {
+func TestNewRemoveCommandWorktreeRevalidatesCleanupBoundary(t *testing.T) {
 	fixture := worktreeRemoveNewFixture(t, "feature/replaced/leaf")
 	originalBase := fixture.base + "-original"
 	fixture.git.removeAction = func(path string) error {
@@ -509,7 +509,7 @@ func TestNewWorktreeRemoveCommandRevalidatesCleanupBoundary(t *testing.T) {
 	}
 }
 
-func TestNewWorktreeRemoveCommandWarningsAndWriterFailures(t *testing.T) {
+func TestNewRemoveCommandWorktreeWarningsAndWriterFailures(t *testing.T) {
 	t.Run("warning prefix", func(t *testing.T) {
 		fixture := worktreeRemoveNewFixture(t, "feature/warning")
 		warning := local.Warning{
@@ -569,7 +569,7 @@ func TestNewWorktreeRemoveCommandWarningsAndWriterFailures(t *testing.T) {
 	})
 }
 
-func TestNewWorktreeRemoveCommandReportsCleanupFailureAfterMutation(t *testing.T) {
+func TestNewRemoveCommandWorktreeReportsCleanupFailureAfterMutation(t *testing.T) {
 	fixture := worktreeRemoveNewFixture(t, "feature/cleanup/failure")
 	cleanupErr := errors.New("cleanup denied")
 	fixture.removeErr = cleanupErr
@@ -586,7 +586,7 @@ func TestNewWorktreeRemoveCommandReportsCleanupFailureAfterMutation(t *testing.T
 	}
 }
 
-func TestNewWorktreeRemoveCommandJoinsPostMutationFailures(t *testing.T) {
+func TestNewRemoveCommandWorktreeJoinsPostMutationFailures(t *testing.T) {
 	fixture := worktreeRemoveNewFixture(t, "feature/joined/failures")
 	cleanupErr := errors.New("cleanup failed")
 	writeErr := errors.New("diagnostic failed")
@@ -607,7 +607,7 @@ func TestNewWorktreeRemoveCommandJoinsPostMutationFailures(t *testing.T) {
 	}
 }
 
-func TestNewWorktreeRemoveCommandRealGitLifecycle(t *testing.T) {
+func TestNewRemoveCommandWorktreeRealGitLifecycle(t *testing.T) {
 	root := worktreeRemovePhysicalPath(t, t.TempDir())
 	repositoryRoot := filepath.Join(root, "repositories")
 	worktreeRoot := filepath.Join(root, "worktrees")
@@ -636,7 +636,7 @@ func TestNewWorktreeRemoveCommandRealGitLifecycle(t *testing.T) {
 	worktreeRemoveRunGit(t, repositoryPath, "worktree", "add", "-b", branch, target, "HEAD")
 
 	var stdout, stderr bytes.Buffer
-	command := NewWorktreeRemoveCommand(WorktreeRemoveDependencies{
+	command := newWorktreeRemoveTestCommand(WorktreeRemoveDependencies{
 		Resolver: worktreeRemoveStaticResolver{result: rootpkg.Result{
 			RepositoryRoots: []string{repositoryRoot},
 			WorktreeRoot:    worktreeRoot,
@@ -644,7 +644,7 @@ func TestNewWorktreeRemoveCommandRealGitLifecycle(t *testing.T) {
 		Stdout: &stdout,
 		Stderr: &stderr,
 	})
-	command.SetArgs([]string{"-R", "acme/widget", branch})
+	command.SetArgs([]string{"--worktree", "-R", "acme/widget", branch})
 
 	if err := command.Execute(); err != nil {
 		t.Fatalf("Execute() error = %v; stderr = %q", err, stderr.String())
@@ -672,7 +672,7 @@ func TestNewWorktreeRemoveCommandRealGitLifecycle(t *testing.T) {
 	}
 }
 
-func TestNewWorktreeRemoveCommandGoneRealGitLifecycle(t *testing.T) {
+func TestNewRemoveCommandWorktreeGoneRealGitLifecycle(t *testing.T) {
 	root := worktreeRemovePhysicalPath(t, t.TempDir())
 	repositoryRoot := filepath.Join(root, "repositories")
 	worktreeRoot := filepath.Join(root, "worktrees")
@@ -741,7 +741,7 @@ func TestNewWorktreeRemoveCommandGoneRealGitLifecycle(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	prompts := 0
-	command := NewWorktreeRemoveCommand(WorktreeRemoveDependencies{
+	command := newWorktreeRemoveTestCommand(WorktreeRemoveDependencies{
 		Resolver: worktreeRemoveStaticResolver{result: rootpkg.Result{
 			RepositoryRoots: []string{repositoryRoot},
 			WorktreeRoot:    worktreeRoot,
@@ -754,7 +754,7 @@ func TestNewWorktreeRemoveCommandGoneRealGitLifecycle(t *testing.T) {
 		Stdout: &stdout,
 		Stderr: &stderr,
 	})
-	command.SetArgs([]string{"-R", "acme/widget", "--gone"})
+	command.SetArgs([]string{"--worktree", "-R", "acme/widget", "--gone"})
 
 	if err := command.Execute(); err != nil {
 		t.Fatalf("Execute() error = %v; stderr = %q", err, stderr.String())
@@ -797,7 +797,7 @@ func TestNewWorktreeRemoveCommandGoneRealGitLifecycle(t *testing.T) {
 	)
 	stdout.Reset()
 	stderr.Reset()
-	command = NewWorktreeRemoveCommand(WorktreeRemoveDependencies{
+	command = newWorktreeRemoveTestCommand(WorktreeRemoveDependencies{
 		Resolver: worktreeRemoveStaticResolver{result: rootpkg.Result{
 			RepositoryRoots: []string{repositoryRoot},
 			WorktreeRoot:    worktreeRoot,
@@ -806,7 +806,7 @@ func TestNewWorktreeRemoveCommandGoneRealGitLifecycle(t *testing.T) {
 		Stdout: &stdout,
 		Stderr: &stderr,
 	})
-	command.SetArgs([]string{"-R", "acme/widget", "--gone", "--yes"})
+	command.SetArgs([]string{"--worktree", "-R", "acme/widget", "--gone", "--yes"})
 	err := command.Execute()
 	if err == nil || !strings.Contains(err.Error(), "invalid branch \"@\"") {
 		t.Fatalf("attached-invalid Execute() error = %v; stderr = %q", err, stderr.String())
@@ -819,7 +819,7 @@ func TestNewWorktreeRemoveCommandGoneRealGitLifecycle(t *testing.T) {
 
 	stdout.Reset()
 	stderr.Reset()
-	command = NewWorktreeRemoveCommand(WorktreeRemoveDependencies{
+	command = newWorktreeRemoveTestCommand(WorktreeRemoveDependencies{
 		Resolver: worktreeRemoveStaticResolver{result: rootpkg.Result{
 			RepositoryRoots: []string{repositoryRoot},
 			WorktreeRoot:    worktreeRoot,
@@ -830,7 +830,7 @@ func TestNewWorktreeRemoveCommandGoneRealGitLifecycle(t *testing.T) {
 		Stdout: &stdout,
 		Stderr: &stderr,
 	})
-	command.SetArgs([]string{"-R", "acme/widget", "--gone", "--yes"})
+	command.SetArgs([]string{"--worktree", "-R", "acme/widget", "--gone", "--yes"})
 	if err := command.Execute(); err != nil {
 		t.Fatalf("no-candidate Execute() error = %v; stderr = %q", err, stderr.String())
 	}
@@ -839,7 +839,7 @@ func TestNewWorktreeRemoveCommandGoneRealGitLifecycle(t *testing.T) {
 	}
 }
 
-func TestNewWorktreeRemoveCommandGoneDryRunAndForceDirty(t *testing.T) {
+func TestNewRemoveCommandWorktreeGoneDryRunAndForceDirty(t *testing.T) {
 	root := worktreeRemovePhysicalPath(t, t.TempDir())
 	repositoryRoot := filepath.Join(root, "repositories")
 	worktreeRoot := filepath.Join(root, "worktrees")
@@ -879,7 +879,7 @@ func TestNewWorktreeRemoveCommandGoneDryRunAndForceDirty(t *testing.T) {
 		return false, errors.New("dry-run unexpectedly prompted")
 	}
 	newCommand := func(stdout, stderr *bytes.Buffer) *cobra.Command {
-		return NewWorktreeRemoveCommand(WorktreeRemoveDependencies{
+		return newWorktreeRemoveTestCommand(WorktreeRemoveDependencies{
 			Resolver: worktreeRemoveStaticResolver{result: rootpkg.Result{
 				RepositoryRoots: []string{repositoryRoot},
 				WorktreeRoot:    worktreeRoot,
@@ -893,7 +893,7 @@ func TestNewWorktreeRemoveCommandGoneDryRunAndForceDirty(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	command := newCommand(&stdout, &stderr)
-	command.SetArgs([]string{"-R", "acme/widget", "--gone", "--dry-run", "--yes"})
+	command.SetArgs([]string{"--worktree", "-R", "acme/widget", "--gone", "--dry-run", "--yes"})
 	err := command.Execute()
 	if got := ExitCode(err); got != 1 {
 		t.Fatalf("dry-run ExitCode(error=%v) = %d, want 1", err, got)
@@ -909,7 +909,7 @@ func TestNewWorktreeRemoveCommandGoneDryRunAndForceDirty(t *testing.T) {
 	stdout.Reset()
 	stderr.Reset()
 	command = newCommand(&stdout, &stderr)
-	command.SetArgs([]string{"-R", "acme/widget", "--gone", "--dry-run", "--yes", "--force"})
+	command.SetArgs([]string{"--worktree", "-R", "acme/widget", "--gone", "--dry-run", "--yes", "--force"})
 	if err := command.Execute(); err != nil {
 		t.Fatalf("forced dry-run error = %v; stderr = %q", err, stderr.String())
 	}
@@ -928,7 +928,7 @@ func TestNewWorktreeRemoveCommandGoneDryRunAndForceDirty(t *testing.T) {
 	stdout.Reset()
 	stderr.Reset()
 	command = newCommand(&stdout, &stderr)
-	command.SetArgs([]string{"-R", "acme/widget", "--gone", "--force"})
+	command.SetArgs([]string{"--worktree", "-R", "acme/widget", "--gone", "--force"})
 	err = command.Execute()
 	if err == nil || !strings.Contains(err.Error(), "revalidate gone-worktree removal plan") ||
 		!errors.Is(err, ErrRemoveSafety) {
@@ -944,7 +944,7 @@ func TestNewWorktreeRemoveCommandGoneDryRunAndForceDirty(t *testing.T) {
 	stdout.Reset()
 	stderr.Reset()
 	command = newCommand(&stdout, &stderr)
-	command.SetArgs([]string{"-R", "acme/widget", "--gone", "--force"})
+	command.SetArgs([]string{"--worktree", "-R", "acme/widget", "--gone", "--force"})
 	err = command.Execute()
 	if got := ExitCode(err); got != 1 || !strings.Contains(stderr.String(), "removal declined") {
 		t.Fatalf("declined removal = status %d error %v stderr %q", got, err, stderr.String())
@@ -959,7 +959,7 @@ func TestNewWorktreeRemoveCommandGoneDryRunAndForceDirty(t *testing.T) {
 	stdout.Reset()
 	stderr.Reset()
 	command = newCommand(&stdout, &stderr)
-	command.SetArgs([]string{"-R", "acme/widget", "--gone", "--yes", "--force"})
+	command.SetArgs([]string{"--worktree", "-R", "acme/widget", "--gone", "--yes", "--force"})
 	if err := command.Execute(); err != nil {
 		t.Fatalf("forced removal error = %v; stderr = %q", err, stderr.String())
 	}
@@ -969,7 +969,7 @@ func TestNewWorktreeRemoveCommandGoneDryRunAndForceDirty(t *testing.T) {
 	worktreeRemoveRunGit(t, repositoryPath, "show-ref", "--verify", "refs/heads/"+branch)
 }
 
-func TestNewWorktreeRemoveCommandGoneKeepsParentOfRegisteredWorktree(t *testing.T) {
+func TestNewRemoveCommandWorktreeGoneKeepsParentOfRegisteredWorktree(t *testing.T) {
 	root := worktreeRemovePhysicalPath(t, t.TempDir())
 	repositoryRoot := filepath.Join(root, "repositories")
 	worktreeRoot := filepath.Join(root, "worktrees")
@@ -1011,7 +1011,7 @@ func TestNewWorktreeRemoveCommandGoneKeepsParentOfRegisteredWorktree(t *testing.
 	worktreeRemoveRunGit(t, repositoryPath, "config", "branch."+childBranch+".merge", "refs/heads/live-child")
 
 	var stdout, stderr bytes.Buffer
-	command := NewWorktreeRemoveCommand(WorktreeRemoveDependencies{
+	command := newWorktreeRemoveTestCommand(WorktreeRemoveDependencies{
 		Resolver: worktreeRemoveStaticResolver{result: rootpkg.Result{
 			RepositoryRoots: []string{repositoryRoot},
 			WorktreeRoot:    worktreeRoot,
@@ -1020,7 +1020,7 @@ func TestNewWorktreeRemoveCommandGoneKeepsParentOfRegisteredWorktree(t *testing.
 		Stdout: &stdout,
 		Stderr: &stderr,
 	})
-	command.SetArgs([]string{"-R", "acme/widget", "--gone", "--dry-run", "--yes", "--force"})
+	command.SetArgs([]string{"--worktree", "-R", "acme/widget", "--gone", "--dry-run", "--yes", "--force"})
 	err := command.Execute()
 	if got := ExitCode(err); got != 1 {
 		t.Fatalf("ExitCode(error=%v) = %d, want 1; stderr=%q", err, got, stderr.String())
@@ -1041,7 +1041,7 @@ func TestNewWorktreeRemoveCommandGoneKeepsParentOfRegisteredWorktree(t *testing.
 	}
 }
 
-func TestNewWorktreeRemoveCommandGoneKeepsParentOfOtherRepositoryWorktree(t *testing.T) {
+func TestNewRemoveCommandWorktreeGoneKeepsParentOfOtherRepositoryWorktree(t *testing.T) {
 	root := worktreeRemovePhysicalPath(t, t.TempDir())
 	repositoryRoot := filepath.Join(root, "repositories")
 	worktreeRoot := filepath.Join(root, "worktrees")
@@ -1090,7 +1090,7 @@ func TestNewWorktreeRemoveCommandGoneKeepsParentOfOtherRepositoryWorktree(t *tes
 	}
 
 	var stdout, stderr bytes.Buffer
-	command := NewWorktreeRemoveCommand(WorktreeRemoveDependencies{
+	command := newWorktreeRemoveTestCommand(WorktreeRemoveDependencies{
 		Resolver: worktreeRemoveStaticResolver{result: rootpkg.Result{
 			RepositoryRoots: []string{repositoryRoot},
 			WorktreeRoot:    worktreeRoot,
@@ -1099,7 +1099,7 @@ func TestNewWorktreeRemoveCommandGoneKeepsParentOfOtherRepositoryWorktree(t *tes
 		Stdout: &stdout,
 		Stderr: &stderr,
 	})
-	command.SetArgs([]string{"-R", "acme/widget", "--gone", "--dry-run", "--yes"})
+	command.SetArgs([]string{"--worktree", "-R", "acme/widget", "--gone", "--dry-run", "--yes"})
 	err := command.Execute()
 	if got := ExitCode(err); got != 1 {
 		t.Fatalf("ExitCode(error=%v) = %d, want 1; stderr=%q", err, got, stderr.String())
@@ -1123,7 +1123,7 @@ func TestNewWorktreeRemoveCommandGoneKeepsParentOfOtherRepositoryWorktree(t *tes
 	}
 	stdout.Reset()
 	stderr.Reset()
-	command = NewWorktreeRemoveCommand(WorktreeRemoveDependencies{
+	command = newWorktreeRemoveTestCommand(WorktreeRemoveDependencies{
 		Resolver: worktreeRemoveStaticResolver{result: rootpkg.Result{
 			RepositoryRoots: []string{repositoryRoot},
 			WorktreeRoot:    worktreeRoot,
@@ -1132,7 +1132,7 @@ func TestNewWorktreeRemoveCommandGoneKeepsParentOfOtherRepositoryWorktree(t *tes
 		Stdout: &stdout,
 		Stderr: &stderr,
 	})
-	command.SetArgs([]string{"-R", "acme/widget", "--gone", "--dry-run", "--yes"})
+	command.SetArgs([]string{"--worktree", "-R", "acme/widget", "--gone", "--dry-run", "--yes"})
 	err = command.Execute()
 	if got := ExitCode(err); got != 1 {
 		t.Fatalf("missing-child ExitCode(error=%v) = %d, want 1; stderr=%q", err, got, stderr.String())
@@ -1153,7 +1153,7 @@ func TestNewWorktreeRemoveCommandGoneKeepsParentOfOtherRepositoryWorktree(t *tes
 	}
 }
 
-func TestNewWorktreeRemoveCommandGoneKeepsNewNestedWorktreeBeforeRemoval(t *testing.T) {
+func TestNewRemoveCommandWorktreeGoneKeepsNewNestedWorktreeBeforeRemoval(t *testing.T) {
 	for _, sameRepository := range []bool{false, true} {
 		name := "other repository"
 		if sameRepository {
@@ -1230,7 +1230,7 @@ func TestNewWorktreeRemoveCommandGoneKeepsNewNestedWorktreeBeforeRemoval(t *test
 				}
 				return local.DiscoverRepositories(ctx, roots, options...)
 			}
-			command := NewWorktreeRemoveCommand(WorktreeRemoveDependencies{
+			command := newWorktreeRemoveTestCommand(WorktreeRemoveDependencies{
 				Resolver: worktreeRemoveStaticResolver{result: rootpkg.Result{
 					RepositoryRoots: []string{repositoryRoot},
 					WorktreeRoot:    worktreeRoot,
@@ -1246,7 +1246,7 @@ func TestNewWorktreeRemoveCommandGoneKeepsNewNestedWorktreeBeforeRemoval(t *test
 				Stdout: &stdout,
 				Stderr: &stderr,
 			})
-			command.SetArgs([]string{"-R", "acme/widget", "--gone", "--force"})
+			command.SetArgs([]string{"--worktree", "-R", "acme/widget", "--gone", "--force"})
 			err := command.Execute()
 			if got := ExitCode(err); got != 1 {
 				t.Fatalf("ExitCode(error=%v) = %d, want 1; stderr=%q", err, got, stderr.String())
@@ -1274,7 +1274,7 @@ func TestNewWorktreeRemoveCommandGoneKeepsNewNestedWorktreeBeforeRemoval(t *test
 	}
 }
 
-func TestNewWorktreeRemoveCommandGoneStopsWhenDiscoveredRepositoryDisappears(t *testing.T) {
+func TestNewRemoveCommandWorktreeGoneStopsWhenDiscoveredRepositoryDisappears(t *testing.T) {
 	root := worktreeRemovePhysicalPath(t, t.TempDir())
 	repositoryRoot := filepath.Join(root, "repositories")
 	worktreeRoot := filepath.Join(root, "worktrees")
@@ -1335,7 +1335,7 @@ func TestNewWorktreeRemoveCommandGoneStopsWhenDiscoveredRepositoryDisappears(t *
 	}
 
 	var stdout, stderr bytes.Buffer
-	command := NewWorktreeRemoveCommand(WorktreeRemoveDependencies{
+	command := newWorktreeRemoveTestCommand(WorktreeRemoveDependencies{
 		Resolver: worktreeRemoveStaticResolver{result: rootpkg.Result{
 			RepositoryRoots: []string{repositoryRoot},
 			WorktreeRoot:    worktreeRoot,
@@ -1346,7 +1346,7 @@ func TestNewWorktreeRemoveCommandGoneStopsWhenDiscoveredRepositoryDisappears(t *
 		Stdout:   &stdout,
 		Stderr:   &stderr,
 	})
-	command.SetArgs([]string{"-R", "acme/widget", "--gone", "--yes"})
+	command.SetArgs([]string{"--worktree", "-R", "acme/widget", "--gone", "--yes"})
 	err := command.Execute()
 	if err == nil || !errors.Is(err, ErrRemoveSafety) ||
 		!strings.Contains(err.Error(), "revalidate registered state") {
@@ -1363,7 +1363,7 @@ func TestNewWorktreeRemoveCommandGoneStopsWhenDiscoveredRepositoryDisappears(t *
 	}
 }
 
-func TestNewWorktreeRemoveCommandGoneContinuesAfterGitFailure(t *testing.T) {
+func TestNewRemoveCommandWorktreeGoneContinuesAfterGitFailure(t *testing.T) {
 	root := worktreeRemovePhysicalPath(t, t.TempDir())
 	repositoryRoot := filepath.Join(root, "repositories")
 	worktreeRoot := filepath.Join(root, "worktrees")
@@ -1411,7 +1411,7 @@ func TestNewWorktreeRemoveCommandGoneContinuesAfterGitFailure(t *testing.T) {
 		Runner:   &gitcmd.Runner{Executable: "git", Stdout: io.Discard, Stderr: &stderr},
 		failPath: paths[0],
 	}
-	command := NewWorktreeRemoveCommand(WorktreeRemoveDependencies{
+	command := newWorktreeRemoveTestCommand(WorktreeRemoveDependencies{
 		Resolver: worktreeRemoveStaticResolver{result: rootpkg.Result{
 			RepositoryRoots: []string{repositoryRoot},
 			WorktreeRoot:    worktreeRoot,
@@ -1421,7 +1421,7 @@ func TestNewWorktreeRemoveCommandGoneContinuesAfterGitFailure(t *testing.T) {
 		Stdout: &stdout,
 		Stderr: &stderr,
 	})
-	command.SetArgs([]string{"-R", "acme/widget", "--gone", "--yes"})
+	command.SetArgs([]string{"--worktree", "-R", "acme/widget", "--gone", "--yes"})
 	err := command.Execute()
 	if got := ExitCode(err); got != 1 {
 		t.Fatalf("ExitCode(error=%v) = %d, want 1; stderr=%q", err, got, stderr.String())
@@ -1685,9 +1685,13 @@ func (fixture *worktreeRemoveFixture) worktreeRemoveDependencies() WorktreeRemov
 }
 
 func (fixture *worktreeRemoveFixture) worktreeRemoveExecute(args ...string) error {
-	command := NewWorktreeRemoveCommand(fixture.worktreeRemoveDependencies())
-	command.SetArgs(args)
+	command := newWorktreeRemoveTestCommand(fixture.worktreeRemoveDependencies())
+	command.SetArgs(append([]string{"--worktree"}, args...))
 	return command.Execute()
+}
+
+func newWorktreeRemoveTestCommand(dependencies WorktreeRemoveDependencies) *cobra.Command {
+	return NewRemoveCommand(RemoveDependencies{Worktree: dependencies})
 }
 
 func worktreeRemoveAssertSuccess(t *testing.T, fixture *worktreeRemoveFixture) {

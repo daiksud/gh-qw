@@ -29,7 +29,7 @@ var (
 	ErrRemoveSafety = removal.ErrSafety
 )
 
-// RemoveGit combines the Git capabilities required by rm.
+// RemoveGit combines the Git capabilities required by repository removal.
 type RemoveGit interface {
 	local.Git
 	WorktreeRemove(context.Context, string, gitcmd.WorktreeRemoveOptions) error
@@ -75,6 +75,7 @@ type RemoveDependencies struct {
 	RemoveAll    func(string) error
 	Stdout       io.Writer
 	Stderr       io.Writer
+	Worktree     WorktreeRemoveDependencies
 }
 
 type removeRuntime struct {
@@ -124,8 +125,6 @@ type removeFilesystem struct {
 type removeSelection struct {
 	raw      string
 	selector string
-	slot     string
-	linked   bool
 }
 
 type removeNode = removal.Node
@@ -149,31 +148,76 @@ type removePlan struct {
 
 type removeUsageError = repositoryUsageError
 
-// NewRemoveCommand returns the command that safely removes one managed linked
-// worktree or a complete main repository and all of its linked worktrees.
+// NewRemoveCommand returns the command that safely removes a managed repository
+// or delegates linked-worktree removal to Git.
 func NewRemoveCommand(dependencies RemoveDependencies) *cobra.Command {
 	commandRuntime := removePrepareRuntime(dependencies)
+	worktreeRuntime := worktreeRemovePrepareRuntime(dependencies.Worktree)
 
-	var dryRun bool
+	var (
+		dryRun   bool
+		worktree bool
+		selector string
+		force    bool
+		gone     bool
+		yes      bool
+	)
 	command := &cobra.Command{
-		Use: "rm [--dry-run] " +
-			"<repo>|<owner>/<repo>|<host>/<owner>/<repo>[@<branch>]",
+		Use:           "remove [flags] (<repository-selector>|--worktree <slot>|--worktree --gone)",
 		Short:         "Remove a managed repository or linked worktree",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		Args: func(command *cobra.Command, args []string) error {
+			if worktree {
+				if gone {
+					if err := cobra.NoArgs(command, args); err != nil {
+						return worktreeRemoveNewUsageError(
+							fmt.Errorf("--gone and <slot> are mutually exclusive: %w", err),
+						)
+					}
+					return nil
+				}
+				if err := cobra.ExactArgs(1)(command, args); err != nil {
+					return worktreeRemoveNewUsageError(err)
+				}
+				if command.Flags().Changed("dry-run") || command.Flags().Changed("yes") {
+					return worktreeRemoveNewUsageError(errors.New("--dry-run and --yes require --worktree --gone"))
+				}
+				return nil
+			}
 			if err := cobra.ExactArgs(1)(command, args); err != nil {
 				return removeNewUsageError(err)
+			}
+			if command.Flags().Changed("repo") || force || gone || yes {
+				return removeNewUsageError(errors.New("--repo, --force, --gone and --yes require --worktree"))
 			}
 			return nil
 		},
 		RunE: func(command *cobra.Command, args []string) error {
-			selection, err := removeParseSelection(command.Context(), args[0])
-			if err != nil {
-				if errors.Is(err, local.ErrSelector) || errors.Is(err, local.ErrInvalidBranch) {
-					return removeNewUsageError(err)
+			if worktree {
+				request := worktreeRemoveRequest{
+					selector:    selector,
+					selectorSet: command.Flags().Changed("repo"),
+					force:       force,
+					gone:        gone,
+					dryRun:      dryRun,
+					yes:         yes,
 				}
-				return err
+				if gone {
+					return worktreeRemoveGoneRun(command.Context(), worktreeRuntime, request)
+				}
+				if err := local.ValidateSlot(command.Context(), args[0]); err != nil {
+					if errors.Is(err, local.ErrInvalidBranch) {
+						return worktreeRemoveNewUsageError(err)
+					}
+					return err
+				}
+				request.branch = args[0]
+				return worktreeRemoveRun(command.Context(), worktreeRuntime, request)
+			}
+			selection, err := removeParseSelection(args[0])
+			if err != nil {
+				return removeNewUsageError(err)
 			}
 
 			plan, err := removePreflight(
@@ -218,25 +262,29 @@ func NewRemoveCommand(dependencies RemoveDependencies) *cobra.Command {
 				return fmt.Errorf("revalidate removal plan: %w", err)
 			}
 
-			if revalidated.whole {
-				removed, removeErr := removeExecuteWhole(command.Context(), commandRuntime, revalidated)
-				var forgetErr error
-				if removed && dependencies.Forget != nil {
-					if err := dependencies.Forget(revalidated.Repository.Identity, revalidated.Repository.Path); err != nil {
-						forgetErr = fmt.Errorf("repository was removed at %q but its registration could not be forgotten: %w", revalidated.Repository.Path, err)
-					}
+			removed, removeErr := removeExecuteWhole(command.Context(), commandRuntime, revalidated)
+			var forgetErr error
+			if removed && dependencies.Forget != nil {
+				if err := dependencies.Forget(revalidated.Repository.Identity, revalidated.Repository.Path); err != nil {
+					forgetErr = fmt.Errorf("repository was removed at %q but its registration could not be forgotten: %w", revalidated.Repository.Path, err)
 				}
-				return errors.Join(removeErr, forgetErr)
 			}
-			return removeExecuteLinked(command.Context(), commandRuntime, revalidated)
+			return errors.Join(removeErr, forgetErr)
 		},
 	}
-	command.Flags().BoolVar(
+	flags := command.Flags()
+	flags.BoolVarP(
 		&dryRun,
 		"dry-run",
+		"n",
 		false,
-		"Print the complete removal plan without changing files",
+		"Print the repository or gone-worktree plan without changing files",
 	)
+	flags.BoolVar(&worktree, "worktree", false, "Remove linked Git worktrees instead of a repository")
+	flags.StringVarP(&selector, "repo", "R", "", "Select the repository for linked-worktree removal")
+	flags.BoolVarP(&force, "force", "f", false, "Remove a dirty linked worktree")
+	flags.BoolVar(&gone, "gone", false, "Remove linked worktrees whose upstream refs are gone")
+	flags.BoolVarP(&yes, "yes", "y", false, "Skip the gone-worktree confirmation")
 	command.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
 		return removeNewUsageError(err)
 	})
@@ -338,24 +386,20 @@ func removePrepareRuntime(dependencies RemoveDependencies) removeRuntime {
 	}
 }
 
-func removeParseSelection(ctx context.Context, argument string) (removeSelection, error) {
+func removeParseSelection(argument string) (removeSelection, error) {
+	if strings.ContainsRune(argument, '@') {
+		return removeSelection{}, fmt.Errorf(
+			"repository selector %q includes a worktree slot; use remove --worktree <slot>",
+			argument,
+		)
+	}
 	selection := removeSelection{
 		raw:      argument,
 		selector: argument,
 	}
-	if index := strings.IndexByte(argument, '@'); index >= 0 {
-		selection.selector = argument[:index]
-		selection.slot = argument[index+1:]
-		selection.linked = true
-	}
 
 	if _, err := local.ParseSelector(selection.selector); err != nil {
 		return removeSelection{}, err
-	}
-	if selection.linked {
-		if err := local.ValidateSlot(ctx, selection.slot); err != nil {
-			return removeSelection{}, err
-		}
 	}
 	return selection, nil
 }
@@ -413,11 +457,7 @@ func removePreflight(
 	if err != nil {
 		return removePlan{}, err
 	}
-	if selection.linked {
-		plan, err = removePreflightLinked(ctx, commandRuntime, plan)
-	} else {
-		plan, err = removePreflightWhole(ctx, commandRuntime, plan)
-	}
+	plan, err = removePreflightWhole(ctx, commandRuntime, plan)
 	if err != nil {
 		return removePlan{}, err
 	}
@@ -481,39 +521,6 @@ func removeRejectNestedRegisteredPaths(
 func removePrepareCommon(ctx context.Context, commandRuntime removeRuntime, selection removeSelection, roots rootpkg.Result, repository local.Repository) (removePlan, error) {
 	observation, err := commandRuntime.observer().ObserveRepository(ctx, roots, repository)
 	return removePlan{RepositoryObservation: observation, selection: selection}, err
-}
-
-func removePreflightLinked(
-	ctx context.Context,
-	commandRuntime removeRuntime,
-	plan removePlan,
-) (removePlan, error) {
-	worktree, err := commandRuntime.observer().ResolveWorktree(
-		ctx,
-		plan.Repository,
-		plan.Roots.WorktreeRoot,
-		plan.selection.slot,
-	)
-	if err != nil {
-		return removePlan{}, fmt.Errorf(
-			"resolve managed worktree %q for %q: %w",
-			plan.selection.slot,
-			plan.Repository.Identity,
-			err,
-		)
-	}
-	target, base, err := removePrepareResolvedLinkedTarget(
-		ctx,
-		commandRuntime.observer(),
-		plan.RepositoryObservation,
-		worktree,
-	)
-	if err != nil {
-		return removePlan{}, err
-	}
-	plan.worktreeBaseDir = &base
-	plan.linked = []removeLinkedTarget{target}
-	return plan, nil
 }
 
 func removePreflightWhole(
@@ -876,14 +883,6 @@ func removeComparePlans(
 		}
 	}
 	return nil
-}
-
-func removeExecuteLinked(
-	ctx context.Context,
-	commandRuntime removeRuntime,
-	plan removePlan,
-) error {
-	return removeExecuteLinkedTarget(ctx, commandRuntime, plan, plan.linked[0], removeNewMutationState(plan))
 }
 
 func removeExecuteLinkedTarget(

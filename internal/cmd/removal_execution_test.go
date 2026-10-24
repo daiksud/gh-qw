@@ -140,8 +140,8 @@ func TestWorktreeRemoveGonePostRemovalFailurePolicies(t *testing.T) {
 					return os.Remove(path)
 				}
 			}
-			command := NewWorktreeRemoveCommand(dependencies)
-			command.SetArgs([]string{"-R", "acme/widget", "--gone", "--yes"})
+			command := newWorktreeRemoveTestCommand(dependencies)
+			command.SetArgs([]string{"--worktree", "-R", "acme/widget", "--gone", "--yes"})
 			err := command.ExecuteContext(ctx)
 			if err == nil || ExitCode(err) != 1 {
 				t.Fatalf("Execute() = %v, want partial failure; stderr=%q", err, stderr.String())

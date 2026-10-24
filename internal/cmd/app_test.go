@@ -38,11 +38,10 @@ func TestNewCommandWiresCompleteSurface(t *testing.T) {
 		{"clone"},
 		{"list"},
 		{"root"},
-		{"rm"},
+		{"remove"},
 		{"migrate"},
 		{"worktree", "add"},
 		{"worktree", "list"},
-		{"worktree", "remove"},
 		{"worktree", "prune"},
 	} {
 		found, remaining, err := command.Find(path)
@@ -54,6 +53,24 @@ func TestNewCommandWiresCompleteSurface(t *testing.T) {
 		}
 		if got, want := found.Name(), path[len(path)-1]; got != want {
 			t.Fatalf("Find(%q) name = %q, want %q", path, got, want)
+		}
+	}
+}
+
+func TestNewCommandDoesNotExposeReplacedRemovalCommands(t *testing.T) {
+	t.Parallel()
+
+	for _, args := range [][]string{{"rm", "acme/widget"}, {"worktree", "remove", "topic"}} {
+		var stdout, stderr bytes.Buffer
+		status := cmd.Execute(context.Background(), args, cmd.ApplicationDependencies{
+			Stdout: &stdout,
+			Stderr: &stderr,
+		})
+		if status != 2 {
+			t.Fatalf("Execute(%q) status = %d, want 2", args, status)
+		}
+		if !strings.Contains(stderr.String(), "unknown command") {
+			t.Fatalf("Execute(%q) stderr = %q, want unknown-command diagnostic", args, stderr.String())
 		}
 	}
 }
@@ -187,7 +204,7 @@ func TestExecuteMapsUsageAndRuntimeErrors(t *testing.T) {
 		},
 		{
 			name:       "missing argument",
-			args:       []string{"rm"},
+			args:       []string{"remove"},
 			wantStatus: 2,
 			wantError:  "gh-qw: accepts 1 arg(s), received 0",
 		},

@@ -13,10 +13,9 @@ import (
 	"github.com/daiksud/gh-qw/internal/physicalpath"
 	"github.com/daiksud/gh-qw/internal/removal"
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
-	"github.com/spf13/cobra"
 )
 
-// WorktreeRemoveGit is the Git capability required by worktree remove.
+// WorktreeRemoveGit is the Git capability required by linked-worktree removal.
 type WorktreeRemoveGit interface {
 	local.Git
 	BranchUpstreams(context.Context, string) ([]gitcmd.BranchUpstream, error)
@@ -125,81 +124,6 @@ type worktreeRemoveRequest struct {
 }
 
 type worktreeRemoveUsageError = repositoryUsageError
-
-// NewWorktreeRemoveCommand returns the command that removes one deterministic
-// linked worktree or safely plans removal of all gone-upstream worktrees.
-func NewWorktreeRemoveCommand(dependencies WorktreeRemoveDependencies) *cobra.Command {
-	commandRuntime := worktreeRemovePrepareRuntime(dependencies)
-
-	var (
-		selector string
-		force    bool
-		gone     bool
-		dryRun   bool
-		yes      bool
-	)
-
-	command := &cobra.Command{
-		Use:   "remove [flags] (<branch>|--gone)",
-		Short: "Remove a linked worktree",
-		Long: "Remove one deterministic linked worktree, or use --gone to plan and remove " +
-			"all safe linked worktrees whose upstream refs are absent.",
-		SilenceErrors: true,
-		SilenceUsage:  true,
-		Args: func(command *cobra.Command, args []string) error {
-			if gone {
-				if err := cobra.NoArgs(command, args); err != nil {
-					return worktreeRemoveNewUsageError(
-						fmt.Errorf("--gone and <branch> are mutually exclusive: %w", err),
-					)
-				}
-				return nil
-			}
-			if err := cobra.ExactArgs(1)(command, args); err != nil {
-				return worktreeRemoveNewUsageError(err)
-			}
-			if command.Flags().Changed("dry-run") || command.Flags().Changed("yes") {
-				return worktreeRemoveNewUsageError(errors.New("--dry-run and --yes require --gone"))
-			}
-			return nil
-		},
-		RunE: func(command *cobra.Command, args []string) error {
-			request := worktreeRemoveRequest{
-				selector:    selector,
-				selectorSet: command.Flags().Changed("repo"),
-				force:       force,
-				gone:        gone,
-				dryRun:      dryRun,
-				yes:         yes,
-			}
-			if gone {
-				return worktreeRemoveGoneRun(command.Context(), commandRuntime, request)
-			}
-			if err := local.ValidateSlot(command.Context(), args[0]); err != nil {
-				if errors.Is(err, local.ErrInvalidBranch) {
-					return worktreeRemoveNewUsageError(err)
-				}
-				return err
-			}
-			request.branch = args[0]
-			return worktreeRemoveRun(command.Context(), commandRuntime, request)
-		},
-	}
-
-	flags := command.Flags()
-	flags.StringVarP(&selector, "repo", "R", "", "Select an existing repository")
-	flags.BoolVarP(&force, "force", "f", false, "Remove a dirty linked worktree")
-	flags.BoolVar(&gone, "gone", false, "Remove linked worktrees whose upstream refs are gone")
-	flags.BoolVarP(&dryRun, "dry-run", "n", false, "Print the bulk removal plan without changing files")
-	flags.BoolVarP(&yes, "yes", "y", false, "Skip the bulk removal confirmation")
-	command.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
-		return worktreeRemoveNewUsageError(err)
-	})
-	command.SetOut(commandRuntime.stdout)
-	command.SetErr(commandRuntime.stderr)
-
-	return command
-}
 
 func worktreeRemovePrepareRuntime(
 	dependencies WorktreeRemoveDependencies,
