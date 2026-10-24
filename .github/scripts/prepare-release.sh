@@ -21,38 +21,48 @@ if ! git merge-base --is-ancestor "$PREVIOUS_SHA" "$TARGET_SHA"; then
   exit 1
 fi
 
+HAS_SUBSTANTIVE=false
 HAS_BREAKING=false
 HAS_MINOR=false
 HAS_PATCH=false
+HEADER_RE='^([[:alpha:]][[:alnum:]_-]*)(\([^)]*\))?(!)?:'
+BREAKING_FOOTER_RE='^(BREAKING CHANGE|BREAKING-CHANGE)(:([[:space:]].*)?$|[[:space:]]#.*$)'
+DEPRECATED_FOOTER_RE='^DEPRECATED(:([[:space:]].*)?$|[[:space:]]#.*$)'
 
-# Only PRs merged at commits in this release range affect the version.
-declare -A RANGE_COMMITS=()
-commits="$(git rev-list "${PREVIOUS_SHA}..${TARGET_SHA}")"
-while IFS= read -r sha; do
-  [ -z "$sha" ] && continue
-  RANGE_COMMITS["$sha"]=1
-done <<< "$commits"
+# Classify complete Conventional Commit messages in the selected source range.
+# Empty commits do not change the selected source tree and are the only release
+# preparation commits gh-qw can safely ignore. A preparation-named commit with
+# any tree change remains substantive and therefore receives at least a patch.
+while IFS= read -r -d '' sha && IFS= read -r -d '' message; do
+  if git diff-tree --quiet "${sha}^" "$sha"; then
+    continue
+  fi
 
-# Read labels with the merged PR list instead of one API request per commit
-# plus another API request per PR. Squash merge uses merge_commit_sha on main.
-if ! labeled_merges="$(gh api --paginate \
-  "repos/${GITHUB_REPOSITORY}/pulls?state=closed&per_page=100" \
-  --jq '.[] | select(.merged_at != null and .base.ref == "main" and .merge_commit_sha != null) | .merge_commit_sha as $sha | .labels[].name | [$sha, .] | @tsv')"; then
-  echo "Could not list merged pull request labels." >&2
-  exit 1
-fi
+  HAS_SUBSTANTIVE=true
+  HAS_PATCH=true
+  header="${message%%$'\n'*}"
+  if [[ "$header" =~ $HEADER_RE ]]; then
+    type="${BASH_REMATCH[1]}"
+    if [ -n "${BASH_REMATCH[3]}" ]; then
+      HAS_BREAKING=true
+    fi
+    case "$type" in
+      feat | perf) HAS_MINOR=true ;;
+      fix | revert) HAS_PATCH=true ;;
+    esac
+  fi
 
-while IFS=$'\t' read -r sha label; do
-  [ -z "$sha" ] && continue
-  [ -n "${RANGE_COMMITS[$sha]:-}" ] || continue
-  case "$label" in
-    "BREAKING CHANGE") HAS_BREAKING=true ;;
-    "DEPRECATED" | feat | perf) HAS_MINOR=true ;;
-    fix | revert) HAS_PATCH=true ;;
-  esac
-done <<< "$labeled_merges"
-if ! $HAS_BREAKING && ! $HAS_MINOR && ! $HAS_PATCH; then
-  echo "No merged pull request since ${PREVIOUS_TAG} has a version-affecting label." >&2
+  while IFS= read -r line; do
+    if [[ "$line" =~ $BREAKING_FOOTER_RE ]]; then
+      HAS_BREAKING=true
+    elif [[ "$line" =~ $DEPRECATED_FOOTER_RE ]]; then
+      HAS_MINOR=true
+    fi
+  done <<< "$message"
+done < <(git log -z --format='%H%x00%B' "${PREVIOUS_SHA}..${TARGET_SHA}")
+
+if ! $HAS_SUBSTANTIVE; then
+  echo "No substantive commits exist since ${PREVIOUS_TAG}." >&2
   exit 1
 fi
 
