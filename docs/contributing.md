@@ -81,8 +81,8 @@ gh infra apply .github/settings.yml
 Labels and rulesets reconcile authoritatively: omitted entries are deleted.
 Inspect the plan before applying. Keep administrative credentials out of CI.
 Settings not represented in the manifest are managed separately through GitHub.
-Both merge commits and squash merges are allowed, rebase merges are disabled,
-and either method uses the reviewed PR title and body for its commit message.
+Only squash merges are allowed. The squash commit uses the reviewed PR title
+and body; the inactive merge-commit defaults retain the same values.
 
 The required status is `CI success`, aggregating Go builds/tests on Linux
 amd64/arm64, macOS arm64, Windows amd64, race, format/vet, settings validation,
