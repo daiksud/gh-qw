@@ -7,7 +7,9 @@ import (
 	"io"
 	"os"
 
+	"github.com/daiksud/gh-qw/internal/local"
 	migratepkg "github.com/daiksud/gh-qw/internal/migrate"
+	"github.com/daiksud/gh-qw/internal/physicalpath"
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
 	"github.com/spf13/cobra"
 )
@@ -39,6 +41,7 @@ func NewAddCommand(deps AddDependencies) *cobra.Command {
 	migrate := MigrateDependencies{
 		Resolver: deps.Resolver,
 		Git:      deps.Git,
+		Registry: deps.Registry,
 		Getwd:    deps.Getwd,
 		Stdout:   deps.Stdout,
 		Stderr:   deps.Stderr,
@@ -71,6 +74,12 @@ func NewAddCommand(deps AddDependencies) *cobra.Command {
 				}
 				if orphan && len(args) == 2 {
 					return newCommandUsageError(errors.New("--orphan cannot have a start point"))
+				}
+				if err := local.ValidateSlot(command.Context(), args[0]); err != nil {
+					if errors.Is(err, local.ErrInvalidBranch) {
+						return newCommandUsageError(err)
+					}
+					return err
 				}
 				return nil
 			}
@@ -112,6 +121,7 @@ func NewAddCommand(deps AddDependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			migrate.Registry = store
 			return addRepository(command.Context(), migrate, store, args[0], move, command.OutOrStdout())
 		},
 	}
@@ -144,7 +154,13 @@ func addRepository(ctx context.Context, deps MigrateDependencies, store Location
 			return fmt.Errorf("read registered locations before move: %w", err)
 		}
 		if previous, found := entries[item.identity]; found {
-			return fmt.Errorf("repository %q is already registered at %q; refusing to move", item.identity, previous)
+			equal, compareErr := (physicalpath.Filesystem{}).Equivalent(previous, item.source)
+			if compareErr != nil {
+				return fmt.Errorf("compare registered location before move: %w", compareErr)
+			}
+			if !equal {
+				return fmt.Errorf("repository %q is registered at %q instead of move source %q", item.identity, previous, item.source)
+			}
 		}
 		moved, err := migrateExecuteItem(ctx, deps, roots, item)
 		if err != nil {

@@ -585,6 +585,60 @@ func TestNewRemoveCommandWholeRepositoryStableOrderExactBoundaryAndCleanup(t *te
 	fixture.assertStdoutEmpty(t)
 }
 
+func TestNewRemoveCommandForgetsAfterPostDeletionCleanupFailure(t *testing.T) {
+	fixture := newRemoveTestFixture(t)
+	wantErr := errors.New("cleanup denied")
+	forgotten := false
+	dependencies := fixture.dependencies()
+	dependencies.Forget = func(identity string) error {
+		forgotten = identity == fixture.repository.Identity
+		return nil
+	}
+	dependencies.Remove = func(string) error { return wantErr }
+	command := NewRemoveCommand(dependencies)
+	command.SetArgs([]string{"widget"})
+	err := command.Execute()
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("Execute() error = %v, want %v", err, wantErr)
+	}
+	if !forgotten {
+		t.Fatal("removed repository registration was not forgotten")
+	}
+	if _, statErr := os.Lstat(fixture.repository.Path); !errors.Is(statErr, fs.ErrNotExist) {
+		t.Fatalf("main repository remains: %v", statErr)
+	}
+}
+
+func TestNewRemoveCommandSafelyRemovesRegisteredExternalRepository(t *testing.T) {
+	fixture := newRemoveTestFixture(t)
+	externalParent := filepath.Join(fixture.base, "external")
+	externalPath := filepath.Join(externalParent, "widget")
+	if err := os.MkdirAll(externalParent, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(fixture.repository.Path, externalPath); err != nil {
+		t.Fatal(err)
+	}
+	fixture.repository.Path = externalPath
+	fixture.repository.Root = externalParent
+	fixture.repository.RootIndex = len(fixture.resolver.result.RepositoryRoots)
+	fixture.repositories = []local.Repository{fixture.repository}
+	fixture.worktrees[0].Repository = fixture.repository
+	fixture.worktrees[0].Path = externalPath
+	fixture.git.repositoryPath = externalPath
+	fixture.git.registered[0].Path = externalPath
+
+	if err := fixture.execute("widget"); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if _, err := os.Lstat(externalPath); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("external repository remains: %v", err)
+	}
+	if info, err := os.Stat(externalParent); err != nil || !info.IsDir() {
+		t.Fatalf("external parent boundary changed: %v, %v", info, err)
+	}
+}
+
 func TestNewRemoveCommandNeverDeletesSiblingRepositoryOrRoot(t *testing.T) {
 	t.Parallel()
 

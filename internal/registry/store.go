@@ -114,6 +114,56 @@ func (s *Store) Register(identity, path string) error {
 	})
 }
 
+// Relocate changes an existing registration after the caller has moved the
+// same repository. The expected previous path prevents a stale caller from
+// overwriting a registration that changed before the update.
+func (s *Store) Relocate(identity, previous, next string) error {
+	if _, err := repospec.ParseIdentity(identity); err != nil {
+		return fmt.Errorf("relocate repository: %w: invalid identity: %v", ErrInvalid, err)
+	}
+	for description, path := range map[string]string{"previous": previous, "next": next} {
+		if path == "" || !filepath.IsAbs(path) {
+			return fmt.Errorf("relocate repository: %w: %s location must be absolute", ErrInvalid, description)
+		}
+	}
+	previous = filepath.Clean(previous)
+	next = filepath.Clean(next)
+	return s.modify(func(entries map[string]string) (bool, error) {
+		current, exists := entries[identity]
+		if !exists {
+			return false, fmt.Errorf("%w: %q", ErrNotFound, identity)
+		}
+		equal, err := equivalentLocation(current, previous)
+		if err != nil {
+			return false, fmt.Errorf("compare previous repository location: %w", err)
+		}
+		if !equal {
+			return false, fmt.Errorf("%w: %q moved from %q instead of registered location %q", ErrConflict, identity, previous, current)
+		}
+		equal, err = equivalentLocation(current, next)
+		if err != nil {
+			return false, fmt.Errorf("compare relocated repository location: %w", err)
+		}
+		if equal {
+			return false, nil
+		}
+		for other, existing := range entries {
+			if other == identity {
+				continue
+			}
+			equal, err := equivalentLocation(existing, next)
+			if err != nil {
+				return false, fmt.Errorf("compare relocated repository location: %w", err)
+			}
+			if equal {
+				return false, fmt.Errorf("%w: %q is already registered as %q", ErrConflict, next, other)
+			}
+		}
+		entries[identity] = next
+		return true, nil
+	})
+}
+
 // Forget removes an explicit mapping only; it never mutates the filesystem
 // repository, Git branch, or worktree registrations.
 func (s *Store) Forget(identity string) error {

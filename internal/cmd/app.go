@@ -176,6 +176,7 @@ func NewCommand(dependencies ApplicationDependencies) *cobra.Command {
 	migrateCommand := NewMigrateCommand(MigrateDependencies{
 		Resolver: deps.Resolver,
 		Git:      deps.Git,
+		Registry: deps.Registry,
 		Stdout:   deps.Stdout,
 		Stderr:   deps.Stderr,
 	})

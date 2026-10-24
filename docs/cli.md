@@ -131,9 +131,11 @@ By default, validate an existing nonbare main Git repository, derive its
 canonical identity from its configured remote, and register its current
 absolute path in the XDG location registry. The directory is not moved.
 `--move` instead moves it into the configured primary root, delegates linked
-worktree repair to Git, and then registers the destination. Never overwrite
-another destination. The `--move` flag explicitly authorizes that movement;
-failed registration after a completed move reports the resulting path and error.
+worktree repair to Git, and then registers the destination. An existing
+registration at the source moves to the destination with it. Never overwrite
+another destination or a different registered location. The `--move` flag
+explicitly authorizes that movement; a registry or repair failure after a
+completed move reports the resulting path and error.
 
 `--worktree` selects a registered repository via `-R` or the current
 directory, determines the deterministic slot path, and delegates creation
@@ -206,7 +208,10 @@ registered linked path. No implicit force is applied.
 `--dry-run` performs discovery and safety checks and prints the plan without
 prompting or changing anything. Successful stdout is empty. Refusals stop further
 removal; errors identify already-removed and remaining paths. Verify both path
-and registration absence before cleaning empty parents.
+and registration absence before cleaning empty parents. A registered repository
+outside configured roots may be removed, but its parent is an established
+boundary and is never cleaned. Once the main directory is confirmed absent,
+remove its registry entry even if later cleanup or progress output fails.
 
 ## migrate
 
@@ -231,6 +236,8 @@ failure, and deletes the source only after a successful copy.
 
 Capture Git registrations before moving, map paths inside the source to their
 new locations, leave external paths unchanged, and revalidate before movement.
+When the source is registered, require that exact registration before mutation
+and update it to the destination immediately after a successful move.
 Run `git worktree repair` with all mapped paths from the new main repository.
 A repair failure leaves the moved repository in place, returns status `1`, and
 reports the paths needed for repair. Each successful migration prints its new

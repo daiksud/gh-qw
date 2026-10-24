@@ -17,6 +17,7 @@ import (
 type LocationRegistry interface {
 	List() (map[string]string, error)
 	Register(identity, path string) error
+	Relocate(identity, previous, next string) error
 	Forget(identity string) error
 }
 
@@ -100,6 +101,14 @@ func (dynamicLocationRegistry) Register(identity, path string) error {
 		return err
 	}
 	return store.Register(identity, path)
+}
+
+func (dynamicLocationRegistry) Relocate(identity, previous, next string) error {
+	store, err := defaultLocationRegistry()
+	if err != nil {
+		return err
+	}
+	return store.Relocate(identity, previous, next)
 }
 
 func (dynamicLocationRegistry) Forget(identity string) error {

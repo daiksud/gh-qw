@@ -55,7 +55,10 @@ separate selection and continuation decisions.
 
 Git removes linked worktrees; gh-qw verifies path and registration absence
 before empty-parent cleanup. gh-qw deletes the main directory only after its
-linked worktrees and boundary checks. Prune's metadata/expiry evidence is not
+linked worktrees and boundary checks. An explicitly registered repository
+outside configured roots uses its immediate parent only as a non-removable
+boundary. After confirmed main-directory deletion, unregister it even when a
+later cleanup or output step fails. Prune's metadata/expiry evidence is not
 interchangeable with ordinary removal evidence.
 
 Report operations already completed when a later step fails. Do not undo a

@@ -190,6 +190,45 @@ func TestIdempotentRegistrationDoesNotReplaceRegistryFile(t *testing.T) {
 	}
 }
 
+func TestRelocateUpdatesOnlyExpectedRegistration(t *testing.T) {
+	base := t.TempDir()
+	store, err := NewStoreAt(filepath.Join(base, "repositories.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity := "github.com/acme/api"
+	previous := filepath.Join(base, "previous")
+	next := filepath.Join(base, "next")
+	other := filepath.Join(base, "other")
+	for _, path := range []string{previous, next, other} {
+		if err := os.Mkdir(path, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := store.Register(identity, previous); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Register("github.com/acme/other", other); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Relocate(identity, other, next); !errors.Is(err, ErrConflict) {
+		t.Fatalf("stale relocate = %v, want conflict", err)
+	}
+	if err := store.Relocate(identity, previous, other); !errors.Is(err, ErrConflict) {
+		t.Fatalf("conflicting relocate = %v, want conflict", err)
+	}
+	if err := store.Relocate(identity, previous, next); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := store.List()
+	if err != nil || entries[identity] != next || entries["github.com/acme/other"] != other {
+		t.Fatalf("relocated entries = %v, %v", entries, err)
+	}
+	if err := store.Relocate(identity, next, next); err != nil {
+		t.Fatalf("idempotent relocate = %v", err)
+	}
+}
+
 func TestUnexpectedKeysAreNotIgnored(t *testing.T) {
 	base := t.TempDir()
 	path := filepath.Join(base, "repositories.toml")

@@ -14,6 +14,7 @@ import (
 	"github.com/daiksud/gh-qw/internal/gitcmd"
 	"github.com/daiksud/gh-qw/internal/local"
 	migratepkg "github.com/daiksud/gh-qw/internal/migrate"
+	"github.com/daiksud/gh-qw/internal/physicalpath"
 	"github.com/daiksud/gh-qw/internal/repospec"
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
 	"github.com/spf13/cobra"
@@ -34,6 +35,7 @@ type MigratePrompt func(context.Context, io.Writer, string) (bool, error)
 type MigrateDependencies struct {
 	Resolver        RootResolver
 	Git             MigrateGit
+	Registry        LocationRegistry
 	Filesystem      migratepkg.Filesystem
 	Prompt          MigratePrompt
 	LookupEnv       func(string) (string, bool)
@@ -503,6 +505,36 @@ func migrateExecuteItem(
 		}
 	}
 
+	registered := false
+	if dependencies.Registry != nil {
+		entries, err := dependencies.Registry.List()
+		if err != nil {
+			return false, fmt.Errorf("read registered locations before migration: %w", err)
+		}
+		for other, location := range entries {
+			if other == item.identity {
+				continue
+			}
+			equal, compareErr := (physicalpath.Filesystem{}).Equivalent(location, item.destination)
+			if compareErr != nil {
+				return false, fmt.Errorf("compare migration destination with registered location: %w", compareErr)
+			}
+			if equal {
+				return false, fmt.Errorf("migration destination %q is already registered as %q", item.destination, other)
+			}
+		}
+		if current, found := entries[item.identity]; found {
+			equal, compareErr := (physicalpath.Filesystem{}).Equivalent(current, item.source)
+			if compareErr != nil {
+				return false, fmt.Errorf("compare registered location before migration: %w", compareErr)
+			}
+			if !equal {
+				return false, fmt.Errorf("repository %q is registered at %q instead of migration source %q", item.identity, current, item.source)
+			}
+			registered = true
+		}
+	}
+
 	err := migratepkg.Move(
 		item.source,
 		item.destination,
@@ -526,19 +558,26 @@ func migrateExecuteItem(
 		return false, fmt.Errorf("migrate %q to %q: %w", item.source, item.destination, err)
 	}
 
+	var registryErr error
+	if registered {
+		if err := dependencies.Registry.Relocate(item.identity, item.source, item.destination); err != nil {
+			registryErr = fmt.Errorf("repository moved to %q but update its registered location: %w", item.destination, err)
+		}
+	}
+
 	repairPaths := item.worktrees.RepairPaths()
 	if len(repairPaths) != 0 {
 		if err := dependencies.Git.WorktreeRepair(ctx, item.destination, repairPaths...); err != nil {
-			return false, fmt.Errorf(
+			return false, errors.Join(registryErr, fmt.Errorf(
 				"repository moved to %q, but git worktree repair failed; "+
 					"leave the repository there and rerun git worktree repair from that directory with these path arguments: %q: %w",
 				item.destination,
 				repairPaths,
 				err,
-			)
+			))
 		}
 	}
-	return true, nil
+	return registryErr == nil, registryErr
 }
 
 func migrateRemoteSpec(
