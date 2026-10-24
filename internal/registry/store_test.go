@@ -229,6 +229,30 @@ func TestRelocateUpdatesOnlyExpectedRegistration(t *testing.T) {
 	}
 }
 
+func TestForgetAtDoesNotDeleteReplacedRegistration(t *testing.T) {
+	base := t.TempDir()
+	store, err := NewStoreAt(filepath.Join(base, "repositories.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity := "github.com/acme/api"
+	previous := filepath.Join(base, "previous")
+	replacement := filepath.Join(base, "replacement")
+	if err := store.Register(identity, replacement); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.ForgetAt(identity, previous); !errors.Is(err, ErrConflict) {
+		t.Fatalf("ForgetAt replaced mapping = %v, want conflict", err)
+	}
+	entries, err := store.List()
+	if err != nil || entries[identity] != replacement {
+		t.Fatalf("replacement registration changed: %v, %v", entries, err)
+	}
+	if err := store.ForgetAt(identity, replacement); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestUnexpectedKeysAreNotIgnored(t *testing.T) {
 	base := t.TempDir()
 	path := filepath.Join(base, "repositories.toml")

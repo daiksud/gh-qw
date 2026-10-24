@@ -7,6 +7,7 @@ import (
 	"sort"
 
 	"github.com/daiksud/gh-qw/internal/local"
+	migratepkg "github.com/daiksud/gh-qw/internal/migrate"
 	"github.com/daiksud/gh-qw/internal/physicalpath"
 	"github.com/daiksud/gh-qw/internal/registry"
 	"github.com/daiksud/gh-qw/internal/repospec"
@@ -19,6 +20,7 @@ type LocationRegistry interface {
 	Register(identity, path string) error
 	Relocate(identity, previous, next string) error
 	Forget(identity string) error
+	ForgetAt(identity, path string) error
 }
 
 func defaultLocationRegistry() (LocationRegistry, error) {
@@ -55,7 +57,12 @@ func registeredRepositories(ctx context.Context, store LocationRegistry, roots [
 		root := filepath.Dir(path)
 		rootIndex := len(roots)
 		for index, configured := range roots {
-			if physicalpath.StrictlyWithin(configured, path) {
+			expected := filepath.Join(configured, parts.Host, parts.Owner, parts.Repo)
+			equal, compareErr := (physicalpath.Filesystem{}).Equivalent(expected, path)
+			if compareErr != nil {
+				return nil, fmt.Errorf("compare registered location for %q with configured layout: %w", identity, compareErr)
+			}
+			if equal {
 				root, rootIndex = configured, index
 				break
 			}
@@ -81,6 +88,21 @@ func registryDiscovery(store LocationRegistry) func(context.Context, []string, .
 		}
 		return local.DiscoveryResult{Repositories: repositories}, nil
 	}
+}
+
+func validateRegisteredRepository(ctx context.Context, git MigrateGit, repository local.Repository) error {
+	snapshot, err := migratepkg.InspectRepository(ctx, repository.Path, git, migratepkg.Filesystem{})
+	if err != nil {
+		return err
+	}
+	equal, err := (physicalpath.Filesystem{}).Equivalent(snapshot.Path, repository.Path)
+	if err != nil {
+		return err
+	}
+	if !equal {
+		return fmt.Errorf("Git top-level %q does not match the registered location", snapshot.Path)
+	}
+	return nil
 }
 
 // dynamicLocationRegistry resolves the XDG data path on first use, rather than
@@ -117,4 +139,12 @@ func (dynamicLocationRegistry) Forget(identity string) error {
 		return err
 	}
 	return store.Forget(identity)
+}
+
+func (dynamicLocationRegistry) ForgetAt(identity, path string) error {
+	store, err := defaultLocationRegistry()
+	if err != nil {
+		return err
+	}
+	return store.ForgetAt(identity, path)
 }

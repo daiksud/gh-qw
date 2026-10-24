@@ -151,6 +151,7 @@ type GetDependencies struct {
 	Discover         GetDiscoverFunc
 	IdentityResolver GetIdentityResolver
 	OnAcquired       func(string, string) error
+	ValidateExisting func(context.Context, local.Repository) error
 	Stdin            io.Reader
 	Stdout           io.Writer
 	Stderr           io.Writer
@@ -653,6 +654,11 @@ func getAcquire(
 	}
 
 	if state.exists {
+		if deps.ValidateExisting != nil {
+			if err := deps.ValidateExisting(ctx, state.repository); err != nil {
+				return "", fmt.Errorf("validate registered repository %q at %q: %w", state.repository.Identity, state.repository.Path, err)
+			}
+		}
 		if !flags.update {
 			return getAbsolutePath(state.repository.Path)
 		}

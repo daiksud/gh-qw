@@ -58,8 +58,11 @@ before empty-parent cleanup. gh-qw deletes the main directory only after its
 linked worktrees and boundary checks. An explicitly registered repository
 outside configured roots uses its immediate parent only as a non-removable
 boundary. After confirmed main-directory deletion, unregister it even when a
-later cleanup or output step fails. Prune's metadata/expiry evidence is not
-interchangeable with ordinary removal evidence.
+later cleanup or output step fails, provided the mapping still names the removed
+path. A checkout registered at an arbitrary path inside a configured root uses
+the same exact-path boundary; configured layout is not inferred from containment.
+Prune's metadata/expiry evidence is not interchangeable with ordinary removal
+evidence.
 
 Report operations already completed when a later step fails. Do not undo a
 created branch, completed migration, or successful worktree creation merely

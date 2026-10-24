@@ -590,8 +590,8 @@ func TestNewRemoveCommandForgetsAfterPostDeletionCleanupFailure(t *testing.T) {
 	wantErr := errors.New("cleanup denied")
 	forgotten := false
 	dependencies := fixture.dependencies()
-	dependencies.Forget = func(identity string) error {
-		forgotten = identity == fixture.repository.Identity
+	dependencies.Forget = func(identity, path string) error {
+		forgotten = identity == fixture.repository.Identity && physicalpath.SamePath(path, fixture.repository.Path)
 		return nil
 	}
 	dependencies.Remove = func(string) error { return wantErr }
@@ -611,11 +611,8 @@ func TestNewRemoveCommandForgetsAfterPostDeletionCleanupFailure(t *testing.T) {
 
 func TestNewRemoveCommandSafelyRemovesRegisteredExternalRepository(t *testing.T) {
 	fixture := newRemoveTestFixture(t)
-	externalParent := filepath.Join(fixture.base, "external")
+	externalParent := fixture.base
 	externalPath := filepath.Join(externalParent, "widget")
-	if err := os.MkdirAll(externalParent, 0o755); err != nil {
-		t.Fatal(err)
-	}
 	if err := os.Rename(fixture.repository.Path, externalPath); err != nil {
 		t.Fatal(err)
 	}
@@ -636,6 +633,32 @@ func TestNewRemoveCommandSafelyRemovesRegisteredExternalRepository(t *testing.T)
 	}
 	if info, err := os.Stat(externalParent); err != nil || !info.IsDir() {
 		t.Fatalf("external parent boundary changed: %v, %v", info, err)
+	}
+}
+
+func TestNewRemoveCommandAllowsNoncanonicalRegistrationInsideConfiguredRoot(t *testing.T) {
+	fixture := newRemoveTestFixture(t)
+	registeredPath := filepath.Join(fixture.repositoryRoot, "widget")
+	if err := os.Rename(fixture.repository.Path, registeredPath); err != nil {
+		t.Fatal(err)
+	}
+	fixture.repository.Path = registeredPath
+	fixture.repository.Root = fixture.repositoryRoot
+	fixture.repository.RootIndex = len(fixture.resolver.result.RepositoryRoots)
+	fixture.repositories = []local.Repository{fixture.repository}
+	fixture.worktrees[0].Repository = fixture.repository
+	fixture.worktrees[0].Path = registeredPath
+	fixture.git.repositoryPath = registeredPath
+	fixture.git.registered[0].Path = registeredPath
+
+	if err := fixture.execute("widget"); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if _, err := os.Lstat(registeredPath); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("registered repository remains: %v", err)
+	}
+	if info, err := os.Stat(fixture.repositoryRoot); err != nil || !info.IsDir() {
+		t.Fatalf("configured root boundary changed: %v, %v", info, err)
 	}
 }
 

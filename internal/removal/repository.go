@@ -83,11 +83,11 @@ func (observer Observer) ObserveRepository(
 			)
 		}
 	}
-	if external && pathsOverlap(configuredRoot, roots.WorktreeRoot) {
+	if external && pathsOverlap(repository.Path, roots.WorktreeRoot) {
 		return RepositoryObservation{}, fmt.Errorf(
-			"%w: registered repository boundary %q overlaps worktree root %q",
+			"%w: registered repository %q overlaps worktree root %q",
 			ErrSafety,
-			configuredRoot,
+			repository.Path,
 			roots.WorktreeRoot,
 		)
 	}

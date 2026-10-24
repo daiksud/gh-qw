@@ -179,6 +179,34 @@ func (s *Store) Forget(identity string) error {
 	})
 }
 
+// ForgetAt removes a mapping only when it still names the expected location.
+// Destructive callers use this to avoid forgetting a concurrently replaced
+// registration after deleting an earlier checkout.
+func (s *Store) ForgetAt(identity, path string) error {
+	if _, err := repospec.ParseIdentity(identity); err != nil {
+		return fmt.Errorf("forget repository: %w: invalid identity: %v", ErrInvalid, err)
+	}
+	if path == "" || !filepath.IsAbs(path) {
+		return fmt.Errorf("forget repository: %w: location must be absolute", ErrInvalid)
+	}
+	path = filepath.Clean(path)
+	return s.modify(func(entries map[string]string) (bool, error) {
+		current, exists := entries[identity]
+		if !exists {
+			return false, fmt.Errorf("%w: %q", ErrNotFound, identity)
+		}
+		equal, err := equivalentLocation(current, path)
+		if err != nil {
+			return false, fmt.Errorf("compare repository location before forget: %w", err)
+		}
+		if !equal {
+			return false, fmt.Errorf("%w: %q is registered at %q instead of %q", ErrConflict, identity, current, path)
+		}
+		delete(entries, identity)
+		return true, nil
+	})
+}
+
 func (s *Store) modify(change func(map[string]string) (bool, error)) error {
 	if s == nil {
 		return errors.New("nil registry store")

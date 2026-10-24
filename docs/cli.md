@@ -96,7 +96,9 @@ Clone missing repositories into the primary root using `gh repo clone`.
 Reuse only existing **explicitly registered** checkouts; without `--update`,
 leave them unchanged. Register each successfully acquired location before
 printing its absolute path. An unregistered checkout at the destination is not
-adopted implicitly or overwritten.
+adopted implicitly or overwritten. A registered path that is missing or no
+longer an ordinary main Git repository is a stale-registration error, never a
+successful acquisition.
 
 | Option | Effect |
 | --- | --- |
@@ -211,7 +213,9 @@ removal; errors identify already-removed and remaining paths. Verify both path
 and registration absence before cleaning empty parents. A registered repository
 outside configured roots may be removed, but its parent is an established
 boundary and is never cleaned. Once the main directory is confirmed absent,
-remove its registry entry even if later cleanup or progress output fails.
+remove its registry entry even if later cleanup or progress output fails. The
+removal is conditional on that same registered path, so a concurrent replacement
+registration is preserved and reported as a partial failure.
 
 ## migrate
 

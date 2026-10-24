@@ -135,9 +135,12 @@ func NewCommand(dependencies ApplicationDependencies) *cobra.Command {
 		GitFactory:       deps.GitFactory,
 		Discover:         discover,
 		IdentityResolver: deps.API,
-		Stdin:            deps.Stdin,
-		Stdout:           deps.Stdout,
-		Stderr:           deps.Stderr,
+		ValidateExisting: func(ctx context.Context, repository local.Repository) error {
+			return validateRegisteredRepository(ctx, deps.Git, repository)
+		},
+		Stdin:  deps.Stdin,
+		Stdout: deps.Stdout,
+		Stderr: deps.Stderr,
 	})
 	listCommand := NewListCommand(ListDependencies{
 		Registry:             deps.Registry,
@@ -166,7 +169,7 @@ func NewCommand(dependencies ApplicationDependencies) *cobra.Command {
 	})
 	forgetCommand := NewForgetCommand(deps.Registry, deps.Stderr)
 	removeCommand := NewRemoveCommand(RemoveDependencies{
-		Forget:   deps.Registry.Forget,
+		Forget:   deps.Registry.ForgetAt,
 		Resolver: deps.Resolver,
 		Discover: deps.Discover,
 		Git:      deps.Git,

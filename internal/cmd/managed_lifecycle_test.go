@@ -30,7 +30,8 @@ func TestManagedRepositoryLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	repo := filepath.Join(base, "outside", "api")
+	root := filepath.Join(base, "configured")
+	repo := filepath.Join(root, "api")
 	if err := os.MkdirAll(repo, 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +43,6 @@ func TestManagedRepositoryLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	root := filepath.Join(base, "configured")
 	if err := os.MkdirAll(root, 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -145,6 +145,34 @@ func TestFlatAddRejectsInvalidWorktreeSlotBeforeDiscovery(t *testing.T) {
 	}
 	if discoveryCalls != 0 {
 		t.Fatalf("discovery calls = %d, want 0", discoveryCalls)
+	}
+}
+
+func TestGetRejectsStaleRegisteredLocation(t *testing.T) {
+	base, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := registry.NewStoreAt(filepath.Join(base, "data", "repositories.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	missing := filepath.Join(base, "missing")
+	if err := store.Register("github.com/acme/api", missing); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr lockedBuffer
+	code := cmd.Execute(context.Background(), []string{"get", "acme/api"}, cmd.ApplicationDependencies{
+		Resolver: managedRootResolver{result: rootpkg.Result{
+			RepositoryRoots: []string{filepath.Join(base, "root")},
+			WorktreeRoot:    filepath.Join(base, "worktrees"),
+		}},
+		Registry: store,
+		Stdout:   &stdout,
+		Stderr:   &stderr,
+	})
+	if code != 1 || stdout.String() != "" || !strings.Contains(stderr.String(), "validate registered repository") {
+		t.Fatalf("stale get = %d, %q, %q", code, stdout.String(), stderr.String())
 	}
 }
 
