@@ -44,7 +44,7 @@ Do not create an ADR archive or repeat workflow implementations in prose.
 
 Branch names are identifiers only. Choose PR types and reviewed labels from
 actual impact; `feat` and `fix` concern user-visible gh-qw behavior, not tooling.
-Keep the squash commit consistent with the reviewed change. Follow
+Keep the resulting merge commit consistent with the reviewed change. Follow
 [contribution guidance](docs/contributing.md) for validation and release labels.
 
 Merging and releasing are separate actions. Without an explicit release
