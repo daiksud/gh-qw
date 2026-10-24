@@ -35,14 +35,12 @@ func TestNewCommandWiresCompleteSurface(t *testing.T) {
 	}
 
 	for _, path := range [][]string{
+		{"add"},
 		{"clone"},
+		{"forget"},
 		{"list"},
 		{"root"},
 		{"remove"},
-		{"migrate"},
-		{"worktree", "add"},
-		{"worktree", "list"},
-		{"worktree", "prune"},
 	} {
 		found, remaining, err := command.Find(path)
 		if err != nil {
@@ -57,10 +55,18 @@ func TestNewCommandWiresCompleteSurface(t *testing.T) {
 	}
 }
 
-func TestNewCommandDoesNotExposeReplacedRemovalCommands(t *testing.T) {
+func TestNewCommandDoesNotExposeObsoleteCommands(t *testing.T) {
 	t.Parallel()
 
-	for _, args := range [][]string{{"rm", "acme/widget"}, {"worktree", "remove", "topic"}} {
+	for _, args := range [][]string{
+		{"get", "acme/widget"},
+		{"migrate", "/tmp/repository"},
+		{"rm", "acme/widget"},
+		{"worktree", "add", "topic"},
+		{"worktree", "list"},
+		{"worktree", "prune"},
+		{"worktree", "remove", "topic"},
+	} {
 		var stdout, stderr bytes.Buffer
 		status := cmd.Execute(context.Background(), args, cmd.ApplicationDependencies{
 			Stdout: &stdout,
@@ -72,22 +78,6 @@ func TestNewCommandDoesNotExposeReplacedRemovalCommands(t *testing.T) {
 		if !strings.Contains(stderr.String(), "unknown command") {
 			t.Fatalf("Execute(%q) stderr = %q, want unknown-command diagnostic", args, stderr.String())
 		}
-	}
-}
-
-func TestNewCommandDoesNotExposeGetCompatibilityAlias(t *testing.T) {
-	t.Parallel()
-
-	var stdout, stderr bytes.Buffer
-	status := cmd.Execute(context.Background(), []string{"get", "acme/widget"}, cmd.ApplicationDependencies{
-		Stdout: &stdout,
-		Stderr: &stderr,
-	})
-	if status != 2 {
-		t.Fatalf("status = %d, want 2", status)
-	}
-	if !strings.Contains(stderr.String(), "unknown command") {
-		t.Fatalf("stderr = %q, want unknown-command diagnostic", stderr.String())
 	}
 }
 
@@ -106,7 +96,7 @@ func TestNewCommandHelpAndVersionUseExtensionName(t *testing.T) {
 				"Usage:",
 				"gh qw [command]",
 				"clone",
-				"worktree",
+				"add",
 			},
 		},
 		{

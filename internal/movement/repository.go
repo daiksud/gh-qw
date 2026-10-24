@@ -1,4 +1,4 @@
-package migrate
+package movement
 
 import (
 	"bytes"
@@ -229,12 +229,12 @@ func DestinationPath(
 	if _, err := filesystem.lstat(target); err == nil {
 		return filepath.Clean(target), nil
 	} else if !errors.Is(err, fs.ErrNotExist) {
-		return "", fmt.Errorf("inspect migration destination %q: %w", target, err)
+		return "", fmt.Errorf("inspect repository move destination %q: %w", target, err)
 	}
 	physical, err := rootpkg.NewResolverWithOptions(rootOptions(filesystem)).
 		PhysicalizeTarget(primaryRoot, target, rootpkg.StrictlyUnder)
 	if err != nil {
-		return "", fmt.Errorf("derive migration destination: %w", err)
+		return "", fmt.Errorf("derive repository move destination: %w", err)
 	}
 	return physical, nil
 }
@@ -252,7 +252,7 @@ func CheckDestination(
 		!filepath.IsAbs(destination) ||
 		!pathStrictlyWithin(primaryRoot, destination) {
 		return "", false, fmt.Errorf(
-			"validate migration destination: %q is not strictly below root %q",
+			"validate repository move destination: %q is not strictly below root %q",
 			destination,
 			primaryRoot,
 		)
@@ -262,12 +262,12 @@ func CheckDestination(
 	case err == nil:
 		return destination, true, nil
 	case !errors.Is(err, fs.ErrNotExist):
-		return "", false, fmt.Errorf("inspect migration destination %q: %w", destination, err)
+		return "", false, fmt.Errorf("inspect repository move destination %q: %w", destination, err)
 	}
 	physical, err = rootpkg.NewResolverWithOptions(rootOptions(filesystem)).
 		PhysicalizeTarget(primaryRoot, destination, rootpkg.StrictlyUnder)
 	if err != nil {
-		return "", false, fmt.Errorf("validate migration destination: %w", err)
+		return "", false, fmt.Errorf("validate repository move destination: %w", err)
 	}
 	_, err = filesystem.lstat(physical)
 	switch {
@@ -276,7 +276,7 @@ func CheckDestination(
 	case errors.Is(err, fs.ErrNotExist):
 		return physical, false, nil
 	default:
-		return "", false, fmt.Errorf("inspect migration destination %q: %w", physical, err)
+		return "", false, fmt.Errorf("inspect repository move destination %q: %w", physical, err)
 	}
 }
 
@@ -293,11 +293,11 @@ func ValidateSourceContainment(
 	physical, err := rootpkg.NewResolverWithOptions(rootOptions(filesystem)).
 		PhysicalizeTarget(sourceRoot, source, rootpkg.StrictlyUnder)
 	if err != nil {
-		return fmt.Errorf("validate migration source containment: %w", err)
+		return fmt.Errorf("validate repository move source containment: %w", err)
 	}
 	if physical != filepath.Clean(source) {
 		return fmt.Errorf(
-			"validate migration source containment: physical source changed from %q to %q",
+			"validate repository move source containment: physical source changed from %q to %q",
 			source,
 			physical,
 		)
@@ -309,7 +309,7 @@ func ValidateSourceContainment(
 func ValidateDisjoint(source, destination string) error {
 	if pathsOverlap(source, destination) {
 		return fmt.Errorf(
-			"unsafe migration paths: source %q and destination %q overlap",
+			"unsafe repository move paths: source %q and destination %q overlap",
 			source,
 			destination,
 		)

@@ -1,6 +1,6 @@
 //go:build darwin || linux
 
-package migrate
+package movement
 
 import (
 	"os"

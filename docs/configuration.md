@@ -93,16 +93,3 @@ environment token. Use trusted repository input, including stdin batches.
 `GH_CONFIG_DIR` affects gh, not this configuration file. Git configuration,
 credential helpers, SSH settings, and proxies retain their native effects.
 `GH_REPO` does not replace gh-qw's `-R` selector or current-directory discovery.
-
-## Sources for `migrate`
-
-Only no-argument `migrate` reads ghq source settings:
-
-1. Nonempty `GHQ_ROOT` supplies a platform path-list and excludes Git-config sources.
-2. Otherwise, effective `ghq.root` values supply roots; an empty result uses `~/ghq`.
-3. Without `GHQ_ROOT`, append URL-specific `ghq.<url>.root` values.
-
-Source roots are physicalized and deduplicated in order. Git's `--path` rules
-apply to values read through Git. Invalid/unreadable roots are warned about and
-skipped when usable roots remain. None of these values is persisted or changes
-normal gh-qw root selection. See [migrate](cli.md#migrate) for movement rules.

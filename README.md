@@ -68,10 +68,9 @@ multiple roots are described in the [configuration reference](docs/configuration
 | `forget` | Unregister a repository without deleting its files. |
 | `root` | Print repository roots. |
 | `remove` | Remove a repository, one linked worktree, or gone-upstream worktrees. |
-| `migrate` | Move repositories into the primary root and repair their worktree registrations. |
-| `worktree add` | Create a linked worktree at its deterministic slot. |
-| `worktree list` | Inspect a repository's worktrees. |
-| `worktree prune` | Prune Git metadata and eligible managed directories. |
+
+Use native `git worktree prune` for stale Git worktree metadata; gh-qw does not
+own a separate pruning policy.
 
 See the [CLI reference](docs/cli.md) for exact arguments, output, exit statuses,
 and safety conditions. Documentation describes the current implementation.

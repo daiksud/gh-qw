@@ -101,10 +101,10 @@ func TestApplicationHelpAndSyntaxErrorsDoNotResolveConfiguration(t *testing.T) {
 	}{
 		{name: "help", args: []string{"--help"}},
 		{name: "version", args: []string{"--version"}},
-		{name: "worktree help", args: []string{"worktree", "add", "--help"}},
+		{name: "worktree help", args: []string{"add", "--worktree", "--help"}},
 		{name: "invalid flag", args: []string{"--unknown"}, code: 2},
 		{name: "missing operand", args: []string{"remove"}, code: 2},
-		{name: "conflicting modes", args: []string{"worktree", "add", "-b", "-B", "topic"}, code: 2},
+		{name: "conflicting modes", args: []string{"add", "--worktree", "-b", "-B", "topic"}, code: 2},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			deps := ApplicationDependencies{

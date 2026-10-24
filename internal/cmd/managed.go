@@ -7,7 +7,7 @@ import (
 	"sort"
 
 	"github.com/daiksud/gh-qw/internal/local"
-	migratepkg "github.com/daiksud/gh-qw/internal/migrate"
+	movementpkg "github.com/daiksud/gh-qw/internal/movement"
 	"github.com/daiksud/gh-qw/internal/physicalpath"
 	"github.com/daiksud/gh-qw/internal/registry"
 	"github.com/daiksud/gh-qw/internal/repospec"
@@ -90,8 +90,8 @@ func registryDiscovery(store LocationRegistry) func(context.Context, []string, .
 	}
 }
 
-func validateRegisteredRepository(ctx context.Context, git MigrateGit, repository local.Repository) error {
-	snapshot, err := migratepkg.InspectRepository(ctx, repository.Path, git, migratepkg.Filesystem{})
+func validateRegisteredRepository(ctx context.Context, git RepositoryMoveGit, repository local.Repository) error {
+	snapshot, err := movementpkg.InspectRepository(ctx, repository.Path, git, movementpkg.Filesystem{})
 	if err != nil {
 		return err
 	}

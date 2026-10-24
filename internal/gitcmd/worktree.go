@@ -226,28 +226,6 @@ func (r *Runner) WorktreeRemove(ctx context.Context, dir string, options Worktre
 	return r.RunDir(ctx, dir, args...)
 }
 
-// WorktreePruneOptions controls git worktree prune.
-type WorktreePruneOptions struct {
-	DryRun  bool
-	Verbose bool
-	Expire  string
-}
-
-// WorktreePrune removes stale administrative worktree records.
-func (r *Runner) WorktreePrune(ctx context.Context, dir string, options WorktreePruneOptions) error {
-	args := []string{"worktree", "prune"}
-	if options.DryRun {
-		args = append(args, "--dry-run")
-	}
-	if options.Verbose {
-		args = append(args, "--verbose")
-	}
-	if options.Expire != "" {
-		args = append(args, "--expire", options.Expire)
-	}
-	return r.RunDir(ctx, dir, args...)
-}
-
 // WorktreeRepair repairs administrative links after worktrees or their main
 // repository have moved.
 func (r *Runner) WorktreeRepair(ctx context.Context, dir string, paths ...string) error {

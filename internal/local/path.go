@@ -65,12 +65,9 @@ func ValidateBranch(ctx context.Context, branch string) error {
 	return nil
 }
 
-// ValidateSlot applies branch validation and gh-qw's portable directory layout
-// restriction. A storage slot need not match the worktree's checked-out branch.
-func ValidateSlot(ctx context.Context, slot string) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
+// ValidateSlotLayout applies gh-qw's portable directory layout restriction
+// without starting Git. It is safe to use during argument parsing.
+func ValidateSlotLayout(_ context.Context, slot string) error {
 	for _, component := range strings.Split(slot, "/") {
 		if strings.HasSuffix(component, ".") {
 			return &ValidationError{
@@ -79,6 +76,15 @@ func ValidateSlot(ctx context.Context, slot string) error {
 				Reason: "slot components must not end with a dot",
 			}
 		}
+	}
+	return nil
+}
+
+// ValidateSlot applies branch validation and gh-qw's portable directory layout
+// restriction. A storage slot need not match the worktree's checked-out branch.
+func ValidateSlot(ctx context.Context, slot string) error {
+	if err := ValidateSlotLayout(ctx, slot); err != nil {
+		return err
 	}
 	return ValidateBranch(ctx, slot)
 }

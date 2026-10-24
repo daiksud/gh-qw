@@ -18,11 +18,11 @@ import (
 	"github.com/daiksud/gh-qw/internal/ghcmd"
 	"github.com/daiksud/gh-qw/internal/gitcmd"
 	"github.com/daiksud/gh-qw/internal/local"
-	"github.com/daiksud/gh-qw/internal/repospec"
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
+	"github.com/spf13/cobra"
 )
 
-func TestNewWorktreeAddCommandAutomaticResolution(t *testing.T) {
+func TestAddWorktreeAutomaticResolution(t *testing.T) {
 	tests := []struct {
 		name         string
 		args         []string
@@ -94,7 +94,7 @@ func TestNewWorktreeAddCommandAutomaticResolution(t *testing.T) {
 	}
 }
 
-func TestNewWorktreeAddCommandFetchesDefaultBranchThroughAPIAndSync(t *testing.T) {
+func TestAddWorktreeFetchesDefaultBranchThroughAPIAndSync(t *testing.T) {
 	t.Setenv("GH_HOST", "ambient.example.com")
 	fixture := worktreeAddNewFixture(t, "feature/api-fetch")
 	fixture.api.branch = "main"
@@ -110,7 +110,7 @@ func TestNewWorktreeAddCommandFetchesDefaultBranchThroughAPIAndSync(t *testing.T
 	}
 }
 
-func TestNewWorktreeAddCommandModesAndForce(t *testing.T) {
+func TestAddWorktreeModesAndForce(t *testing.T) {
 	tests := []struct {
 		name        string
 		branch      string
@@ -187,7 +187,7 @@ func TestNewWorktreeAddCommandModesAndForce(t *testing.T) {
 	}
 }
 
-func TestNewWorktreeAddCommandModeValidation(t *testing.T) {
+func TestAddWorktreeModeValidation(t *testing.T) {
 	tests := []struct {
 		name string
 		args []string
@@ -211,7 +211,7 @@ func TestNewWorktreeAddCommandModeValidation(t *testing.T) {
 		{
 			name: "orphan commit-ish",
 			args: []string{"--orphan", "feature/x", "main"},
-			want: "does not accept",
+			want: "cannot have a start point",
 		},
 		{
 			name: "invalid slot",
@@ -227,8 +227,8 @@ func TestNewWorktreeAddCommandModeValidation(t *testing.T) {
 			if err == nil || !strings.Contains(err.Error(), test.want) {
 				t.Fatalf("Execute() error = %v, want containing %q", err, test.want)
 			}
-			if !errors.Is(err, repospec.ErrUsage) {
-				t.Fatalf("Execute() error = %v, want repospec.ErrUsage", err)
+			if !errors.Is(err, ErrCommandUsage) {
+				t.Fatalf("Execute() error = %v, want ErrCommandUsage", err)
 			}
 			if fixture.resolver.calls != 0 {
 				t.Fatalf("Resolve() calls = %d, want 0", fixture.resolver.calls)
@@ -240,7 +240,7 @@ func TestNewWorktreeAddCommandModeValidation(t *testing.T) {
 	}
 }
 
-func TestNewWorktreeAddCommandAPIAndSyncFailures(t *testing.T) {
+func TestAddWorktreeAPIAndSyncFailures(t *testing.T) {
 	tests := []struct {
 		name      string
 		configure func(*worktreeAddFixture)
@@ -291,7 +291,7 @@ func TestNewWorktreeAddCommandAPIAndSyncFailures(t *testing.T) {
 	}
 }
 
-func TestNewWorktreeAddCommandRepositorySelection(t *testing.T) {
+func TestAddWorktreeRepositorySelection(t *testing.T) {
 	t.Run("current descendant", func(t *testing.T) {
 		fixture := worktreeAddNewFixture(t, "feature/current")
 		fixture.git.localBranches["feature/current"] = true
@@ -364,7 +364,7 @@ func TestNewWorktreeAddCommandRepositorySelection(t *testing.T) {
 	})
 }
 
-func TestNewWorktreeAddCommandHandlesDuplicateRepositoryIdentity(t *testing.T) {
+func TestAddWorktreeHandlesDuplicateRepositoryIdentity(t *testing.T) {
 	for _, explicit := range []bool{false, true} {
 		name := "current"
 		if explicit {
@@ -414,7 +414,7 @@ func TestNewWorktreeAddCommandHandlesDuplicateRepositoryIdentity(t *testing.T) {
 	}
 }
 
-func TestNewWorktreeAddCommandPathSafety(t *testing.T) {
+func TestAddWorktreePathSafety(t *testing.T) {
 	t.Run("registered parent slot", func(t *testing.T) {
 		fixture := worktreeAddNewFixture(t, "feat/x")
 		fixture.initialWorktrees = append(fixture.initialWorktrees, local.Worktree{
@@ -489,7 +489,7 @@ func TestNewWorktreeAddCommandPathSafety(t *testing.T) {
 	})
 }
 
-func TestNewWorktreeAddCommandCleansOnlyNewEmptyParents(t *testing.T) {
+func TestAddWorktreeCleansOnlyNewEmptyParents(t *testing.T) {
 	fixture := worktreeAddNewFixture(t, "feature/cleanup")
 	basePath := filepath.Dir(filepath.Dir(fixture.destination))
 	if err := os.MkdirAll(basePath, 0o755); err != nil {
@@ -517,7 +517,7 @@ func TestNewWorktreeAddCommandCleansOnlyNewEmptyParents(t *testing.T) {
 	}
 }
 
-func TestNewWorktreeAddCommandCleansAfterMkdirFailure(t *testing.T) {
+func TestAddWorktreeCleansAfterMkdirFailure(t *testing.T) {
 	fixture := worktreeAddNewFixture(t, "feature/deep/cleanup")
 	fixture.git.localBranches[fixture.branch] = true
 	mkdirCalls := 0
@@ -544,7 +544,7 @@ func TestNewWorktreeAddCommandCleansAfterMkdirFailure(t *testing.T) {
 	}
 }
 
-func TestNewWorktreeAddCommandPostValidationFailurePreservesGitState(t *testing.T) {
+func TestAddWorktreePostValidationFailurePreservesGitState(t *testing.T) {
 	tests := []struct {
 		name      string
 		configure func(*worktreeAddFixture)
@@ -593,7 +593,7 @@ func TestNewWorktreeAddCommandPostValidationFailurePreservesGitState(t *testing.
 	}
 }
 
-func TestNewWorktreeAddCommandPropagatesWriteFailureWithoutDeletingWorktree(t *testing.T) {
+func TestAddWorktreePropagatesWriteFailureWithoutDeletingWorktree(t *testing.T) {
 	fixture := worktreeAddNewFixture(t, "feature/write")
 	fixture.git.localBranches[fixture.branch] = true
 	wantErr := errors.New("write failed")
@@ -608,7 +608,7 @@ func TestNewWorktreeAddCommandPropagatesWriteFailureWithoutDeletingWorktree(t *t
 	}
 }
 
-func TestNewWorktreeAddCommandPropagatesDiagnosticWriteFailure(t *testing.T) {
+func TestAddWorktreePropagatesDiagnosticWriteFailure(t *testing.T) {
 	fixture := worktreeAddNewFixture(t, "feature/diagnostic-write")
 	wantErr := errors.New("diagnostic write failed")
 	fixture.stderrWriter = worktreeAddFailingWriter{err: wantErr}
@@ -630,7 +630,7 @@ func TestNewWorktreeAddCommandPropagatesDiagnosticWriteFailure(t *testing.T) {
 	}
 }
 
-func TestNewWorktreeAddCommandWritesDiscoveryWarningsToStderr(t *testing.T) {
+func TestAddWorktreeWritesDiscoveryWarningsToStderr(t *testing.T) {
 	fixture := worktreeAddNewFixture(t, "feature/warning")
 	fixture.git.localBranches[fixture.branch] = true
 	fixture.discoveryWarning = &local.Warning{
@@ -654,7 +654,7 @@ func TestNewWorktreeAddCommandWritesDiscoveryWarningsToStderr(t *testing.T) {
 	}
 }
 
-func TestNewWorktreeAddCommandRealGitLifecycle(t *testing.T) {
+func TestAddWorktreeRealGitLifecycle(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git is unavailable")
 	}
@@ -685,7 +685,7 @@ func TestNewWorktreeAddCommandRealGitLifecycle(t *testing.T) {
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	command := NewWorktreeAddCommand(WorktreeAddDependencies{
+	command := newWorktreeAddTestCommand(WorktreeAddDependencies{
 		Resolver: &worktreeAddResolver{result: rootpkg.Result{
 			RepositoryRoots: []string{repositoryRoot},
 			WorktreeRoot:    worktreeRoot,
@@ -696,7 +696,7 @@ func TestNewWorktreeAddCommandRealGitLifecycle(t *testing.T) {
 		Stdout: &stdout,
 		Stderr: &stderr,
 	})
-	command.SetArgs([]string{branch})
+	command.SetArgs([]string{"--worktree", branch})
 	if err := command.Execute(); err != nil {
 		t.Fatalf("Execute() error = %v; stderr = %q", err, stderr.String())
 	}
@@ -819,7 +819,7 @@ func (fixture *worktreeAddFixture) worktreeAddExecute(args ...string) error {
 		stderr = &fixture.stderr
 	}
 
-	command := NewWorktreeAddCommand(WorktreeAddDependencies{
+	command := newWorktreeAddTestCommand(WorktreeAddDependencies{
 		Resolver: fixture.resolver,
 		Discover: func(
 			_ context.Context,
@@ -908,8 +908,17 @@ func (fixture *worktreeAddFixture) worktreeAddExecute(args ...string) error {
 		Stdout: stdout,
 		Stderr: stderr,
 	})
-	command.SetArgs(args)
+	command.SetArgs(append([]string{"--worktree"}, args...))
 	return command.Execute()
+}
+
+func newWorktreeAddTestCommand(deps WorktreeAddDependencies) *cobra.Command {
+	return NewAddCommand(AddDependencies{
+		Resolver: deps.Resolver,
+		Worktree: deps,
+		Stdout:   deps.Stdout,
+		Stderr:   deps.Stderr,
+	})
 }
 
 type worktreeAddResolver struct {
