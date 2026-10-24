@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/daiksud/gh-qw/internal/cmd"
+	"github.com/daiksud/gh-qw/internal/gitcmd"
 	"github.com/daiksud/gh-qw/internal/local"
 	"github.com/daiksud/gh-qw/internal/repospec"
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
@@ -432,6 +433,82 @@ func TestNewListCommandWorktreesAndWorktreeQueries(t *testing.T) {
 	}
 }
 
+func TestNewListCommandGoneWorktrees(t *testing.T) {
+	t.Parallel()
+
+	repository := listRepository(
+		"github.com/acme/widget",
+		listAbsolutePath("roots", "github.com", "acme", "widget"),
+		0,
+	)
+	gonePath := listAbsolutePath("worktrees", "github.com", "acme", "widget", "gone")
+	livePath := listAbsolutePath("worktrees", "github.com", "acme", "widget", "live")
+	noUpstreamPath := listAbsolutePath("worktrees", "github.com", "acme", "widget", "local")
+	detachedPath := listAbsolutePath("worktrees", "github.com", "acme", "widget", "detached")
+	worktrees := []local.Worktree{
+		{Main: true, Path: repository.Path, Branch: "main"},
+		{Slot: "gone", Path: gonePath, Branch: "topic/gone"},
+		{Slot: "live", Path: livePath, Branch: "topic/live"},
+		{Slot: "local", Path: noUpstreamPath, Branch: "topic/local"},
+		{Slot: "detached", Path: detachedPath, Detached: true},
+	}
+	git := &listGit{
+		upstreams: []gitcmd.BranchUpstream{
+			{Branch: "topic/gone", Upstream: "refs/remotes/origin/gone"},
+			{Branch: "topic/live", Upstream: "refs/remotes/origin/live"},
+			{Branch: "topic/local"},
+		},
+		refs: map[string]bool{"refs/remotes/origin/live": true},
+	}
+
+	for _, test := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "identity",
+			args: []string{"--worktree", "--gone"},
+			want: "github.com/acme/widget@gone\n",
+		},
+		{
+			name: "path",
+			args: []string{"--worktree", "--gone", "--full-path"},
+			want: local.NormalizePathForOutput(gonePath) + "\n",
+		},
+	} {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			var stdout bytes.Buffer
+			command := cmd.NewListCommand(cmd.ListDependencies{
+				Resolver: &listRootResolver{result: rootpkg.Result{
+					RepositoryRoots: []string{listAbsolutePath("roots")},
+					WorktreeRoot:    listAbsolutePath("worktrees"),
+				}},
+				DiscoverRepositories: func(context.Context, []string) (local.DiscoveryResult, error) {
+					return local.DiscoveryResult{Repositories: []local.Repository{repository}}, nil
+				},
+				EnumerateWorktrees: (&listEnumerationRecorder{
+					byIdentity: map[string][]local.Worktree{repository.Identity: worktrees},
+				}).listEnumerate,
+				Git:    git,
+				Stdout: &stdout,
+				Stderr: io.Discard,
+			})
+			command.SetArgs(test.args)
+
+			if err := command.Execute(); err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			}
+			if got := stdout.String(); got != test.want {
+				t.Fatalf("stdout = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
 func TestNewListCommandUniqueWorktreeSuffixCollisions(t *testing.T) {
 	t.Parallel()
 
@@ -629,6 +706,66 @@ func TestNewListCommandSurfacesErrorsWithoutPartialOutput(t *testing.T) {
 			t.Fatalf("EnumerateWorktrees() calls = %d, want 2", enumeration.calls)
 		}
 	})
+
+	for _, test := range []struct {
+		name      string
+		upstreams []gitcmd.BranchUpstream
+		refError  bool
+	}{
+		{
+			name: "branch upstreams",
+		},
+		{
+			name:      "upstream ref",
+			upstreams: []gitcmd.BranchUpstream{{Branch: "topic", Upstream: "refs/remotes/origin/topic"}},
+			refError:  true,
+		},
+	} {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			wantErr := errors.New(test.name + " failed")
+			git := &listGit{upstreams: test.upstreams}
+			if test.refError {
+				git.refErr = wantErr
+			} else {
+				git.upstreamErr = wantErr
+			}
+			repository := listRepository(
+				"github.com/acme/widget",
+				listAbsolutePath("roots", "github.com", "acme", "widget"),
+				0,
+			)
+			var stdout bytes.Buffer
+			command := cmd.NewListCommand(cmd.ListDependencies{
+				Resolver: &listRootResolver{result: rootpkg.Result{
+					RepositoryRoots: []string{listAbsolutePath("roots")},
+					WorktreeRoot:    listAbsolutePath("worktrees"),
+				}},
+				DiscoverRepositories: func(context.Context, []string) (local.DiscoveryResult, error) {
+					return local.DiscoveryResult{Repositories: []local.Repository{repository}}, nil
+				},
+				EnumerateWorktrees: (&listEnumerationRecorder{byIdentity: map[string][]local.Worktree{
+					repository.Identity: {
+						{Main: true, Path: repository.Path},
+						{Slot: "topic", Path: listAbsolutePath("worktrees", "topic"), Branch: "topic"},
+					},
+				}}).listEnumerate,
+				Git:    git,
+				Stdout: &stdout,
+				Stderr: io.Discard,
+			})
+			command.SetArgs([]string{"--worktree", "--gone"})
+
+			if err := command.Execute(); !errors.Is(err, wantErr) {
+				t.Fatalf("Execute() error = %v, want %v", err, wantErr)
+			}
+			if stdout.Len() != 0 {
+				t.Fatalf("stdout = %q, want empty", stdout.String())
+			}
+		})
+	}
 }
 
 func TestNewListCommandRejectsInvalidUsageBeforeResolving(t *testing.T) {
@@ -642,6 +779,8 @@ func TestNewListCommandRejectsInvalidUsageBeforeResolving(t *testing.T) {
 		{name: "too many queries", args: []string{"one", "two"}},
 		{name: "path and unique", args: []string{"--full-path", "--unique"}, wantUsage: true},
 		{name: "short path and unique", args: []string{"-p", "--unique"}, wantUsage: true},
+		{name: "gone without worktree", args: []string{"--gone"}, wantUsage: true},
+		{name: "gone with all", args: []string{"--all", "--gone"}, wantUsage: true},
 	}
 	for _, test := range tests {
 		test := test
@@ -791,6 +930,24 @@ type listEnumerationRecorder struct {
 	calls         int
 	repositories  []local.Repository
 	worktreeRoots []string
+}
+
+type listGit struct {
+	upstreams   []gitcmd.BranchUpstream
+	upstreamErr error
+	refs        map[string]bool
+	refErr      error
+}
+
+func (git *listGit) BranchUpstreams(context.Context, string) ([]gitcmd.BranchUpstream, error) {
+	return append([]gitcmd.BranchUpstream(nil), git.upstreams...), git.upstreamErr
+}
+
+func (git *listGit) RefExists(_ context.Context, _ string, ref string) (bool, error) {
+	if git.refErr != nil {
+		return false, git.refErr
+	}
+	return git.refs[ref], nil
 }
 
 func (recorder *listEnumerationRecorder) listEnumerate(

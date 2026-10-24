@@ -142,6 +142,7 @@ func NewCommand(dependencies ApplicationDependencies) *cobra.Command {
 	listCommand := NewListCommand(ListDependencies{
 		Registry:             deps.Registry,
 		Resolver:             deps.Resolver,
+		Git:                  deps.Git,
 		DiscoverRepositories: discover,
 		EnumerateWorktrees:   enumerate,
 		Stdout:               deps.Stdout,
