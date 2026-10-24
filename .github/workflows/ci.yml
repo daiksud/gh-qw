@@ -122,7 +122,9 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Run release preparation tests
-        run: bash .github/scripts/prepare-release.test.sh
+        run: |
+          bash .github/scripts/prepare-release.test.sh
+          bash .github/scripts/release-notes.test.sh
 
   gate:
     name: CI success
