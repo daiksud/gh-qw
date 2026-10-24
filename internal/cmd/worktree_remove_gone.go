@@ -428,6 +428,9 @@ func worktreeRemoveGoneBuildPlan(
 			removeOutputPath(plan.entries[right].worktree.Path)
 	})
 	plan.common = common
+	if err := removeRejectNestedRegistrations(plan.common, repositories); err != nil {
+		return worktreeRemoveGonePlan{}, err
+	}
 	return plan, nil
 }
 
@@ -591,6 +594,24 @@ func worktreeRemoveGoneExecute(
 				return failed, fmt.Errorf("write gone-worktree revalidation failure: %w", writeErr)
 			}
 			continue
+		}
+		latest, discoveryErr := commandRuntime.discover(
+			ctx,
+			plan.roots.RepositoryRoots,
+			local.DiscoveryOptions{Git: commandRuntime.git, Filesystem: commandRuntime.filesystem},
+		)
+		if discoveryErr != nil {
+			return failed, fmt.Errorf("revalidate registered repositories: %w", discoveryErr)
+		}
+		if err := removeRejectNestedRegisteredPaths(
+			plan.repository.Identity,
+			[]string{entry.target.Directory.Path},
+			latest.Repositories,
+		); err != nil {
+			return failed, fmt.Errorf("revalidate registered repositories: %w", err)
+		}
+		if err := removal.CompareRepositories(plan.repositories, latest.Repositories); err != nil {
+			return failed, fmt.Errorf("revalidate registered repositories: %w", err)
 		}
 
 		result := commandRuntime.fs.executor(commandRuntime.git).RemoveLinked(

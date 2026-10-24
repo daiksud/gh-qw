@@ -44,7 +44,8 @@ func (observer Observer) ObserveRepository(
 	if err := local.ValidateRepository(repository); err != nil {
 		return RepositoryObservation{}, fmt.Errorf("%w: validate selected repository: %v", ErrSafety, err)
 	}
-	if repository.RootIndex >= len(roots.RepositoryRoots) {
+	external := repository.RootIndex == len(roots.RepositoryRoots)
+	if repository.RootIndex > len(roots.RepositoryRoots) {
 		return RepositoryObservation{}, fmt.Errorf(
 			"%w: repository %q has root index %d outside %d configured roots",
 			ErrSafety,
@@ -53,7 +54,10 @@ func (observer Observer) ObserveRepository(
 			len(roots.RepositoryRoots),
 		)
 	}
-	configuredRoot := roots.RepositoryRoots[repository.RootIndex]
+	configuredRoot := repository.Root
+	if !external {
+		configuredRoot = roots.RepositoryRoots[repository.RootIndex]
+	}
 	if !physicalpath.SamePath(repository.Root, configuredRoot) {
 		return RepositoryObservation{}, fmt.Errorf(
 			"%w: repository root changed from %q to %q",
@@ -79,6 +83,14 @@ func (observer Observer) ObserveRepository(
 			)
 		}
 	}
+	if external && pathsOverlap(repository.Path, roots.WorktreeRoot) {
+		return RepositoryObservation{}, fmt.Errorf(
+			"%w: registered repository %q overlaps worktree root %q",
+			ErrSafety,
+			repository.Path,
+			roots.WorktreeRoot,
+		)
+	}
 
 	repositoryRoot, err := CaptureNode(observer.Filesystem,
 		"",
@@ -99,12 +111,15 @@ func (observer Observer) ObserveRepository(
 		return RepositoryObservation{}, fmt.Errorf("inspect worktree root: %w", err)
 	}
 
-	expectedMain := filepath.Join(
-		configuredRoot,
-		repository.Host,
-		repository.Owner,
-		repository.Repo,
-	)
+	expectedMain := repository.Path
+	if !external {
+		expectedMain = filepath.Join(
+			configuredRoot,
+			repository.Host,
+			repository.Owner,
+			repository.Repo,
+		)
+	}
 	if !physicalpath.SamePath(repository.Path, expectedMain) {
 		return RepositoryObservation{}, fmt.Errorf(
 			"%w: repository path %q is not the exact expected path %q",
@@ -113,22 +128,24 @@ func (observer Observer) ObserveRepository(
 			expectedMain,
 		)
 	}
-	derivedMain, err := local.MainPath(
-		configuredRoot,
-		repository.Host,
-		repository.Owner,
-		repository.Repo,
-	)
-	if err != nil {
-		return RepositoryObservation{}, fmt.Errorf("derive main repository path: %w", err)
-	}
-	if !physicalpath.SamePath(derivedMain, expectedMain) {
-		return RepositoryObservation{}, fmt.Errorf(
-			"%w: expected repository path %q resolves to %q",
-			ErrSafety,
-			expectedMain,
-			derivedMain,
+	if !external {
+		derivedMain, err := local.MainPath(
+			configuredRoot,
+			repository.Host,
+			repository.Owner,
+			repository.Repo,
 		)
+		if err != nil {
+			return RepositoryObservation{}, fmt.Errorf("derive main repository path: %w", err)
+		}
+		if !physicalpath.SamePath(derivedMain, expectedMain) {
+			return RepositoryObservation{}, fmt.Errorf(
+				"%w: expected repository path %q resolves to %q",
+				ErrSafety,
+				expectedMain,
+				derivedMain,
+			)
+		}
 	}
 
 	mainDirectory, err := CaptureNode(observer.Filesystem,

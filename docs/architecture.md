@@ -7,6 +7,7 @@
 | `cmd` | CLI arguments, narrow dependency composition, orchestration, diagnostics, and exit classification. |
 | `repospec` | Input syntax, canonical repository identity, transport separation, and native literal-ref validation. |
 | `config`, `root`, `xdg` | TOML loading, environment precedence, root normalization, and XDG defaults. |
+| `registry` | Explicit identity-to-location mappings under XDG data; no Git metadata. |
 | `local` | Read-only repository/worktree discovery, selectors, slots, and Git associations. |
 | `gitcmd`, `ghcmd`, `ghapi` | Native command arguments and structured output interpretation. |
 | `procio` | Context-bound processes, descriptors, captured output, bounded diagnostic tails, and typed failures. |
@@ -37,8 +38,10 @@ separate from host/login and filesystem-based input resolution.
 
 Repository identity is `<host>/<owner>/<repo>` and excludes transport details.
 Linked worktrees have deterministic slots independent of their current branch.
-Directories and Git registrations are the sources of truth; there is no second
-repository registry.
+The explicit XDG location registry owns gh-qw's managed main-repository set.
+Git remains the source of truth for actual worktree registrations, and the
+filesystem for existing files. Configured roots determine default placement;
+their contents are never imported into the managed set automatically.
 
 Configured-path normalization and runtime validation against an established
 physical root are distinct. Capture filesystem identity before mutation,
@@ -52,8 +55,22 @@ separate selection and continuation decisions.
 
 Git removes linked worktrees; gh-qw verifies path and registration absence
 before empty-parent cleanup. gh-qw deletes the main directory only after its
-linked worktrees and boundary checks. Prune's metadata/expiry evidence is not
-interchangeable with ordinary removal evidence.
+linked worktrees and boundary checks. An explicitly registered repository
+outside configured roots uses its immediate parent only as a non-removable
+boundary. After confirmed main-directory deletion, unregister it even when a
+later cleanup or output step fails, provided the mapping still names the removed
+path. A checkout registered at an arbitrary path inside a configured root uses
+the same exact-path boundary; configured layout is not inferred from containment.
+Whole-repository removal and migration refuse a source that physically contains
+another registered repository, including registrations observed during removal
+revalidation after confirmation. Removal applies the same inventory protection
+to every linked worktree scheduled for deletion. Containment follows filesystem
+identity rather than path spelling, including case-insensitive aliases.
+Single and gone-upstream worktree removal apply the same check to explicit
+repository registrations and refresh that inventory immediately before Git
+removes each linked directory.
+Prune's metadata/expiry evidence is not interchangeable with ordinary removal
+evidence.
 
 Report operations already completed when a later step fails. Do not undo a
 created branch, completed migration, or successful worktree creation merely

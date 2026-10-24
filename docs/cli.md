@@ -92,9 +92,13 @@ gh qw get [-u|--update] [-p] [--shallow] [-b|--branch <branch>]
           [--partial blobless|treeless] [<repo>...]
 ```
 
-Clone missing repositories into the primary root using `gh repo clone`. Reuse
-the earliest existing copy in configured-root order; without `--update`, leave
-it unchanged. Print its absolute path on success in either case.
+Clone missing repositories into the primary root using `gh repo clone`.
+Reuse only existing **explicitly registered** checkouts; without `--update`,
+leave them unchanged. Register each successfully acquired location before
+printing its absolute path. An unregistered checkout at the destination is not
+adopted implicitly or overwritten. A registered path that is missing or no
+longer an ordinary main Git repository is a stale-registration error, never a
+successful acquisition.
 
 | Option | Effect |
 | --- | --- |
@@ -118,25 +122,66 @@ first failure; parallel mode attempts valid items and emits completion-order
 paths. Syntax is checked before root resolution, discovery, or authentication.
 Earlier completed items remain complete if a later item is invalid.
 
+## add
+
+```text
+gh qw add [--move] <local-repository-path>
+gh qw add --worktree [-R|--repo <repo>] [-b|-B] [--detach] [--orphan] [-f] <slot> [<commit-ish>]
+```
+
+By default, validate an existing nonbare main Git repository, derive its
+canonical identity from its configured remote, and register its current
+absolute path in the XDG location registry. The directory is not moved.
+`--move` instead moves it into the configured primary root, delegates linked
+worktree repair to Git, and then registers the destination. An existing
+registration at the source moves to the destination with it. Never overwrite
+another destination or a different registered location. Refuse movement when
+another registered repository is physically nested inside the source. The
+`--move` flag explicitly authorizes that movement; a registry or repair failure
+after a completed move reports the resulting path and error.
+
+`--worktree` selects a registered repository via `-R` or the current
+directory, determines the deterministic slot path, and delegates creation
+to Git. Git owns branch and worktree behavior; see the worktree-add details
+below for the remaining flags. Both successful modes print the resulting
+absolute path.
+
+## forget
+
+```text
+gh qw forget <repository-selector>
+```
+
+Remove exactly one repository mapping from the XDG registry. Leave the actual
+checkout, its Git metadata, branches, and linked worktrees untouched. A
+forgotten directory is not automatically rediscovered as managed. Successful
+stdout is empty. Forgetting remains available when the registered checkout is
+missing, a symlink is dangling, or the location cannot otherwise be resolved.
+
 ## list
 
 ```text
-gh qw list [-e|--exact] [-p|--full-path] [--unique] [--worktree] [<query>]
+gh qw list [-e|--exact] [-p|--full-path] [--unique] [--worktree|--all] [<query>]
 ```
 
-Discover ordinary main repositories, optionally including registered linked
-worktrees. Match substrings against the non-host identity using smartcase:
+List explicitly registered main repositories by default. `--worktree`
+lists only their linked worktrees; `--all` includes both main repositories
+and linked worktrees. These mode flags are mutually exclusive. Worktree
+registration comes from Git, not the location registry.
+Match substrings against the non-host identity using smartcase:
 lowercase queries ignore case; uppercase queries match case. A host-looking
 first component followed by `/` restricts the host (`github.com/`, not bare
 `github.com`). URL queries are canonicalized first.
 
-`--exact` matches a case-sensitive identity suffix. With `--worktree`, `@slot`
-narrows the match; without that suffix, main and linked entries can match.
+`--exact` matches a case-sensitive identity suffix. With `--worktree` or
+`--all`, `@slot` narrows the match; otherwise entries of the selected types
+can match.
 
 Default output is canonical identities. `--full-path` prints physical paths;
 `--unique` prints the shortest unambiguous identity suffix among selected
 entries, retaining linked slots. Those two flags are mutually exclusive.
-Deduplicate by identity/slot with the earliest root winning, then sort emitted
+The XDG registry is the sole source of managed-repository membership.
+Missing registrations are never imported from configured roots. Sort emitted
 strings bytewise. No matches succeeds with empty stdout.
 
 Managed linked slots come from the path relative to the repository's worktree
@@ -167,7 +212,16 @@ registered linked path. No implicit force is applied.
 `--dry-run` performs discovery and safety checks and prints the plan without
 prompting or changing anything. Successful stdout is empty. Refusals stop further
 removal; errors identify already-removed and remaining paths. Verify both path
-and registration absence before cleaning empty parents.
+and registration absence before cleaning empty parents. A registered repository
+outside configured roots may be removed, but its parent is an established
+boundary and is never cleaned. Once the main directory is confirmed absent,
+remove its registry entry even if later cleanup or progress output fails. The
+removal is conditional on that same registered path, so a concurrent replacement
+registration is preserved and reported as a partial failure. Refuse
+whole-repository removal when another registered repository is physically nested
+inside the main or any linked worktree scheduled for deletion, and recheck that
+condition after confirmation. The same protection applies to single-worktree
+removal.
 
 ## migrate
 
@@ -192,6 +246,10 @@ failure, and deletes the source only after a successful copy.
 
 Capture Git registrations before moving, map paths inside the source to their
 new locations, leave external paths unchanged, and revalidate before movement.
+When the source is registered, require that exact registration before mutation
+and update it to the destination immediately after a successful move.
+Refuse migration before mutation when another registered repository is physically
+nested inside the source.
 Run `git worktree repair` with all mapped paths from the new main repository.
 A repair failure leaves the moved repository in place, returns status `1`, and
 reports the paths needed for repair. Each successful migration prints its new
@@ -276,8 +334,10 @@ It never removes the main worktree. Force supplies one level only; Git locks
 that require stronger intervention remain errors. Verify path and registration
 absence, then clean empty parents up to, but excluding, the per-repository
 worktree directory. Preserve nonempty directories and symlinks; reject replaced
-identities or boundaries. Cleanup failures still report a completed removal.
-Stdout is empty.
+identities or boundaries. Refuse deletion when another explicitly registered
+repository is physically nested in the linked target, and re-read that managed
+inventory immediately before mutation. Cleanup failures still report a
+completed removal. Stdout is empty.
 
 ### Gone-upstream selection
 

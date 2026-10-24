@@ -20,6 +20,21 @@ Unknown keys or tables, duplicates, empty values or arrays, mixed array types,
 and invalid TOML are configuration errors (status `2`). File I/O failures are
 runtime errors (status `1`). An absent file uses defaults.
 
+## Location registry
+
+The managed repository set is defined solely by explicit registrations in
+`$XDG_DATA_HOME/ghqw/repositories.toml` when `XDG_DATA_HOME` is absolute,
+or `~/.local/share/ghqw/repositories.toml` otherwise. This XDG data file
+stores only canonical repository identity-to-absolute-path mappings and is
+separate from the user-owned `config.toml`.
+
+`add <path>` registers an existing local repository; `add --move` moves
+it to the configured layout first. `forget <repo>` only unregisters. A
+missing file represents an empty managed set. No first-run import, root scan,
+or v0.x backward compatibility migration runs automatically. A structurally
+valid mapping remains forgettable even when its checkout path is missing or no
+longer resolvable; live path checks occur in commands that need the checkout.
+
 ## Precedence
 
 Each setting is resolved independently, highest priority first:
@@ -45,9 +60,9 @@ suffixes. `~other-user` is invalid. Equivalent roots are deduplicated in order.
 The worktree root must neither equal, contain, nor lie within any repository
 root after physical resolution.
 
-Discovery visits repository roots in order. Read-only discovery and `get` use
-the earliest copy of a canonical identity; destructive selection rejects
-ambiguous copies. New clones and migration destinations use the primary root.
+The XDG registry, not the directory layout, determines which repositories are
+managed. Configured roots determine default destinations for `clone` and
+`add --move`; a checkout under a configured root is not registered implicitly.
 Reading configuration or listing roots does not create missing directories.
 
 Slots may contain `/`, but must remain beneath their repository's worktree

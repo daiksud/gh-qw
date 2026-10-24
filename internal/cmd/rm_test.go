@@ -585,6 +585,218 @@ func TestNewRemoveCommandWholeRepositoryStableOrderExactBoundaryAndCleanup(t *te
 	fixture.assertStdoutEmpty(t)
 }
 
+func TestNewRemoveCommandForgetsAfterPostDeletionCleanupFailure(t *testing.T) {
+	fixture := newRemoveTestFixture(t)
+	wantErr := errors.New("cleanup denied")
+	forgotten := false
+	dependencies := fixture.dependencies()
+	dependencies.Forget = func(identity, path string) error {
+		forgotten = identity == fixture.repository.Identity && physicalpath.SamePath(path, fixture.repository.Path)
+		return nil
+	}
+	dependencies.Remove = func(string) error { return wantErr }
+	command := NewRemoveCommand(dependencies)
+	command.SetArgs([]string{"widget"})
+	err := command.Execute()
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("Execute() error = %v, want %v", err, wantErr)
+	}
+	if !forgotten {
+		t.Fatal("removed repository registration was not forgotten")
+	}
+	if _, statErr := os.Lstat(fixture.repository.Path); !errors.Is(statErr, fs.ErrNotExist) {
+		t.Fatalf("main repository remains: %v", statErr)
+	}
+}
+
+func TestNewRemoveCommandSafelyRemovesRegisteredExternalRepository(t *testing.T) {
+	fixture := newRemoveTestFixture(t)
+	externalParent := fixture.base
+	externalPath := filepath.Join(externalParent, "widget")
+	if err := os.Rename(fixture.repository.Path, externalPath); err != nil {
+		t.Fatal(err)
+	}
+	fixture.repository.Path = externalPath
+	fixture.repository.Root = externalParent
+	fixture.repository.RootIndex = len(fixture.resolver.result.RepositoryRoots)
+	fixture.repositories = []local.Repository{fixture.repository}
+	fixture.worktrees[0].Repository = fixture.repository
+	fixture.worktrees[0].Path = externalPath
+	fixture.git.repositoryPath = externalPath
+	fixture.git.registered[0].Path = externalPath
+
+	if err := fixture.execute("widget"); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if _, err := os.Lstat(externalPath); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("external repository remains: %v", err)
+	}
+	if info, err := os.Stat(externalParent); err != nil || !info.IsDir() {
+		t.Fatalf("external parent boundary changed: %v, %v", info, err)
+	}
+}
+
+func TestNewRemoveCommandAllowsNoncanonicalRegistrationInsideConfiguredRoot(t *testing.T) {
+	fixture := newRemoveTestFixture(t)
+	registeredPath := filepath.Join(fixture.repositoryRoot, "widget")
+	if err := os.Rename(fixture.repository.Path, registeredPath); err != nil {
+		t.Fatal(err)
+	}
+	fixture.repository.Path = registeredPath
+	fixture.repository.Root = fixture.repositoryRoot
+	fixture.repository.RootIndex = len(fixture.resolver.result.RepositoryRoots)
+	fixture.repositories = []local.Repository{fixture.repository}
+	fixture.worktrees[0].Repository = fixture.repository
+	fixture.worktrees[0].Path = registeredPath
+	fixture.git.repositoryPath = registeredPath
+	fixture.git.registered[0].Path = registeredPath
+
+	if err := fixture.execute("widget"); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+	if _, err := os.Lstat(registeredPath); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("registered repository remains: %v", err)
+	}
+	if info, err := os.Stat(fixture.repositoryRoot); err != nil || !info.IsDir() {
+		t.Fatalf("configured root boundary changed: %v, %v", info, err)
+	}
+}
+
+func TestNewRemoveCommandRejectsNestedRegisteredRepository(t *testing.T) {
+	t.Parallel()
+
+	fixture := newRemoveTestFixture(t)
+	childPath := filepath.Join(fixture.repository.Path, "child")
+	if err := os.MkdirAll(filepath.Join(childPath, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fixture.repositories = append(fixture.repositories, local.Repository{
+		Identity:  "github.com/acme/child",
+		Host:      "github.com",
+		Owner:     "acme",
+		Repo:      "child",
+		Path:      childPath,
+		Root:      fixture.repository.Path,
+		RootIndex: len(fixture.resolver.result.RepositoryRoots),
+	})
+
+	err := fixture.execute("widget")
+	if !errors.Is(err, ErrRemoveSafety) || !strings.Contains(err.Error(), "nested inside removal target") {
+		t.Fatalf("Execute() error = %v, want nested-registration safety refusal", err)
+	}
+	if fixture.promptCalls != 0 {
+		t.Fatalf("Prompt() calls = %d, want 0", fixture.promptCalls)
+	}
+	fixture.assertNoMutation(t)
+	if info, statErr := os.Stat(childPath); statErr != nil || !info.IsDir() {
+		t.Fatalf("nested repository changed: %v, %v", info, statErr)
+	}
+}
+
+func TestNewRemoveCommandRevalidatesNestedRegistrationsAfterConfirmation(t *testing.T) {
+	fixture := newRemoveTestFixture(t)
+	childPath := filepath.Join(fixture.repository.Path, "child")
+	fixture.prompt = func(context.Context, io.Writer, string) (bool, error) {
+		fixture.promptCalls++
+		if err := os.MkdirAll(filepath.Join(childPath, ".git"), 0o755); err != nil {
+			return false, err
+		}
+		fixture.repositories = append(fixture.repositories, local.Repository{
+			Identity:  "github.com/acme/child",
+			Host:      "github.com",
+			Owner:     "acme",
+			Repo:      "child",
+			Path:      childPath,
+			Root:      fixture.repository.Path,
+			RootIndex: len(fixture.resolver.result.RepositoryRoots),
+		})
+		return true, nil
+	}
+
+	err := fixture.execute("widget")
+	if !errors.Is(err, ErrRemoveSafety) || !strings.Contains(err.Error(), "revalidate removal plan") {
+		t.Fatalf("Execute() error = %v, want revalidation safety refusal", err)
+	}
+	if fixture.promptCalls != 1 {
+		t.Fatalf("Prompt() calls = %d, want 1", fixture.promptCalls)
+	}
+	fixture.assertNoMutation(t)
+	if info, statErr := os.Stat(childPath); statErr != nil || !info.IsDir() {
+		t.Fatalf("nested repository changed: %v, %v", info, statErr)
+	}
+}
+
+func TestNewRemoveCommandRejectsRegistrationInsideLinkedRemovalTarget(t *testing.T) {
+	t.Parallel()
+
+	for _, selector := range []string{"widget@feature/nested", "widget"} {
+		selector := selector
+		t.Run(selector, func(t *testing.T) {
+			t.Parallel()
+
+			fixture := newRemoveTestFixture(t, "feature/nested")
+			childPath := filepath.Join(fixture.linkedPath("feature/nested"), "child")
+			if err := os.MkdirAll(filepath.Join(childPath, ".git"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			fixture.repositories = append(fixture.repositories, local.Repository{
+				Identity:  "github.com/acme/child",
+				Host:      "github.com",
+				Owner:     "acme",
+				Repo:      "child",
+				Path:      childPath,
+				Root:      fixture.linkedPath("feature/nested"),
+				RootIndex: len(fixture.resolver.result.RepositoryRoots),
+			})
+
+			err := fixture.execute(selector)
+			if !errors.Is(err, ErrRemoveSafety) || !strings.Contains(err.Error(), "nested inside removal target") {
+				t.Fatalf("Execute() error = %v, want nested-registration safety refusal", err)
+			}
+			if fixture.promptCalls != 0 {
+				t.Fatalf("Prompt() calls = %d, want 0", fixture.promptCalls)
+			}
+			fixture.assertNoMutation(t)
+			if info, statErr := os.Stat(childPath); statErr != nil || !info.IsDir() {
+				t.Fatalf("nested repository changed: %v, %v", info, statErr)
+			}
+		})
+	}
+}
+
+func TestNewRemoveCommandRevalidatesRegistrationInsideLinkedTarget(t *testing.T) {
+	fixture := newRemoveTestFixture(t, "feature/nested")
+	childPath := filepath.Join(fixture.linkedPath("feature/nested"), "child")
+	fixture.prompt = func(context.Context, io.Writer, string) (bool, error) {
+		fixture.promptCalls++
+		if err := os.MkdirAll(filepath.Join(childPath, ".git"), 0o755); err != nil {
+			return false, err
+		}
+		fixture.repositories = append(fixture.repositories, local.Repository{
+			Identity:  "github.com/acme/child",
+			Host:      "github.com",
+			Owner:     "acme",
+			Repo:      "child",
+			Path:      childPath,
+			Root:      fixture.linkedPath("feature/nested"),
+			RootIndex: len(fixture.resolver.result.RepositoryRoots),
+		})
+		return true, nil
+	}
+
+	err := fixture.execute("widget@feature/nested")
+	if !errors.Is(err, ErrRemoveSafety) || !strings.Contains(err.Error(), "revalidate removal plan") {
+		t.Fatalf("Execute() error = %v, want revalidation safety refusal", err)
+	}
+	if fixture.promptCalls != 1 {
+		t.Fatalf("Prompt() calls = %d, want 1", fixture.promptCalls)
+	}
+	fixture.assertNoMutation(t)
+	if info, statErr := os.Stat(childPath); statErr != nil || !info.IsDir() {
+		t.Fatalf("nested repository changed: %v, %v", info, statErr)
+	}
+}
+
 func TestNewRemoveCommandNeverDeletesSiblingRepositoryOrRoot(t *testing.T) {
 	t.Parallel()
 

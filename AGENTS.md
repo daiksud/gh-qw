@@ -5,6 +5,9 @@
 Read [Purpose and scope](docs/purpose.md) before proposing features or
 refactoring. gh-qw exists to reduce the effort of thinking about working
 directories: preparing them, finding them again, and cleaning them up.
+An explicit XDG identity-to-path registry is the only managed-repository set;
+configured roots only provide placement defaults. Git owns worktree metadata.
+Do not build a second registry of Git branches or worktrees.
 
 For a change, identify the concrete user decision or manual step it removes,
 or the current safety or failure-handling contract it protects. For internal
@@ -12,6 +15,8 @@ refactoring, explain how it makes that behavior simpler to maintain. Apply the
 scope and decision criteria in the purpose document; more features or fewer
 lines alone are not success. Do not add new configuration, bookkeeping, or
 workflow ownership without a concrete benefit to that purpose.
+During v0.x, do not add automatic imports or compatibility-only behavior.
+Keep filesystem safety, failure reporting, and user data protections.
 
 Keep the purpose document as the owner of product direction, README as its
 user-facing summary, and these instructions as guidance for applying it.

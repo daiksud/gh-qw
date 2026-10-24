@@ -82,6 +82,8 @@ func TestCLIUsesNativeCustomFetchMappingWithoutGitHubLookup(t *testing.T) {
 	fixture.seedRemote(t, remoteURL)
 	mainPath := filepath.Join(fixture.repository, "github.com", "acme", "widget")
 	fixture.cloneMain(t, remoteURL, mainPath)
+	registration := fixture.runCLI(t, "add", mainPath)
+	assertStatus(t, registration, 0)
 	fixture.runGit(t, mainPath, "config", "remote.origin.fetch", "+refs/heads/*:refs/cache/origin/*")
 	branch := "feature/custom"
 	upstream := "refs/cache/origin/" + branch

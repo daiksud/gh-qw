@@ -67,6 +67,7 @@ type RemoveDependencies struct {
 		...local.AssociationOptions,
 	) error
 	Git          RemoveGit
+	Forget       func(string, string) error
 	Filesystem   local.FilesystemOptions
 	Prompt       RemovePrompt
 	OpenTerminal func() (io.ReadCloser, error)
@@ -218,7 +219,14 @@ func NewRemoveCommand(dependencies RemoveDependencies) *cobra.Command {
 			}
 
 			if revalidated.whole {
-				return removeExecuteWhole(command.Context(), commandRuntime, revalidated)
+				removed, removeErr := removeExecuteWhole(command.Context(), commandRuntime, revalidated)
+				var forgetErr error
+				if removed && dependencies.Forget != nil {
+					if err := dependencies.Forget(revalidated.Repository.Identity, revalidated.Repository.Path); err != nil {
+						forgetErr = fmt.Errorf("repository was removed at %q but its registration could not be forgotten: %w", revalidated.Repository.Path, err)
+					}
+				}
+				return errors.Join(removeErr, forgetErr)
 			}
 			return removeExecuteLinked(command.Context(), commandRuntime, revalidated)
 		},
@@ -406,9 +414,68 @@ func removePreflight(
 		return removePlan{}, err
 	}
 	if selection.linked {
-		return removePreflightLinked(ctx, commandRuntime, plan)
+		plan, err = removePreflightLinked(ctx, commandRuntime, plan)
+	} else {
+		plan, err = removePreflightWhole(ctx, commandRuntime, plan)
 	}
-	return removePreflightWhole(ctx, commandRuntime, plan)
+	if err != nil {
+		return removePlan{}, err
+	}
+	if err := removeRejectNestedRegistrations(plan, discovery.Repositories); err != nil {
+		return removePlan{}, err
+	}
+	return plan, nil
+}
+
+func removeRejectNestedRegistrations(plan removePlan, repositories []local.Repository) error {
+	targets := make([]string, 0, len(plan.linked)+1)
+	for _, linked := range plan.linked {
+		targets = append(targets, linked.Directory.Path)
+	}
+	if plan.whole {
+		targets = append(targets, plan.MainDirectory.Path)
+	}
+	return removeRejectNestedRegisteredPaths(plan.Repository.Identity, targets, repositories)
+}
+
+func removeRejectNestedRegisteredPaths(
+	selectedIdentity string,
+	targets []string,
+	repositories []local.Repository,
+) error {
+	physicalTargets := make([]string, len(targets))
+	for index, target := range targets {
+		physical, err := physicalRegisteredLocation(target)
+		if err != nil {
+			return err
+		}
+		physicalTargets[index] = physical
+	}
+	for _, repository := range repositories {
+		if repository.Identity == selectedIdentity {
+			continue
+		}
+		physical, err := physicalRegisteredLocation(repository.Path)
+		if err != nil {
+			return err
+		}
+		for index, target := range physicalTargets {
+			within, withinErr := physicalRegisteredLocationStrictlyWithin(target, physical)
+			if withinErr != nil {
+				return withinErr
+			}
+			if within {
+				return fmt.Errorf(
+					"%w: registered repository %q at %q is nested inside removal target %q",
+					ErrRemoveSafety,
+					repository.Identity,
+					repository.Path,
+					targets[index],
+				)
+			}
+		}
+	}
+	return nil
 }
 
 func removePrepareCommon(ctx context.Context, commandRuntime removeRuntime, selection removeSelection, roots rootpkg.Result, repository local.Repository) (removePlan, error) {
@@ -856,7 +923,7 @@ func removeExecuteWhole(
 	ctx context.Context,
 	commandRuntime removeRuntime,
 	plan removePlan,
-) error {
+) (bool, error) {
 	state := removeNewMutationState(plan)
 
 	for _, target := range plan.linked {
@@ -866,26 +933,26 @@ func removeExecuteWhole(
 			plan,
 			target,
 		); err != nil {
-			return state.failure(
+			return state.isRemoved(plan.MainDirectory.Path), state.failure(
 				"revalidate linked worktree "+target.Worktree.Slot,
 				err,
 			)
 		}
 
 		if err := removeExecuteLinkedTarget(ctx, commandRuntime, plan, target, state); err != nil {
-			return err
+			return state.isRemoved(plan.MainDirectory.Path), err
 		}
 	}
 
 	if err := removeRevalidateMainForDeletion(ctx, commandRuntime, plan); err != nil {
-		return state.failure("revalidate main repository before exact deletion", err)
+		return state.isRemoved(plan.MainDirectory.Path), state.failure("revalidate main repository before exact deletion", err)
 	}
 	if err := ctx.Err(); err != nil {
-		return state.failure("remove exact main repository directory", err)
+		return state.isRemoved(plan.MainDirectory.Path), state.failure("remove exact main repository directory", err)
 	}
 	if err := commandRuntime.fs.removeAll(plan.MainDirectory.Path); err != nil {
 		observationErr := state.observePath(commandRuntime.fs, plan.MainDirectory.Path)
-		return state.failure(
+		return state.isRemoved(plan.MainDirectory.Path), state.failure(
 			fmt.Sprintf(
 				"remove exact main repository directory %q",
 				removeOutputPath(plan.MainDirectory.Path),
@@ -895,10 +962,10 @@ func removeExecuteWhole(
 	}
 	missing, err := removal.PathMissing(commandRuntime.fs.observations(), plan.MainDirectory.Path)
 	if err != nil {
-		return state.failure("verify main repository deletion", err)
+		return state.isRemoved(plan.MainDirectory.Path), state.failure("verify main repository deletion", err)
 	}
 	if !missing {
-		return state.failure(
+		return state.isRemoved(plan.MainDirectory.Path), state.failure(
 			"verify main repository deletion",
 			fmt.Errorf(
 				"exact main repository path %q still exists",
@@ -912,14 +979,14 @@ func removeExecuteWhole(
 		ctx, plan.RepositoryRoot,
 		plan.mainCleanup,
 	); err != nil {
-		return state.failure("cleanup empty repository owner and host directories", err)
+		return true, state.failure("cleanup empty repository owner and host directories", err)
 	}
 	if plan.worktreeBaseDir != nil {
 		if err := commandRuntime.fs.executor(commandRuntime.git).CleanupEmptyChain(
 			ctx, plan.WorktreeRoot,
 			plan.worktreeCleanup,
 		); err != nil {
-			return state.failure("cleanup empty worktree-base directories", err)
+			return true, state.failure("cleanup empty worktree-base directories", err)
 		}
 	}
 	if err := removeWriteProgress(
@@ -927,9 +994,9 @@ func removeExecuteWhole(
 		"removed main repository",
 		plan.MainDirectory.Path,
 	); err != nil {
-		return state.failure("write main removal progress", err)
+		return true, state.failure("write main removal progress", err)
 	}
-	return nil
+	return true, nil
 }
 
 func removeRevalidateLinkedForMutation(
@@ -1051,6 +1118,10 @@ func removeNewMutationState(plan removePlan) *removeMutationState {
 
 func (state *removeMutationState) markRemoved(path string) {
 	state.removed[physicalpath.Key(path)] = true
+}
+
+func (state *removeMutationState) isRemoved(path string) bool {
+	return state.removed[physicalpath.Key(path)]
 }
 
 func (state *removeMutationState) observePath(
