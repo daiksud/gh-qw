@@ -218,7 +218,9 @@ remove its registry entry even if later cleanup or progress output fails. The
 removal is conditional on that same registered path, so a concurrent replacement
 registration is preserved and reported as a partial failure. Refuse
 whole-repository removal when another registered repository is physically nested
-inside the target, and recheck that condition after confirmation.
+inside the main or any linked worktree scheduled for deletion, and recheck that
+condition after confirmation. The same protection applies to single-worktree
+removal.
 
 ## migrate
 

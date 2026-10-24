@@ -63,7 +63,8 @@ path. A checkout registered at an arbitrary path inside a configured root uses
 the same exact-path boundary; configured layout is not inferred from containment.
 Whole-repository removal and migration refuse a source that physically contains
 another registered repository, including registrations observed during removal
-revalidation after confirmation.
+revalidation after confirmation. Removal applies the same inventory protection
+to every linked worktree scheduled for deletion.
 Prune's metadata/expiry evidence is not interchangeable with ordinary removal
 evidence.
 

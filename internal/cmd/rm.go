@@ -402,30 +402,6 @@ func removePreflight(
 			fmt.Errorf("resolve repository %q: %w", selection.selector, err),
 		)
 	}
-	if !selection.linked {
-		selectedPhysical, err := physicalRegisteredLocation(repository.Path)
-		if err != nil {
-			return removePlan{}, err
-		}
-		for _, other := range discovery.Repositories {
-			if other.Identity == repository.Identity {
-				continue
-			}
-			otherPhysical, err := physicalRegisteredLocation(other.Path)
-			if err != nil {
-				return removePlan{}, err
-			}
-			if physicalpath.StrictlyWithin(selectedPhysical, otherPhysical) {
-				return removePlan{}, fmt.Errorf(
-					"%w: registered repository %q at %q is nested inside removal target %q",
-					ErrRemoveSafety,
-					other.Identity,
-					other.Path,
-					repository.Path,
-				)
-			}
-		}
-	}
 
 	plan, err := removePrepareCommon(
 		ctx,
@@ -438,9 +414,57 @@ func removePreflight(
 		return removePlan{}, err
 	}
 	if selection.linked {
-		return removePreflightLinked(ctx, commandRuntime, plan)
+		plan, err = removePreflightLinked(ctx, commandRuntime, plan)
+	} else {
+		plan, err = removePreflightWhole(ctx, commandRuntime, plan)
 	}
-	return removePreflightWhole(ctx, commandRuntime, plan)
+	if err != nil {
+		return removePlan{}, err
+	}
+	if err := removeRejectNestedRegistrations(plan, discovery.Repositories); err != nil {
+		return removePlan{}, err
+	}
+	return plan, nil
+}
+
+func removeRejectNestedRegistrations(plan removePlan, repositories []local.Repository) error {
+	targets := make([]string, 0, len(plan.linked)+1)
+	for _, linked := range plan.linked {
+		targets = append(targets, linked.Directory.Path)
+	}
+	if plan.whole {
+		targets = append(targets, plan.MainDirectory.Path)
+	}
+
+	physicalTargets := make([]string, len(targets))
+	for index, target := range targets {
+		physical, err := physicalRegisteredLocation(target)
+		if err != nil {
+			return err
+		}
+		physicalTargets[index] = physical
+	}
+	for _, repository := range repositories {
+		if repository.Identity == plan.Repository.Identity {
+			continue
+		}
+		physical, err := physicalRegisteredLocation(repository.Path)
+		if err != nil {
+			return err
+		}
+		for index, target := range physicalTargets {
+			if physicalpath.StrictlyWithin(target, physical) {
+				return fmt.Errorf(
+					"%w: registered repository %q at %q is nested inside removal target %q",
+					ErrRemoveSafety,
+					repository.Identity,
+					repository.Path,
+					targets[index],
+				)
+			}
+		}
+	}
+	return nil
 }
 
 func removePrepareCommon(ctx context.Context, commandRuntime removeRuntime, selection removeSelection, roots rootpkg.Result, repository local.Repository) (removePlan, error) {
