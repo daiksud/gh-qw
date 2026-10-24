@@ -75,11 +75,12 @@ commit_empty() {
 
 expect_version() {
   local name="$1" version="$2" actual expected
-  GITHUB_SHA="$(git rev-parse HEAD)"
-  export GITHUB_SHA
+  SOURCE_SHA="$(git rev-parse HEAD)"
+  export SOURCE_SHA
   : > "$FAKE_LOG"
   actual="$(bash "$SCRIPT_DIR/prepare-release.sh")"
-  expected="$(printf 'previous_tag=%s\ntag=%s\nsha=%s' "$PREV_TAG" "$version" "$GITHUB_SHA")"
+  expected="$(printf 'version=%s\nprevious-tag=%s\nprevious-sha=%s' \
+    "$version" "$PREV_TAG" "$(git rev-parse "refs/tags/${PREV_TAG}^{commit}")")"
   if [ "$actual" != "$expected" ]; then
     printf 'FAIL %s\nexpected: %s\nactual: %s\n' "$name" "$expected" "$actual" >&2
     exit 1
@@ -93,8 +94,8 @@ expect_version() {
 
 expect_failure() {
   local name="$1" expected="$2"
-  GITHUB_SHA="$(git rev-parse HEAD)"
-  export GITHUB_SHA
+  SOURCE_SHA="$(git rev-parse HEAD)"
+  export SOURCE_SHA
   : > "$FAKE_LOG"
   if bash "$SCRIPT_DIR/prepare-release.sh" > "$TEMP/out" 2> "$TEMP/err"; then
     echo "FAIL $name (unexpected success)" >&2
@@ -187,8 +188,8 @@ commit_change "fix: correct an error"
 git tag v0.4.0
 PREV_TAG=v0.4.0
 export PREV_TAG
-GITHUB_SHA="$OLD_SHA"
-export GITHUB_SHA
+SOURCE_SHA="$OLD_SHA"
+export SOURCE_SHA
 : > "$FAKE_LOG"
 if bash "$SCRIPT_DIR/prepare-release.sh" > "$TEMP/out" 2> "$TEMP/err"; then
   echo "FAIL old selected SHA (unexpected success)" >&2

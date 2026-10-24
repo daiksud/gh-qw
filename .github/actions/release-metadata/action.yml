@@ -1,0 +1,58 @@
+name: Resolve gh-qw release metadata
+description: Resolve the version baseline and trusted release target matrices.
+inputs:
+  source-sha:
+    description: Frozen full source commit SHA.
+    required: true
+outputs:
+  version:
+    description: Version selected from Conventional Commit history.
+    value: ${{ steps.metadata.outputs.version }}
+  previous-tag:
+    description: Latest published stable release tag.
+    value: ${{ steps.metadata.outputs.previous-tag }}
+  previous-sha:
+    description: Commit referenced by the latest published stable release.
+    value: ${{ steps.metadata.outputs.previous-sha }}
+  build-matrix:
+    description: Validated cross-build target matrix.
+    value: ${{ steps.metadata.outputs.build-matrix }}
+  acceptance-matrix:
+    description: Validated native acceptance target matrix.
+    value: ${{ steps.metadata.outputs.acceptance-matrix }}
+runs:
+  using: composite
+  steps:
+    - name: Resolve and validate metadata
+      id: metadata
+      shell: bash
+      env:
+        SOURCE_SHA: ${{ inputs.source-sha }}
+      run: |
+        set -euo pipefail
+        [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+        [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]]
+
+        metadata="$(bash .github/scripts/prepare-release.sh)"
+        [[ "$(grep -c '^version=' <<< "$metadata")" -eq 1 ]]
+        [[ "$(grep -c '^previous-tag=' <<< "$metadata")" -eq 1 ]]
+        [[ "$(grep -c '^previous-sha=' <<< "$metadata")" -eq 1 ]]
+        [[ "$(wc -l <<< "$metadata" | tr -d ' ')" -eq 3 ]]
+        version="$(sed -n 's/^version=//p' <<< "$metadata")"
+        previous_tag="$(sed -n 's/^previous-tag=//p' <<< "$metadata")"
+        previous_sha="$(sed -n 's/^previous-sha=//p' <<< "$metadata")"
+        [[ "$version" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+        [[ "$previous_tag" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+        [[ "$previous_sha" =~ ^[0-9a-f]{40}$ ]]
+
+        build_matrix="$(bash .github/scripts/release-artifacts.sh build-matrix)"
+        acceptance_matrix="$(bash .github/scripts/release-artifacts.sh acceptance-matrix)"
+        jq -e '.include == [{"target":"darwin-amd64","runner":"ubuntu-slim"},{"target":"darwin-arm64","runner":"ubuntu-slim"},{"target":"linux-amd64","runner":"ubuntu-slim"},{"target":"linux-arm64","runner":"ubuntu-slim"},{"target":"windows-amd64","runner":"ubuntu-slim"}]' <<< "$build_matrix" >/dev/null
+        jq -e '.include == [{"target":"linux-amd64","runner":"ubuntu-slim"},{"target":"linux-arm64","runner":"ubuntu-24.04-arm"},{"target":"darwin-arm64","runner":"macos-14"},{"target":"windows-amd64","runner":"windows-latest"}]' <<< "$acceptance_matrix" >/dev/null
+
+        printf 'version=%s\nprevious-tag=%s\nprevious-sha=%s\n' \
+          "$version" "$previous_tag" "$previous_sha" >> "$GITHUB_OUTPUT"
+        printf 'build-matrix=%s\nacceptance-matrix=%s\n' \
+          "$build_matrix" "$acceptance_matrix" >> "$GITHUB_OUTPUT"
+        printf '## Release plan\n\nVersion: %s\n\nPrevious release: %s (%s)\n\nCommit: %s\n' \
+          "$version" "$previous_tag" "$previous_sha" "$SOURCE_SHA" >> "$GITHUB_STEP_SUMMARY"

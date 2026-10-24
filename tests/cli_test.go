@@ -68,6 +68,23 @@ func sharedCLIExecutable(t *testing.T) string {
 		if sharedCLIError != nil {
 			return
 		}
+		if supplied := os.Getenv("GHQW_TEST_EXECUTABLE"); supplied != "" {
+			if !filepath.IsAbs(supplied) {
+				sharedCLIError = fmt.Errorf("GHQW_TEST_EXECUTABLE must be absolute: %q", supplied)
+				return
+			}
+			info, err := os.Stat(supplied)
+			if err != nil {
+				sharedCLIError = fmt.Errorf("inspect GHQW_TEST_EXECUTABLE: %w", err)
+				return
+			}
+			if !info.Mode().IsRegular() {
+				sharedCLIError = fmt.Errorf("GHQW_TEST_EXECUTABLE is not a regular file: %q", supplied)
+				return
+			}
+			sharedCLIBinary = supplied
+			return
+		}
 		sharedCLIBinary = filepath.Join(sharedCLIDir, "gh-qw")
 		if runtime.GOOS == "windows" {
 			sharedCLIBinary += ".exe"
@@ -86,7 +103,7 @@ func sharedCLIExecutable(t *testing.T) string {
 		sharedCLILog = output.String()
 	})
 	if sharedCLIError != nil {
-		t.Fatalf("build shared gh-qw executable: %v\n%s", sharedCLIError, sharedCLILog)
+		t.Fatalf("prepare shared gh-qw executable: %v\n%s", sharedCLIError, sharedCLILog)
 	}
 	return sharedCLIBinary
 }

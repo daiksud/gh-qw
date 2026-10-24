@@ -1,0 +1,65 @@
+name: Verify gh-qw published release
+description: Compare immutable public release identity and downloads with accepted artifacts.
+inputs:
+  source-sha:
+    description: Frozen full source commit SHA.
+    required: true
+  version:
+    description: Published release version.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Download accepted artifact manifests and bytes
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      with:
+        pattern: release-*-${{ inputs.source-sha }}
+        path: ${{ runner.temp }}/gh-qw-accepted-artifacts
+        merge-multiple: true
+        digest-mismatch: error
+    - name: Verify published identity and downloaded bytes
+      shell: bash
+      working-directory: .action
+      env:
+        ACCEPTED_DIR: ${{ runner.temp }}/gh-qw-accepted-artifacts
+        PUBLISHED_DIR: ${{ runner.temp }}/gh-qw-published-assets
+        SOURCE_SHA: ${{ inputs.source-sha }}
+        VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+        [[ "$VERSION" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+        [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]]
+        bash .github/scripts/release-artifacts.sh verify-all \
+          "$VERSION" "$SOURCE_SHA" "$ACCEPTED_DIR"
+
+        release_json="$RUNNER_TEMP/gh-qw-release.json"
+        curl --proto '=https' --tlsv1.2 --location --fail --silent --show-error \
+          --output "$release_json" \
+          "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/tags/$VERSION"
+        jq -e --arg version "$VERSION" --arg source "$SOURCE_SHA" '
+          .tag_name == $version and
+          .target_commitish == $source and
+          .draft == false and
+          .prerelease == false and
+          .immutable == true
+        ' "$release_json" >/dev/null
+
+        expected_assets="$(printf '%s\n' \
+          gh-qw-darwin-amd64 \
+          gh-qw-darwin-arm64 \
+          gh-qw-linux-amd64 \
+          gh-qw-linux-arm64 \
+          gh-qw-windows-amd64.exe | LC_ALL=C sort)"
+        actual_assets="$(jq -r '.assets[].name' "$release_json" | LC_ALL=C sort)"
+        [[ "$actual_assets" == "$expected_assets" ]]
+
+        mkdir -p "$PUBLISHED_DIR"
+        while IFS=$'\t' read -r name url; do
+          [[ "$url" == "https://github.com/$GITHUB_REPOSITORY/releases/download/$VERSION/$name" ]]
+          curl --proto '=https' --tlsv1.2 --location --fail --silent --show-error \
+            --output "$PUBLISHED_DIR/$name" "$url"
+        done < <(jq -r '.assets[] | [.name, .browser_download_url] | @tsv' "$release_json")
+
+        bash .github/scripts/release-artifacts.sh verify-published \
+          "$VERSION" "$SOURCE_SHA" "$ACCEPTED_DIR" "$PUBLISHED_DIR"

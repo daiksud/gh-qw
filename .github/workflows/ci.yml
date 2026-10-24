@@ -124,7 +124,9 @@ jobs:
       - name: Run release preparation tests
         run: |
           bash .github/scripts/prepare-release.test.sh
+          bash .github/scripts/release-source.test.sh
           bash .github/scripts/release-notes.test.sh
+          bash .github/scripts/release-artifacts.test.sh
 
   gate:
     name: CI success

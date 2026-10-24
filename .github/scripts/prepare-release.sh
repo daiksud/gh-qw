@@ -2,7 +2,7 @@
 set -euo pipefail
 
 : "${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}"
-: "${GITHUB_SHA:?GITHUB_SHA is required}"
+: "${SOURCE_SHA:?SOURCE_SHA is required}"
 
 # Published stable releases are the baseline; failed or stray tags are not.
 if ! PREVIOUS_TAG="$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest" --jq '.tag_name')"; then
@@ -15,7 +15,11 @@ if [[ ! "$PREVIOUS_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ 
 fi
 
 PREVIOUS_SHA="$(git rev-parse --verify "refs/tags/${PREVIOUS_TAG}^{commit}")"
-TARGET_SHA="$(git rev-parse --verify "${GITHUB_SHA}^{commit}")"
+TARGET_SHA="$(git rev-parse --verify "${SOURCE_SHA}^{commit}")"
+if [ "$TARGET_SHA" != "$SOURCE_SHA" ]; then
+  echo "The selected source is not an exact commit SHA." >&2
+  exit 1
+fi
 if ! git merge-base --is-ancestor "$PREVIOUS_SHA" "$TARGET_SHA"; then
   echo "The selected commit does not include the latest published release." >&2
   exit 1
@@ -24,7 +28,6 @@ fi
 HAS_SUBSTANTIVE=false
 HAS_BREAKING=false
 HAS_MINOR=false
-HAS_PATCH=false
 HEADER_RE='^([[:alpha:]][[:alnum:]_-]*)(\([^)]*\))?(!)?:'
 BREAKING_FOOTER_RE='^(BREAKING CHANGE|BREAKING-CHANGE)(:([[:space:]].*)?$|[[:space:]]#.*$)'
 DEPRECATED_FOOTER_RE='^DEPRECATED(:([[:space:]].*)?$|[[:space:]]#.*$)'
@@ -39,7 +42,6 @@ while IFS= read -r -d '' sha && IFS= read -r -d '' message; do
   fi
 
   HAS_SUBSTANTIVE=true
-  HAS_PATCH=true
   header="${message%%$'\n'*}"
   if [[ "$header" =~ $HEADER_RE ]]; then
     type="${BASH_REMATCH[1]}"
@@ -48,7 +50,6 @@ while IFS= read -r -d '' sha && IFS= read -r -d '' message; do
     fi
     case "$type" in
       feat | perf) HAS_MINOR=true ;;
-      fix | revert) HAS_PATCH=true ;;
     esac
   fi
 
@@ -70,16 +71,17 @@ IFS='.' read -r major minor patch <<< "${PREVIOUS_TAG#v}"
 if [ "$major" = "0" ]; then
   # Graduation to 1.0.0 requires an explicit policy change.
   if $HAS_BREAKING || $HAS_MINOR; then
-    TAG="v0.$((minor + 1)).0"
+    VERSION="v0.$((minor + 1)).0"
   else
-    TAG="v0.${minor}.$((patch + 1))"
+    VERSION="v0.${minor}.$((patch + 1))"
   fi
 elif $HAS_BREAKING; then
-  TAG="v$((major + 1)).0.0"
+  VERSION="v$((major + 1)).0.0"
 elif $HAS_MINOR; then
-  TAG="v${major}.$((minor + 1)).0"
+  VERSION="v${major}.$((minor + 1)).0"
 else
-  TAG="v${major}.${minor}.$((patch + 1))"
+  VERSION="v${major}.${minor}.$((patch + 1))"
 fi
 
-printf 'previous_tag=%s\ntag=%s\nsha=%s\n' "$PREVIOUS_TAG" "$TAG" "$TARGET_SHA"
+printf 'version=%s\nprevious-tag=%s\nprevious-sha=%s\n' \
+  "$VERSION" "$PREVIOUS_TAG" "$PREVIOUS_SHA"

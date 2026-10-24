@@ -19,7 +19,9 @@ go test ./...
 go test -race ./...
 go vet ./...
 bash .github/scripts/prepare-release.test.sh
+bash .github/scripts/release-source.test.sh
 bash .github/scripts/release-notes.test.sh
+bash .github/scripts/release-artifacts.test.sh
 ```
 
 Install the pinned PR message validation tools with `mise install`, then run:
@@ -94,11 +96,20 @@ Merging does not authorize releasing. Only on an explicit release request, run:
 gh workflow run release.yml --ref main
 ```
 
-[The workflow](../.github/workflows/release.yml) captures one main commit, uses
-the latest published stable release as its baseline, classifies the complete
-Conventional Commit messages in that source range, validates the captured
-commit, and builds five platform binaries before creating a tag and release. A
-failed preparation/build/validation creates no tag.
+[The workflow](../.github/workflows/release.yml) uses the main commit captured
+when it is dispatched and fails if main moves before resolution. An optional
+reviewed source pin is only an additional equality check; it cannot select a
+different commit. The workflow then
+runs three product stages: commit-stage cross-builds five binaries from that
+source, acceptance-stage tests the transferred binaries on native Linux amd64,
+Linux arm64, macOS arm64, and Windows amd64 runners, and release publishes only
+those accepted bytes. Darwin amd64 is cross-built but has no native acceptance
+runner. Each internal artifact carries a source, version, asset-name, and SHA-256
+manifest; publication revalidates the complete inventory without rebuilding.
+The final verification has no write token; its public API and asset downloads
+are unauthenticated after read-only artifact retrieval. It compares all five
+published assets with the accepted manifests. A
+failed metadata/build/acceptance/publication check creates no new release.
 
 | Commit signal | Version increment |
 | --- | --- |
