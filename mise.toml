@@ -1,0 +1,7 @@
+[settings]
+npm.package_manager = "bun"
+
+[tools]
+go = "1.26.5"
+bun = "1.4.3"
+"npm:@commitlint/cli" = { version = "21.2.4", bun_args = "@commitlint/config-conventional@21.2.4" }
