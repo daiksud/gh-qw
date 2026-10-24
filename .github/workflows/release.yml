@@ -21,41 +21,48 @@ jobs:
     timeout-minutes: 10
     permissions: {contents: read}
     outputs:
-      source-sha: ${{ steps.source.outputs.source-sha }}
+      source-sha: ${{ github.sha }}
       version: ${{ steps.metadata.outputs.version }}
       previous-tag: ${{ steps.metadata.outputs.previous-tag }}
       previous-sha: ${{ steps.metadata.outputs.previous-sha }}
       build-matrix: ${{ steps.metadata.outputs.build-matrix }}
       acceptance-matrix: ${{ steps.metadata.outputs.acceptance-matrix }}
     steps:
-      - name: Freeze latest main
-        id: source
+      - name: Require the dispatched main commit to remain current
         env:
           GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          current_main="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
+          [[ "$current_main" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$current_main" == "$SOURCE_SHA" ]] || {
+            echo 'main moved since dispatch; start a new release workflow' >&2; exit 1
+          }
+      - name: Validate the optional reviewed source pin
+        env:
+          SOURCE_SHA: ${{ github.sha }}
           EXPECTED_SOURCE_SHA: ${{ inputs.source_sha }}
         run: |
-          sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
-          [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
           if [[ -n "$EXPECTED_SOURCE_SHA" ]]; then
             [[ "$EXPECTED_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || {
               echo 'invalid source_sha (expected full 40-character SHA)' >&2; exit 1
             }
-            [[ "$sha" == "$EXPECTED_SOURCE_SHA" ]] || {
-              echo 'main moved since approved source_sha; refusing a different release source' >&2; exit 1
+            [[ "$SOURCE_SHA" == "$EXPECTED_SOURCE_SHA" ]] || {
+              echo 'dispatched main differs from approved source_sha; refusing a different release source' >&2; exit 1
             }
           fi
-          printf 'source-sha=%s\n' "$sha" >> "$GITHUB_OUTPUT"
       - name: Checkout frozen main and complete release history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ steps.source.outputs.source-sha }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
       - name: Resolve release metadata and validated target matrices
         id: metadata
         uses: ./.github/actions/release-metadata
         with:
-          source-sha: ${{ steps.source.outputs.source-sha }}
+          source-sha: ${{ github.sha }}
         env:
           GH_TOKEN: ${{ github.token }}
   commit-stage:
