@@ -78,19 +78,23 @@ gh workflow run release.yml --ref main
 ```
 
 [The workflow](../.github/workflows/release.yml) captures one main commit, uses
-the latest published stable release as its baseline, collects reviewed labels
-on merged PRs, validates that commit, and builds five platform binaries before
-creating a tag and release. A failed preparation/build/validation creates no tag.
+the latest published stable release as its baseline, classifies the complete
+Conventional Commit messages in that source range, validates the captured
+commit, and builds five platform binaries before creating a tag and release. A
+failed preparation/build/validation creates no tag.
 
-| Reviewed labels | Version increment |
+| Commit signal | Version increment |
 | --- | --- |
-| `BREAKING CHANGE` | Minor while the major version is zero; otherwise major. |
-| `DEPRECATED`, `feat`, `perf` | Minor. |
-| `fix`, `revert` | Patch. |
-| Other labels | None. |
+| Breaking header `!`, `BREAKING CHANGE` or `BREAKING-CHANGE` footer | Minor while the major version is zero; otherwise major. |
+| `feat`, `perf`, or `DEPRECATED` footer | Minor. |
+| `fix`, `revert`, or another substantive commit | Patch. |
 
-The highest tier wins. No version-affecting labels, an invalid baseline, a
-changed published baseline, or a conflicting tag stops publication. Tags are
+The highest tier wins once for the range. Empty preparation commits do not
+change the selected source and are ignored; a preparation-named commit with a
+tree change remains substantive. No substantive changes, an invalid baseline,
+a changed published baseline, or a conflicting tag stops publication. There is
+no version override, and v0 does not automatically graduate to v1. PR labels
+categorize generated release notes but do not determine the version. Tags are
 not moved and published releases/assets are not replaced. Final API operations
 are not atomic; inspect remote state before retrying interrupted publication.
 [.github/release.yml](../.github/release.yml) owns release-note categories.
