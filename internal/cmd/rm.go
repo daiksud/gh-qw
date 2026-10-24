@@ -402,6 +402,30 @@ func removePreflight(
 			fmt.Errorf("resolve repository %q: %w", selection.selector, err),
 		)
 	}
+	if !selection.linked {
+		selectedPhysical, err := physicalRegisteredLocation(repository.Path)
+		if err != nil {
+			return removePlan{}, err
+		}
+		for _, other := range discovery.Repositories {
+			if other.Identity == repository.Identity {
+				continue
+			}
+			otherPhysical, err := physicalRegisteredLocation(other.Path)
+			if err != nil {
+				return removePlan{}, err
+			}
+			if physicalpath.StrictlyWithin(selectedPhysical, otherPhysical) {
+				return removePlan{}, fmt.Errorf(
+					"%w: registered repository %q at %q is nested inside removal target %q",
+					ErrRemoveSafety,
+					other.Identity,
+					other.Path,
+					repository.Path,
+				)
+			}
+		}
+	}
 
 	plan, err := removePrepareCommon(
 		ctx,

@@ -105,6 +105,14 @@ func validateRegisteredRepository(ctx context.Context, git MigrateGit, repositor
 	return nil
 }
 
+func physicalRegisteredLocation(path string) (string, error) {
+	physical, err := (physicalpath.Filesystem{}).ResolveAbsolute(path)
+	if err != nil {
+		return "", fmt.Errorf("resolve registered location %q: %w", path, err)
+	}
+	return physical, nil
+}
+
 // dynamicLocationRegistry resolves the XDG data path on first use, rather than
 // during help, version, or CLI argument parsing. Do not cache registrations.
 type dynamicLocationRegistry struct{}

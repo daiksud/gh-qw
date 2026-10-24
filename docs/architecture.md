@@ -61,6 +61,9 @@ boundary. After confirmed main-directory deletion, unregister it even when a
 later cleanup or output step fails, provided the mapping still names the removed
 path. A checkout registered at an arbitrary path inside a configured root uses
 the same exact-path boundary; configured layout is not inferred from containment.
+Whole-repository removal and migration refuse a source that physically contains
+another registered repository, including registrations observed during removal
+revalidation after confirmation.
 Prune's metadata/expiry evidence is not interchangeable with ordinary removal
 evidence.
 

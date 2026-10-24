@@ -184,6 +184,57 @@ func TestNewMigrateCommandRelocatesExistingRegistration(t *testing.T) {
 	}
 }
 
+func TestNewMigrateCommandRejectsNestedRegisteredRepository(t *testing.T) {
+	t.Parallel()
+
+	base := migrateTestPhysical(t, t.TempDir())
+	source := filepath.Join(base, "source")
+	child := filepath.Join(source, "child")
+	primary := filepath.Join(base, "primary")
+	migrateTestInitRepository(t, source, "https://github.com/acme/parent.git")
+	migrateTestInitRepository(t, child, "https://github.com/acme/child.git")
+	if err := os.MkdirAll(primary, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	store, err := registry.NewStoreAt(filepath.Join(base, "data", "repositories.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Register("github.com/acme/parent", source); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Register("github.com/acme/child", child); err != nil {
+		t.Fatal(err)
+	}
+
+	command := cmd.NewMigrateCommand(cmd.MigrateDependencies{
+		Resolver: &migrateRootResolver{result: rootpkg.Result{RepositoryRoots: []string{primary}}},
+		Git:      migrateTestGitRunner(io.Discard),
+		Registry: store,
+		Stdout:   io.Discard,
+		Stderr:   io.Discard,
+	})
+	command.SetArgs([]string{"--yes", source})
+	err = command.Execute()
+	if err == nil || !strings.Contains(err.Error(), "nested inside migration source") {
+		t.Fatalf("Execute() error = %v, want nested-registration refusal", err)
+	}
+	destination := filepath.Join(primary, "github.com", "acme", "parent")
+	if info, statErr := os.Stat(source); statErr != nil || !info.IsDir() {
+		t.Fatalf("source changed: %v, %v", info, statErr)
+	}
+	if _, statErr := os.Stat(destination); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("destination error = %v, want not exist", statErr)
+	}
+	entries, listErr := store.List()
+	if listErr != nil {
+		t.Fatal(listErr)
+	}
+	if entries["github.com/acme/parent"] != source || entries["github.com/acme/child"] != child {
+		t.Fatalf("registry changed = %#v", entries)
+	}
+}
+
 func TestNewMigrateCommandDeclineLeavesRepositoryUntouched(t *testing.T) {
 	t.Parallel()
 

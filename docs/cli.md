@@ -135,9 +135,10 @@ absolute path in the XDG location registry. The directory is not moved.
 `--move` instead moves it into the configured primary root, delegates linked
 worktree repair to Git, and then registers the destination. An existing
 registration at the source moves to the destination with it. Never overwrite
-another destination or a different registered location. The `--move` flag
-explicitly authorizes that movement; a registry or repair failure after a
-completed move reports the resulting path and error.
+another destination or a different registered location. Refuse movement when
+another registered repository is physically nested inside the source. The
+`--move` flag explicitly authorizes that movement; a registry or repair failure
+after a completed move reports the resulting path and error.
 
 `--worktree` selects a registered repository via `-R` or the current
 directory, determines the deterministic slot path, and delegates creation
@@ -215,7 +216,9 @@ outside configured roots may be removed, but its parent is an established
 boundary and is never cleaned. Once the main directory is confirmed absent,
 remove its registry entry even if later cleanup or progress output fails. The
 removal is conditional on that same registered path, so a concurrent replacement
-registration is preserved and reported as a partial failure.
+registration is preserved and reported as a partial failure. Refuse
+whole-repository removal when another registered repository is physically nested
+inside the target, and recheck that condition after confirmation.
 
 ## migrate
 
@@ -242,6 +245,8 @@ Capture Git registrations before moving, map paths inside the source to their
 new locations, leave external paths unchanged, and revalidate before movement.
 When the source is registered, require that exact registration before mutation
 and update it to the destination immediately after a successful move.
+Refuse migration before mutation when another registered repository is physically
+nested inside the source.
 Run `git worktree repair` with all mapped paths from the new main repository.
 A repair failure leaves the moved repository in place, returns status `1`, and
 reports the paths needed for repair. Each successful migration prints its new
