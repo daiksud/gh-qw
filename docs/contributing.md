@@ -106,8 +106,9 @@ Linux arm64, macOS arm64, and Windows amd64 runners, and release publishes only
 those accepted bytes. Darwin amd64 is cross-built but has no native acceptance
 runner. Each internal artifact carries a source, version, asset-name, and SHA-256
 manifest; publication revalidates the complete inventory without rebuilding.
-The final token-free verification reads the immutable public release identity,
-downloads all five assets, and compares them with the accepted manifests. A
+The final verification has no write token; its public API and asset downloads
+are unauthenticated after read-only artifact retrieval. It compares all five
+published assets with the accepted manifests. A
 failed metadata/build/acceptance/publication check creates no new release.
 
 | Commit signal | Version increment |
