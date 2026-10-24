@@ -27,6 +27,9 @@ extract_run() {
 }
 
 extract_run \
+  "Require a main-branch dispatch" \
+  "$TEMP/require-main.sh"
+extract_run \
   "Require the dispatched main commit to remain current" \
   "$TEMP/require-current.sh"
 extract_run \
@@ -39,6 +42,13 @@ export PATH="$TEMP/bin:$PATH"
 export GITHUB_REPOSITORY=example/gh-qw
 export GH_TOKEN=test-only
 export SOURCE_SHA
+
+SOURCE_REF=refs/heads/main bash -e -o pipefail "$TEMP/require-main.sh"
+if SOURCE_REF=refs/heads/topic bash -e -o pipefail "$TEMP/require-main.sh" >/dev/null 2>&1; then
+  echo "FAIL non-main dispatch was accepted" >&2
+  exit 1
+fi
+echo "PASS non-main dispatch fails explicitly"
 
 CURRENT_MAIN="$SOURCE_SHA" bash -e -o pipefail "$TEMP/require-current.sh"
 echo "PASS dispatched commit is current main"
