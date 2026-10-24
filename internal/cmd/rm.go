@@ -435,7 +435,14 @@ func removeRejectNestedRegistrations(plan removePlan, repositories []local.Repos
 	if plan.whole {
 		targets = append(targets, plan.MainDirectory.Path)
 	}
+	return removeRejectNestedRegisteredPaths(plan.Repository.Identity, targets, repositories)
+}
 
+func removeRejectNestedRegisteredPaths(
+	selectedIdentity string,
+	targets []string,
+	repositories []local.Repository,
+) error {
 	physicalTargets := make([]string, len(targets))
 	for index, target := range targets {
 		physical, err := physicalRegisteredLocation(target)
@@ -445,7 +452,7 @@ func removeRejectNestedRegistrations(plan removePlan, repositories []local.Repos
 		physicalTargets[index] = physical
 	}
 	for _, repository := range repositories {
-		if repository.Identity == plan.Repository.Identity {
+		if repository.Identity == selectedIdentity {
 			continue
 		}
 		physical, err := physicalRegisteredLocation(repository.Path)

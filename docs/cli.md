@@ -155,7 +155,8 @@ gh qw forget <repository-selector>
 Remove exactly one repository mapping from the XDG registry. Leave the actual
 checkout, its Git metadata, branches, and linked worktrees untouched. A
 forgotten directory is not automatically rediscovered as managed. Successful
-stdout is empty.
+stdout is empty. Forgetting remains available when the registered checkout is
+missing, a symlink is dangling, or the location cannot otherwise be resolved.
 
 ## list
 
@@ -333,8 +334,10 @@ It never removes the main worktree. Force supplies one level only; Git locks
 that require stronger intervention remain errors. Verify path and registration
 absence, then clean empty parents up to, but excluding, the per-repository
 worktree directory. Preserve nonempty directories and symlinks; reject replaced
-identities or boundaries. Cleanup failures still report a completed removal.
-Stdout is empty.
+identities or boundaries. Refuse deletion when another explicitly registered
+repository is physically nested in the linked target, and re-read that managed
+inventory immediately before mutation. Cleanup failures still report a
+completed removal. Stdout is empty.
 
 ### Gone-upstream selection
 

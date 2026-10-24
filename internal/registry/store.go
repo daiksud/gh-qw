@@ -294,15 +294,27 @@ func (s *Store) read() (map[string]string, error) {
 	// Resolve each registered location only once. This avoids O(n²)
 	// filesystem lookups under the cross-process registry lock.
 	resolved := make(map[string]string, len(document.Repositories))
+	lexical := make(map[string]string, len(document.Repositories))
 	type observed struct {
 		identity string
 		info     fs.FileInfo
 	}
 	var observedLocations []observed
 	for identity, path := range document.Repositories {
+		lexicalKey := path
+		if runtime.GOOS == "windows" {
+			lexicalKey = strings.ToLower(lexicalKey)
+		}
+		if previous, exists := lexical[lexicalKey]; exists {
+			return nil, fmt.Errorf("%w: %q and %q refer to the same location", ErrInvalid, previous, identity)
+		}
+		lexical[lexicalKey] = identity
 		physical, err := (physicalpath.Filesystem{}).ResolveAbsolute(path)
 		if err != nil {
-			return nil, fmt.Errorf("%w: resolve registered location for %q: %v", ErrInvalid, identity, err)
+			// Registry structure remains usable when a checkout is unavailable.
+			// Live-location checks belong to the operation that needs the path;
+			// in particular, Forget must be able to remove a dangling mapping.
+			continue
 		}
 		key := physical
 		if runtime.GOOS == "windows" {
@@ -314,11 +326,8 @@ func (s *Store) read() (map[string]string, error) {
 		resolved[key] = identity
 
 		info, err := os.Stat(physical)
-		if errors.Is(err, fs.ErrNotExist) {
-			continue
-		}
 		if err != nil {
-			return nil, fmt.Errorf("%w: stat registered location for %q: %v", ErrInvalid, identity, err)
+			continue
 		}
 		for _, previous := range observedLocations {
 			if os.SameFile(info, previous.info) {

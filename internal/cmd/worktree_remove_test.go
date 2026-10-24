@@ -277,6 +277,65 @@ func TestNewWorktreeRemoveCommandRejectsUnsafeManagedResults(t *testing.T) {
 	}
 }
 
+func TestNewWorktreeRemoveCommandRejectsNestedRegisteredRepository(t *testing.T) {
+	fixture := worktreeRemoveNewFixture(t, "feature/nested-repository")
+	nestedPath := filepath.Join(fixture.target, "nested")
+	if err := os.MkdirAll(nestedPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fixture.repositories = append(fixture.repositories, local.Repository{
+		Identity: "github.com/other/nested",
+		Host:     "github.com",
+		Owner:    "other",
+		Repo:     "nested",
+		Path:     nestedPath,
+		Root:     fixture.target,
+	})
+
+	err := fixture.worktreeRemoveExecute("-R", fixture.repository.Identity, fixture.branch)
+	if !errors.Is(err, ErrRemoveSafety) || !strings.Contains(err.Error(), "registered repository") {
+		t.Fatalf("Execute() error = %v, want nested registered repository safety error", err)
+	}
+	if len(fixture.git.removals) != 0 {
+		t.Fatalf("WorktreeRemove() calls = %d, want 0", len(fixture.git.removals))
+	}
+	if info, statErr := os.Stat(nestedPath); statErr != nil || !info.IsDir() {
+		t.Fatalf("nested repository changed: info=%v err=%v", info, statErr)
+	}
+}
+
+func TestNewWorktreeRemoveCommandRevalidatesNestedRegisteredRepository(t *testing.T) {
+	fixture := worktreeRemoveNewFixture(t, "feature/late-nested-repository")
+	nestedPath := filepath.Join(fixture.target, "nested")
+	fixture.onDiscover = func(call int) {
+		if call != 2 {
+			return
+		}
+		if err := os.MkdirAll(nestedPath, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		fixture.repositories = append(fixture.repositories, local.Repository{
+			Identity: "github.com/other/nested",
+			Host:     "github.com",
+			Owner:    "other",
+			Repo:     "nested",
+			Path:     nestedPath,
+			Root:     fixture.target,
+		})
+	}
+
+	err := fixture.worktreeRemoveExecute("-R", fixture.repository.Identity, fixture.branch)
+	if !errors.Is(err, ErrRemoveSafety) || !strings.Contains(err.Error(), "registered repository") {
+		t.Fatalf("Execute() error = %v, want late nested registration safety error", err)
+	}
+	if fixture.discoveryCalls != 2 || len(fixture.git.removals) != 0 {
+		t.Fatalf("discovery calls = %d, removals = %d; want 2, 0", fixture.discoveryCalls, len(fixture.git.removals))
+	}
+	if info, statErr := os.Stat(nestedPath); statErr != nil || !info.IsDir() {
+		t.Fatalf("late nested repository changed: info=%v err=%v", info, statErr)
+	}
+}
+
 func TestNewWorktreeRemoveCommandPropagatesGitSafetyFailures(t *testing.T) {
 	for _, failure := range []struct {
 		name string
@@ -1497,6 +1556,8 @@ type worktreeRemoveFixture struct {
 	currentCalls       int
 	warnings           []local.Warning
 	discoveryErr       error
+	discoveryCalls     int
+	onDiscover         func(int)
 	current            func(
 		context.Context,
 		string,
@@ -1589,6 +1650,10 @@ func (fixture *worktreeRemoveFixture) worktreeRemoveDependencies() WorktreeRemov
 			[]string,
 			...local.DiscoveryOptions,
 		) (local.DiscoveryResult, error) {
+			fixture.discoveryCalls++
+			if fixture.onDiscover != nil {
+				fixture.onDiscover(fixture.discoveryCalls)
+			}
 			return local.DiscoveryResult{
 				Repositories: append([]local.Repository(nil), fixture.repositories...),
 				Warnings:     append([]local.Warning(nil), fixture.warnings...),

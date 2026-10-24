@@ -31,7 +31,9 @@ separate from the user-owned `config.toml`.
 `add <path>` registers an existing local repository; `add --move` moves
 it to the configured layout first. `forget <repo>` only unregisters. A
 missing file represents an empty managed set. No first-run import, root scan,
-or v0.x backward compatibility migration runs automatically.
+or v0.x backward compatibility migration runs automatically. A structurally
+valid mapping remains forgettable even when its checkout path is missing or no
+longer resolvable; live path checks occur in commands that need the checkout.
 
 ## Precedence
 

@@ -97,6 +97,37 @@ func TestRegistrationAndForgetLeaveRepositoryUntouched(t *testing.T) {
 	}
 }
 
+func TestForgetRemovesDanglingRegisteredLocation(t *testing.T) {
+	base := t.TempDir()
+	missing := filepath.Join(base, "missing")
+	alias := filepath.Join(base, "alias")
+	if err := os.Symlink(missing, alias); err != nil {
+		t.Skipf("create dangling symlink: %v", err)
+	}
+	registryPath := filepath.Join(base, "repositories.toml")
+	location := filepath.Join(alias, "repo")
+	data := []byte("[repositories]\n\"github.com/acme/api\" = " + strconv.Quote(location) + "\n")
+	if err := os.WriteFile(registryPath, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := NewStoreAt(registryPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	entries, err := store.List()
+	if err != nil || entries["github.com/acme/api"] != location {
+		t.Fatalf("List() = %v, %v; want dangling registration", entries, err)
+	}
+	if err := store.Forget("github.com/acme/api"); err != nil {
+		t.Fatalf("Forget() error = %v", err)
+	}
+	entries, err = store.List()
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("List() after Forget = %v, %v; want empty", entries, err)
+	}
+}
+
 func TestConflictsAndMalformedFileAreFailClosed(t *testing.T) {
 	base := t.TempDir()
 	path := filepath.Join(base, "repositories.toml")

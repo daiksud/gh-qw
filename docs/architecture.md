@@ -66,6 +66,9 @@ another registered repository, including registrations observed during removal
 revalidation after confirmation. Removal applies the same inventory protection
 to every linked worktree scheduled for deletion. Containment follows filesystem
 identity rather than path spelling, including case-insensitive aliases.
+Single and gone-upstream worktree removal apply the same check to explicit
+repository registrations and refresh that inventory immediately before Git
+removes each linked directory.
 Prune's metadata/expiry evidence is not interchangeable with ordinary removal
 evidence.
 

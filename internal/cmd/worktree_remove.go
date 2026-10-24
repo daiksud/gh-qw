@@ -379,6 +379,13 @@ func worktreeRemoveRun(
 	); err != nil {
 		return err
 	}
+	if err := removeRejectNestedRegisteredPaths(
+		repository.Identity,
+		[]string{worktree.Path},
+		discovery.Repositories,
+	); err != nil {
+		return err
+	}
 
 	filesystem := commandRuntime.fs
 	cleanupBase, err := removal.CaptureNode(filesystem.observations(), "", base, removal.Directory, false)
@@ -388,6 +395,28 @@ func worktreeRemoveRun(
 	cleanup, err := removal.CaptureCleanupChain(filesystem.observations(), base, filepath.Dir(expectedPath))
 	if err != nil {
 		return fmt.Errorf("capture worktree cleanup parents: %w", err)
+	}
+
+	// Re-read the managed inventory immediately before mutation. A repository
+	// registered after the initial observation must not be deleted with the
+	// linked worktree that now contains it.
+	latest, discoveryErr := commandRuntime.discover(
+		ctx,
+		roots.RepositoryRoots,
+		local.DiscoveryOptions{Git: commandRuntime.git, Filesystem: commandRuntime.filesystem},
+	)
+	if discoveryErr != nil {
+		return fmt.Errorf("revalidate registered repositories: %w", discoveryErr)
+	}
+	if err := removeRejectNestedRegisteredPaths(
+		repository.Identity,
+		[]string{worktree.Path},
+		latest.Repositories,
+	); err != nil {
+		return fmt.Errorf("revalidate registered repositories: %w", err)
+	}
+	if err := removal.CompareRepositories(discovery.Repositories, latest.Repositories); err != nil {
+		return fmt.Errorf("revalidate registered repositories: %w", err)
 	}
 
 	result := filesystem.executor(commandRuntime.git).RemoveLinked(
