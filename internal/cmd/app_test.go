@@ -35,7 +35,6 @@ func TestNewCommandWiresCompleteSurface(t *testing.T) {
 	}
 
 	for _, path := range [][]string{
-		{"get"},
 		{"clone"},
 		{"list"},
 		{"root"},
@@ -53,12 +52,25 @@ func TestNewCommandWiresCompleteSurface(t *testing.T) {
 		if len(remaining) != 0 {
 			t.Fatalf("Find(%q) remaining = %q, want none", path, remaining)
 		}
-		if got, want := found.Name(), path[len(path)-1]; path[0] != "clone" && got != want {
+		if got, want := found.Name(), path[len(path)-1]; got != want {
 			t.Fatalf("Find(%q) name = %q, want %q", path, got, want)
 		}
-		if path[0] == "clone" && found.Name() != "get" {
-			t.Fatalf("Find(%q) name = %q, want get alias", path, found.Name())
-		}
+	}
+}
+
+func TestNewCommandDoesNotExposeGetCompatibilityAlias(t *testing.T) {
+	t.Parallel()
+
+	var stdout, stderr bytes.Buffer
+	status := cmd.Execute(context.Background(), []string{"get", "acme/widget"}, cmd.ApplicationDependencies{
+		Stdout: &stdout,
+		Stderr: &stderr,
+	})
+	if status != 2 {
+		t.Fatalf("status = %d, want 2", status)
+	}
+	if !strings.Contains(stderr.String(), "unknown command") {
+		t.Fatalf("stderr = %q, want unknown-command diagnostic", stderr.String())
 	}
 }
 
@@ -76,7 +88,7 @@ func TestNewCommandHelpAndVersionUseExtensionName(t *testing.T) {
 			want: []string{
 				"Usage:",
 				"gh qw [command]",
-				"get",
+				"clone",
 				"worktree",
 			},
 		},
@@ -231,7 +243,7 @@ func TestExitCodeClassifiesTypedFailures(t *testing.T) {
 	}{
 		{name: "nil", err: nil, want: 0},
 		{name: "command usage", err: fmt.Errorf("wrapped: %w", cmd.ErrCommandUsage), want: 2},
-		{name: "get usage", err: fmt.Errorf("wrapped: %w", cmd.ErrGetUsage), want: 2},
+		{name: "clone usage", err: fmt.Errorf("wrapped: %w", cmd.ErrCloneUsage), want: 2},
 		{name: "repository specification", err: fmt.Errorf("wrapped: %w", repospec.ErrUsage), want: 2},
 		{name: "configuration", err: fmt.Errorf("wrapped: %w", config.ErrInvalid), want: 2},
 		{name: "root", err: fmt.Errorf("wrapped: %w", rootpkg.ErrInvalidRoot), want: 2},

@@ -493,7 +493,7 @@ func TestResolveRejectsFileSchemeWhenConfigured(t *testing.T) {
 }
 
 func TestResolveAllowsFileSchemeByDefault(t *testing.T) {
-	// get is the only caller that sets RejectFileScheme; list and migrate
+	// clone is the only caller that sets RejectFileScheme; list and migrate
 	// support file:// input with the default options.
 	got, err := parseAndResolve("file://ghe.example.com/Org/Repo.git", Options{})
 	if err != nil {

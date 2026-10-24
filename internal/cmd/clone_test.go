@@ -29,39 +29,39 @@ import (
 	"github.com/spf13/pflag"
 )
 
-func TestNewGetCommandSurface(t *testing.T) {
+func TestNewCloneCommandSurface(t *testing.T) {
 	t.Parallel()
 
-	command := cmd.NewGetCommand(cmd.GetDependencies{})
-	if got, want := command.Name(), "get"; got != want {
+	command := cmd.NewCloneCommand(cmd.CloneDependencies{})
+	if got, want := command.Name(), "clone"; got != want {
 		t.Fatalf("Name() = %q, want %q", got, want)
 	}
-	if len(command.Aliases) != 1 || command.Aliases[0] != "clone" {
-		t.Fatalf("Aliases = %v, want [clone]", command.Aliases)
+	if len(command.Aliases) != 0 {
+		t.Fatalf("Aliases = %v, want none", command.Aliases)
 	}
 }
 
-func TestNewGetCommandFlagsAndCloneOptions(t *testing.T) {
+func TestNewCloneCommandFlagsAndCloneOptions(t *testing.T) {
 	t.Parallel()
 
-	root := getTempRoot(t)
+	root := cloneTempRoot(t)
 	var (
 		gotClone     ghcmd.CloneOptions
 		gotGitStdout io.Writer
 		gotGitStderr io.Writer
 	)
-	git := &getGitOperations{
+	git := &cloneGitOperations{
 		clone: func(_ context.Context, options ghcmd.CloneOptions) error {
 			gotClone = options
 			return nil
 		},
 	}
-	resolver := &getRootResolver{result: rootpkg.Result{RepositoryRoots: []string{root}}}
+	resolver := &cloneRootResolver{result: rootpkg.Result{RepositoryRoots: []string{root}}}
 	var discoverCalls int
 	var output bytes.Buffer
-	command := cmd.NewGetCommand(cmd.GetDependencies{
+	command := cmd.NewCloneCommand(cmd.CloneDependencies{
 		RootResolver: resolver,
-		GitFactory: func(stdout, stderr io.Writer) cmd.GetGitOperations {
+		GitFactory: func(stdout, stderr io.Writer) cmd.CloneGitOperations {
 			gotGitStdout = stdout
 			gotGitStderr = stderr
 			return git
@@ -77,7 +77,6 @@ func TestNewGetCommandFlagsAndCloneOptions(t *testing.T) {
 		IsTerminal: func(io.Reader) bool { return false },
 	})
 	command.SetArgs([]string{
-		"--update",
 		"-p",
 		"--shallow",
 		"--branch", "topic",
@@ -119,12 +118,12 @@ func TestNewGetCommandFlagsAndCloneOptions(t *testing.T) {
 	}
 }
 
-func TestNewGetCommandMapsTreelessPartialClone(t *testing.T) {
+func TestNewCloneCommandMapsTreelessPartialClone(t *testing.T) {
 	t.Parallel()
 
-	root := getTempRoot(t)
+	root := cloneTempRoot(t)
 	var got ghcmd.CloneOptions
-	command := cmd.NewGetCommand(getDependencies(root, &getGitOperations{
+	command := cmd.NewCloneCommand(cloneDependencies(root, &cloneGitOperations{
 		clone: func(_ context.Context, options ghcmd.CloneOptions) error {
 			got = options
 			return nil
@@ -143,10 +142,10 @@ func TestNewGetCommandMapsTreelessPartialClone(t *testing.T) {
 	}
 }
 
-func TestNewGetCommandExposesOnlyDocumentedFlags(t *testing.T) {
+func TestNewCloneCommandExposesOnlyDocumentedFlags(t *testing.T) {
 	t.Parallel()
 
-	command := cmd.NewGetCommand(cmd.GetDependencies{})
+	command := cmd.NewCloneCommand(cmd.CloneDependencies{})
 	var names []string
 	command.Flags().VisitAll(func(flag *pflag.Flag) {
 		names = append(names, flag.Name)
@@ -160,7 +159,6 @@ func TestNewGetCommandExposesOnlyDocumentedFlags(t *testing.T) {
 		"partial",
 		"shallow",
 		"silent",
-		"update",
 	}
 	if fmt.Sprint(names) != fmt.Sprint(want) {
 		t.Fatalf("flags = %v, want %v", names, want)
@@ -171,7 +169,6 @@ func TestNewGetCommandExposesOnlyDocumentedFlags(t *testing.T) {
 		"p":        "p",
 		"parallel": "P",
 		"silent":   "s",
-		"update":   "u",
 	}
 	for name, shorthand := range shorthands {
 		if got := command.Flags().Lookup(name).Shorthand; got != shorthand {
@@ -185,20 +182,20 @@ func TestNewGetCommandExposesOnlyDocumentedFlags(t *testing.T) {
 	}
 }
 
-func TestNewGetCommandCloneAliasExecutes(t *testing.T) {
+func TestNewCloneCommandExecutes(t *testing.T) {
 	t.Parallel()
 
-	root := getTempRoot(t)
+	root := cloneTempRoot(t)
 	var cloned atomic.Int32
 	var output bytes.Buffer
-	getCommand := cmd.NewGetCommand(getDependencies(root, &getGitOperations{
+	cloneCommand := cmd.NewCloneCommand(cloneDependencies(root, &cloneGitOperations{
 		clone: func(context.Context, ghcmd.CloneOptions) error {
 			cloned.Add(1)
 			return nil
 		},
 	}, &output, io.Discard))
 	parent := &cobra.Command{Use: "qw", SilenceErrors: true, SilenceUsage: true}
-	parent.AddCommand(getCommand)
+	parent.AddCommand(cloneCommand)
 	parent.SetArgs([]string{"clone", "acme/widget"})
 
 	if err := parent.Execute(); err != nil {
@@ -209,19 +206,19 @@ func TestNewGetCommandCloneAliasExecutes(t *testing.T) {
 	}
 }
 
-func TestNewGetCommandPositionalArgumentsIgnoreStdin(t *testing.T) {
+func TestNewCloneCommandPositionalArgumentsIgnoreStdin(t *testing.T) {
 	t.Parallel()
 
-	root := getTempRoot(t)
+	root := cloneTempRoot(t)
 	var terminalCalls atomic.Int32
 	var output bytes.Buffer
-	deps := getDependencies(root, &getGitOperations{}, &output, io.Discard)
-	deps.Stdin = getPanicReader{}
+	deps := cloneDependencies(root, &cloneGitOperations{}, &output, io.Discard)
+	deps.Stdin = clonePanicReader{}
 	deps.IsTerminal = func(io.Reader) bool {
 		terminalCalls.Add(1)
 		return true
 	}
-	command := cmd.NewGetCommand(deps)
+	command := cmd.NewCloneCommand(deps)
 	command.SetArgs([]string{"acme/widget"})
 
 	if err := command.Execute(); err != nil {
@@ -232,28 +229,28 @@ func TestNewGetCommandPositionalArgumentsIgnoreStdin(t *testing.T) {
 	}
 }
 
-// TestNewGetCommandClonesWithoutTouchingCallerStdin extends the previous
-// test's panic-reader guard through the actual clone path. GetGitFactory has
-// no stdin parameter (see cmd.GetGitFactory), so it is structurally
-// impossible for get to hand a gh subprocess the reader configured here;
+// TestNewCloneCommandClonesWithoutTouchingCallerStdin extends the previous
+// test's panic-reader guard through the actual clone path. CloneGitFactory has
+// no stdin parameter (see cmd.CloneGitFactory), so it is structurally
+// impossible for clone to hand a gh subprocess the reader configured here;
 // this proves that invariant holds behaviorally too, by confirming a full
 // clone completes successfully while deps.Stdin panics on any Read.
-func TestNewGetCommandClonesWithoutTouchingCallerStdin(t *testing.T) {
+func TestNewCloneCommandClonesWithoutTouchingCallerStdin(t *testing.T) {
 	t.Parallel()
 
-	root := getTempRoot(t)
+	root := cloneTempRoot(t)
 	var cloned atomic.Int32
-	git := &getGitOperations{
+	git := &cloneGitOperations{
 		clone: func(context.Context, ghcmd.CloneOptions) error {
 			cloned.Add(1)
 			return nil
 		},
 	}
 	var output bytes.Buffer
-	deps := getDependencies(root, git, &output, io.Discard)
-	deps.Stdin = getPanicReader{}
+	deps := cloneDependencies(root, git, &output, io.Discard)
+	deps.Stdin = clonePanicReader{}
 	deps.IsTerminal = func(io.Reader) bool { return false }
-	command := cmd.NewGetCommand(deps)
+	command := cmd.NewCloneCommand(deps)
 	command.SetArgs([]string{"acme/widget"})
 
 	if err := command.Execute(); err != nil {
@@ -264,15 +261,15 @@ func TestNewGetCommandClonesWithoutTouchingCallerStdin(t *testing.T) {
 	}
 }
 
-func TestNewGetCommandReadsTrimmedNonTerminalStdin(t *testing.T) {
+func TestNewCloneCommandReadsTrimmedNonTerminalStdin(t *testing.T) {
 	t.Parallel()
 
-	root := getTempRoot(t)
+	root := cloneTempRoot(t)
 	var (
 		mu   sync.Mutex
 		urls []string
 	)
-	git := &getGitOperations{
+	git := &cloneGitOperations{
 		clone: func(_ context.Context, options ghcmd.CloneOptions) error {
 			mu.Lock()
 			defer mu.Unlock()
@@ -281,10 +278,10 @@ func TestNewGetCommandReadsTrimmedNonTerminalStdin(t *testing.T) {
 		},
 	}
 	var output bytes.Buffer
-	deps := getDependencies(root, git, &output, io.Discard)
+	deps := cloneDependencies(root, git, &output, io.Discard)
 	deps.Stdin = strings.NewReader("  acme/one  \n\n\tacme/two\r\n")
 	deps.IsTerminal = func(io.Reader) bool { return false }
-	command := cmd.NewGetCommand(deps)
+	command := cmd.NewCloneCommand(deps)
 	command.SetArgs(nil)
 
 	if err := command.Execute(); err != nil {
@@ -306,11 +303,11 @@ func TestNewGetCommandReadsTrimmedNonTerminalStdin(t *testing.T) {
 	}
 }
 
-func TestNewGetCommandRejectsTerminalWithoutArguments(t *testing.T) {
+func TestNewCloneCommandRejectsTerminalWithoutArguments(t *testing.T) {
 	t.Parallel()
 
-	resolver := &getRootResolver{}
-	command := cmd.NewGetCommand(cmd.GetDependencies{
+	resolver := &cloneRootResolver{}
+	command := cmd.NewCloneCommand(cmd.CloneDependencies{
 		RootResolver: resolver,
 		Stdin:        strings.NewReader(""),
 		Stdout:       io.Discard,
@@ -320,22 +317,22 @@ func TestNewGetCommandRejectsTerminalWithoutArguments(t *testing.T) {
 	command.SetArgs(nil)
 
 	err := command.Execute()
-	if !errors.Is(err, cmd.ErrGetUsage) {
-		t.Fatalf("Execute() error = %v, want ErrGetUsage", err)
+	if !errors.Is(err, cmd.ErrCloneUsage) {
+		t.Fatalf("Execute() error = %v, want ErrCloneUsage", err)
 	}
 	if resolver.Calls() != 0 {
 		t.Fatalf("Resolve() calls = %d, want 0", resolver.Calls())
 	}
 }
 
-func TestNewGetCommandPropagatesStdinReadError(t *testing.T) {
+func TestNewCloneCommandPropagatesStdinReadError(t *testing.T) {
 	t.Parallel()
 
 	wantErr := errors.New("stdin failed")
-	resolver := &getRootResolver{}
-	command := cmd.NewGetCommand(cmd.GetDependencies{
+	resolver := &cloneRootResolver{}
+	command := cmd.NewCloneCommand(cmd.CloneDependencies{
 		RootResolver: resolver,
-		Stdin:        getErrorReader{err: wantErr},
+		Stdin:        cloneErrorReader{err: wantErr},
 		Stdout:       io.Discard,
 		Stderr:       io.Discard,
 		IsTerminal:   func(io.Reader) bool { return false },
@@ -351,23 +348,23 @@ func TestNewGetCommandPropagatesStdinReadError(t *testing.T) {
 	}
 }
 
-func TestNewGetCommandBareIdentityAndSuffixOverrideBranchFlag(t *testing.T) {
+func TestNewCloneCommandBareIdentityAndSuffixOverrideBranchFlag(t *testing.T) {
 	t.Parallel()
 
-	root := getTempRoot(t)
-	identity := &getIdentityResolver{
+	root := cloneTempRoot(t)
+	identity := &cloneIdentityResolver{
 		identity: ghapi.Identity{Host: "github.example.com", Login: "octocat"},
 	}
 	var got ghcmd.CloneOptions
 	var output bytes.Buffer
-	deps := getDependencies(root, &getGitOperations{
+	deps := cloneDependencies(root, &cloneGitOperations{
 		clone: func(_ context.Context, options ghcmd.CloneOptions) error {
 			got = options
 			return nil
 		},
 	}, &output, io.Discard)
 	deps.IdentityResolver = identity
-	command := cmd.NewGetCommand(deps)
+	command := cmd.NewCloneCommand(deps)
 	command.SetArgs([]string{"--branch", "flag-branch", "widget@feature/topic"})
 
 	if err := command.Execute(); err != nil {
@@ -388,13 +385,13 @@ func TestNewGetCommandBareIdentityAndSuffixOverrideBranchFlag(t *testing.T) {
 	}
 }
 
-func TestNewGetCommandMakesParserAndIdentityFailuresUsageErrors(t *testing.T) {
+func TestNewCloneCommandMakesParserAndIdentityFailuresUsageErrors(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name     string
 		input    string
-		identity *getIdentityResolver
+		identity *cloneIdentityResolver
 		wantErr  error
 	}{
 		{
@@ -405,7 +402,7 @@ func TestNewGetCommandMakesParserAndIdentityFailuresUsageErrors(t *testing.T) {
 		{
 			name:  "identity",
 			input: "widget",
-			identity: &getIdentityResolver{
+			identity: &cloneIdentityResolver{
 				err: errors.New("identity failed"),
 			},
 		},
@@ -415,18 +412,18 @@ func TestNewGetCommandMakesParserAndIdentityFailuresUsageErrors(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			root := getTempRoot(t)
-			deps := getDependencies(root, &getGitOperations{}, io.Discard, io.Discard)
+			root := cloneTempRoot(t)
+			deps := cloneDependencies(root, &cloneGitOperations{}, io.Discard, io.Discard)
 			if test.identity != nil {
 				deps.IdentityResolver = test.identity
 				test.wantErr = test.identity.err
 			}
-			command := cmd.NewGetCommand(deps)
+			command := cmd.NewCloneCommand(deps)
 			command.SetArgs([]string{test.input})
 
 			err := command.Execute()
-			if !errors.Is(err, cmd.ErrGetUsage) {
-				t.Fatalf("Execute() error = %v, want ErrGetUsage", err)
+			if !errors.Is(err, cmd.ErrCloneUsage) {
+				t.Fatalf("Execute() error = %v, want ErrCloneUsage", err)
 			}
 			if !errors.Is(err, test.wantErr) {
 				t.Fatalf("Execute() error = %v, want cause %v", err, test.wantErr)
@@ -435,11 +432,12 @@ func TestNewGetCommandMakesParserAndIdentityFailuresUsageErrors(t *testing.T) {
 	}
 }
 
-func TestNewGetCommandRejectsInvalidAndUndocumentedFlagsBeforeResolving(t *testing.T) {
+func TestNewCloneCommandRejectsInvalidAndUndocumentedFlagsBeforeResolving(t *testing.T) {
 	t.Parallel()
 
 	tests := [][]string{
 		{"--partial", "full", "acme/widget"},
+		{"--update", "acme/widget"},
 		{"--look", "acme/widget"},
 		{"--vcs", "git", "acme/widget"},
 		{"--bare", "acme/widget"},
@@ -449,8 +447,8 @@ func TestNewGetCommandRejectsInvalidAndUndocumentedFlagsBeforeResolving(t *testi
 		t.Run(strings.Join(args, "_"), func(t *testing.T) {
 			t.Parallel()
 
-			resolver := &getRootResolver{}
-			command := cmd.NewGetCommand(cmd.GetDependencies{
+			resolver := &cloneRootResolver{}
+			command := cmd.NewCloneCommand(cmd.CloneDependencies{
 				RootResolver: resolver,
 				Stdin:        strings.NewReader(""),
 				Stdout:       io.Discard,
@@ -460,8 +458,8 @@ func TestNewGetCommandRejectsInvalidAndUndocumentedFlagsBeforeResolving(t *testi
 			command.SetArgs(args)
 
 			err := command.Execute()
-			if !errors.Is(err, cmd.ErrGetUsage) {
-				t.Fatalf("Execute() error = %v, want ErrGetUsage", err)
+			if !errors.Is(err, cmd.ErrCloneUsage) {
+				t.Fatalf("Execute() error = %v, want ErrCloneUsage", err)
 			}
 			if resolver.Calls() != 0 {
 				t.Fatalf("Resolve() calls = %d, want 0", resolver.Calls())
@@ -470,184 +468,31 @@ func TestNewGetCommandRejectsInvalidAndUndocumentedFlagsBeforeResolving(t *testi
 	}
 }
 
-func TestNewGetCommandReusesExistingRepositoryAndUpdatesOnRequest(t *testing.T) {
-	t.Setenv("GH_HOST", "ambient.example.com")
-
-	tests := []struct {
-		name        string
-		args        []string
-		wantUpdates int
-	}{
-		{name: "unchanged"},
-		{
-			name:        "update",
-			args:        []string{"--update"},
-			wantUpdates: 1,
-		},
-		{
-			// --no-recursive has no update-side effect: `gh repo sync` has no
-			// submodule concept, so it only changes clone behavior.
-			name:        "update ignores no-recursive",
-			args:        []string{"--update", "--no-recursive"},
-			wantUpdates: 1,
-		},
-	}
-	for _, test := range tests {
-		test := test
-		t.Run(test.name, func(t *testing.T) {
-
-			root := getTempRoot(t)
-			path := filepath.Join(root, "github.com", "acme", "widget")
-			var (
-				updateCalls int
-				gotDir      string
-				gotSync     ghcmd.SyncOptions
-				mkdirCalls  int
-			)
-			git := &getGitOperations{
-				clone: func(context.Context, ghcmd.CloneOptions) error {
-					t.Fatal("Clone() called for existing repository")
-					return nil
-				},
-				update: func(_ context.Context, dir string, options ghcmd.SyncOptions) error {
-					updateCalls++
-					gotDir = dir
-					gotSync = options
-					return nil
-				},
-			}
-			var output bytes.Buffer
-			deps := getDependencies(root, git, &output, io.Discard)
-			deps.Discover = func(context.Context, []string) (local.DiscoveryResult, error) {
-				return local.DiscoveryResult{Repositories: []local.Repository{{
-					Identity:  "github.com/acme/widget",
-					Host:      "github.com",
-					Owner:     "acme",
-					Repo:      "widget",
-					Path:      path,
-					Root:      root,
-					RootIndex: 0,
-				}}}, nil
-			}
-			deps.MkdirAll = func(string, fs.FileMode) error {
-				mkdirCalls++
-				return nil
-			}
-			command := cmd.NewGetCommand(deps)
-			command.SetArgs(append(test.args, "github.com/acme/widget"))
-
-			if err := command.Execute(); err != nil {
-				t.Fatalf("Execute() error = %v", err)
-			}
-			if updateCalls != test.wantUpdates {
-				t.Fatalf("Update() calls = %d, want %d", updateCalls, test.wantUpdates)
-			}
-			if test.wantUpdates != 0 {
-				if gotDir != path {
-					t.Fatalf("Update() dir = %q, want %q", gotDir, path)
-				}
-				if got, want := gotSync.Source, "acme/widget"; got != want {
-					t.Fatalf("Update() Source = %q, want %q", got, want)
-				}
-				if gotSync.Host != "github.com" {
-					t.Fatalf("Update() Host = %q, want github.com", gotSync.Host)
-				}
-				if gotSync.Branch != "" {
-					t.Fatalf("Update() Branch = %q, want empty (gh resolves the default branch)", gotSync.Branch)
-				}
-			}
-			if mkdirCalls != 0 {
-				t.Fatalf("MkdirAll() calls = %d, want 0", mkdirCalls)
-			}
-			if got, want := output.String(), filepath.ToSlash(path)+"\n"; got != want {
-				t.Fatalf("output = %q, want %q", got, want)
-			}
-		})
-	}
-}
-
-func TestNewGetCommandUsesEarliestExistingRoot(t *testing.T) {
+func TestNewCloneCommandRejectsRegisteredRepository(t *testing.T) {
 	t.Parallel()
 
-	primary := getTempRoot(t)
-	secondary := getTempRoot(t)
-	primaryPath := filepath.Join(primary, "github.com", "acme", "widget")
-	secondaryPath := filepath.Join(secondary, "github.com", "acme", "widget")
-	resolver := &getRootResolver{result: rootpkg.Result{
-		RepositoryRoots: []string{primary, secondary},
-	}}
+	root := cloneTempRoot(t)
+	path := filepath.Join(cloneTempRoot(t), "existing", "widget")
 	var output bytes.Buffer
-	command := cmd.NewGetCommand(cmd.GetDependencies{
-		RootResolver: resolver,
-		GitFactory: func(io.Writer, io.Writer) cmd.GetGitOperations {
-			t.Fatal("Git factory called for unchanged repository")
+	command := cmd.NewCloneCommand(cmd.CloneDependencies{
+		RootResolver: &cloneRootResolver{result: rootpkg.Result{RepositoryRoots: []string{root}}},
+		GitFactory: func(io.Writer, io.Writer) cmd.CloneGitOperations {
+			t.Fatal("Git factory called for registered repository")
 			return nil
 		},
 		MkdirAll: func(string, fs.FileMode) error {
-			t.Fatal("MkdirAll() called for unchanged repository")
-			return nil
-		},
-		Discover: func(context.Context, []string) (local.DiscoveryResult, error) {
-			return local.DiscoveryResult{Repositories: []local.Repository{
-				{
-					Identity:  "github.com/acme/widget",
-					Path:      secondaryPath,
-					Root:      secondary,
-					RootIndex: 1,
-				},
-				{
-					Identity:  "github.com/acme/widget",
-					Path:      primaryPath,
-					Root:      primary,
-					RootIndex: 0,
-				},
-			}}, nil
-		},
-		IdentityResolver: &getIdentityResolver{},
-
-		Stdin:      strings.NewReader(""),
-		Stdout:     &output,
-		Stderr:     io.Discard,
-		IsTerminal: func(io.Reader) bool { return false },
-	})
-	command.SetArgs([]string{"acme/widget"})
-
-	if err := command.Execute(); err != nil {
-		t.Fatalf("Execute() error = %v", err)
-	}
-	if got, want := output.String(), filepath.ToSlash(primaryPath)+"\n"; got != want {
-		t.Fatalf("output = %q, want earliest root %q", got, want)
-	}
-}
-
-func TestNewGetCommandReusesSecondaryRootWhenPrimaryIsMissing(t *testing.T) {
-	t.Parallel()
-
-	primary := getTempRoot(t)
-	secondary := getTempRoot(t)
-	path := filepath.Join(secondary, "github.com", "acme", "widget")
-	var output bytes.Buffer
-	command := cmd.NewGetCommand(cmd.GetDependencies{
-		RootResolver: &getRootResolver{result: rootpkg.Result{
-			RepositoryRoots: []string{primary, secondary},
-		}},
-		GitFactory: func(io.Writer, io.Writer) cmd.GetGitOperations {
-			t.Fatal("Git factory called for secondary repository")
-			return nil
-		},
-		MkdirAll: func(string, fs.FileMode) error {
-			t.Fatal("MkdirAll() called for secondary repository")
+			t.Fatal("MkdirAll called for registered repository")
 			return nil
 		},
 		Discover: func(context.Context, []string) (local.DiscoveryResult, error) {
 			return local.DiscoveryResult{Repositories: []local.Repository{{
 				Identity:  "github.com/acme/widget",
 				Path:      path,
-				Root:      secondary,
+				Root:      filepath.Dir(path),
 				RootIndex: 1,
 			}}}, nil
 		},
-		IdentityResolver: &getIdentityResolver{},
+		IdentityResolver: &cloneIdentityResolver{},
 
 		Stdin:      strings.NewReader(""),
 		Stdout:     &output,
@@ -656,24 +501,25 @@ func TestNewGetCommandReusesSecondaryRootWhenPrimaryIsMissing(t *testing.T) {
 	})
 	command.SetArgs([]string{"acme/widget"})
 
-	if err := command.Execute(); err != nil {
-		t.Fatalf("Execute() error = %v", err)
+	err := command.Execute()
+	if err == nil || !strings.Contains(err.Error(), "already registered") {
+		t.Fatalf("Execute() error = %v, want registered collision", err)
 	}
-	if got, want := output.String(), filepath.ToSlash(path)+"\n"; got != want {
-		t.Fatalf("output = %q, want secondary path %q", got, want)
+	if output.Len() != 0 {
+		t.Fatalf("output = %q, want empty", output.String())
 	}
 }
 
-func TestNewGetCommandOrderedModeStopsAtFirstFailure(t *testing.T) {
+func TestNewCloneCommandOrderedModeStopsAtFirstFailure(t *testing.T) {
 	t.Parallel()
 
-	root := getTempRoot(t)
+	root := cloneTempRoot(t)
 	wantErr := errors.New("second clone failed")
 	var (
 		mu    sync.Mutex
 		calls []string
 	)
-	git := &getGitOperations{
+	git := &cloneGitOperations{
 		clone: func(_ context.Context, options ghcmd.CloneOptions) error {
 			repo := filepath.Base(options.Destination)
 			mu.Lock()
@@ -686,7 +532,7 @@ func TestNewGetCommandOrderedModeStopsAtFirstFailure(t *testing.T) {
 		},
 	}
 	var output bytes.Buffer
-	command := cmd.NewGetCommand(getDependencies(root, git, &output, io.Discard))
+	command := cmd.NewCloneCommand(cloneDependencies(root, git, &output, io.Discard))
 	command.SetArgs([]string{"acme/one", "acme/two", "acme/three"})
 
 	err := command.Execute()
@@ -702,20 +548,20 @@ func TestNewGetCommandOrderedModeStopsAtFirstFailure(t *testing.T) {
 	}
 }
 
-func TestNewGetCommandParallelCapsConcurrencyAtSix(t *testing.T) {
+func TestNewCloneCommandParallelCapsConcurrencyAtSix(t *testing.T) {
 	t.Parallel()
 
-	root := getTempRoot(t)
+	root := cloneTempRoot(t)
 	started := make(chan string, 7)
 	release := make(chan struct{})
-	git := &getGitOperations{
+	git := &cloneGitOperations{
 		clone: func(_ context.Context, options ghcmd.CloneOptions) error {
 			started <- options.Destination
 			<-release
 			return nil
 		},
 	}
-	command := cmd.NewGetCommand(getDependencies(root, git, io.Discard, io.Discard))
+	command := cmd.NewCloneCommand(cloneDependencies(root, git, io.Discard, io.Discard))
 	args := []string{"--parallel"}
 	for index := range 7 {
 		args = append(args, fmt.Sprintf("acme/repo-%d", index))
@@ -728,7 +574,7 @@ func TestNewGetCommandParallelCapsConcurrencyAtSix(t *testing.T) {
 	}()
 
 	for range 6 {
-		getReceiveWithin(t, started, "parallel clone start")
+		cloneReceiveWithin(t, started, "parallel clone start")
 	}
 	select {
 	case path := <-started:
@@ -737,26 +583,26 @@ func TestNewGetCommandParallelCapsConcurrencyAtSix(t *testing.T) {
 	}
 
 	release <- struct{}{}
-	getReceiveWithin(t, started, "seventh clone start")
+	cloneReceiveWithin(t, started, "seventh clone start")
 	for range 6 {
 		release <- struct{}{}
 	}
-	if err := getReceiveWithin(t, result, "parallel command result"); err != nil {
+	if err := cloneReceiveWithin(t, result, "parallel command result"); err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
 }
 
-func TestNewGetCommandParallelWritesCompletionOrder(t *testing.T) {
+func TestNewCloneCommandParallelWritesCompletionOrder(t *testing.T) {
 	t.Parallel()
 
-	root := getTempRoot(t)
+	root := cloneTempRoot(t)
 	started := make(chan string, 3)
 	releases := map[string]chan struct{}{
 		"one":   make(chan struct{}),
 		"two":   make(chan struct{}),
 		"three": make(chan struct{}),
 	}
-	git := &getGitOperations{
+	git := &cloneGitOperations{
 		clone: func(_ context.Context, options ghcmd.CloneOptions) error {
 			repo := filepath.Base(options.Destination)
 			started <- repo
@@ -764,8 +610,8 @@ func TestNewGetCommandParallelWritesCompletionOrder(t *testing.T) {
 			return nil
 		},
 	}
-	output := &getLineWriter{lines: make(chan string, 3)}
-	command := cmd.NewGetCommand(getDependencies(root, git, output, io.Discard))
+	output := &cloneLineWriter{lines: make(chan string, 3)}
+	command := cmd.NewCloneCommand(cloneDependencies(root, git, output, io.Discard))
 	command.SetArgs([]string{"-P", "acme/one", "acme/two", "acme/three"})
 
 	result := make(chan error, 1)
@@ -773,28 +619,28 @@ func TestNewGetCommandParallelWritesCompletionOrder(t *testing.T) {
 		result <- command.Execute()
 	}()
 	for range 3 {
-		getReceiveWithin(t, started, "parallel clone start")
+		cloneReceiveWithin(t, started, "parallel clone start")
 	}
 
 	for _, repo := range []string{"three", "one", "two"} {
 		close(releases[repo])
-		got := getReceiveWithin(t, output.lines, "result path")
+		got := cloneReceiveWithin(t, output.lines, "result path")
 		want := filepath.ToSlash(filepath.Join(root, "github.com", "acme", repo))
 		if got != want {
 			t.Fatalf("completion output = %q, want %q", got, want)
 		}
 	}
-	if err := getReceiveWithin(t, result, "parallel command result"); err != nil {
+	if err := cloneReceiveWithin(t, result, "parallel command result"); err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
 }
 
-func TestNewGetCommandParallelAggregatesUsageAndRuntimeFailures(t *testing.T) {
+func TestNewCloneCommandParallelAggregatesUsageAndRuntimeFailures(t *testing.T) {
 	t.Parallel()
 
-	root := getTempRoot(t)
+	root := cloneTempRoot(t)
 	wantRuntime := errors.New("clone failed")
-	git := &getGitOperations{
+	git := &cloneGitOperations{
 		clone: func(_ context.Context, options ghcmd.CloneOptions) error {
 			if filepath.Base(options.Destination) == "fail" {
 				return wantRuntime
@@ -803,7 +649,7 @@ func TestNewGetCommandParallelAggregatesUsageAndRuntimeFailures(t *testing.T) {
 		},
 	}
 	var output bytes.Buffer
-	command := cmd.NewGetCommand(getDependencies(root, git, &output, io.Discard))
+	command := cmd.NewCloneCommand(cloneDependencies(root, git, &output, io.Discard))
 	command.SetArgs([]string{
 		"--parallel",
 		"acme/good",
@@ -812,11 +658,11 @@ func TestNewGetCommandParallelAggregatesUsageAndRuntimeFailures(t *testing.T) {
 	})
 
 	err := command.Execute()
-	var aggregate *cmd.GetAggregateError
+	var aggregate *cmd.CloneAggregateError
 	if !errors.As(err, &aggregate) {
-		t.Fatalf("Execute() error = %T %v, want GetAggregateError", err, err)
+		t.Fatalf("Execute() error = %T %v, want CloneAggregateError", err, err)
 	}
-	if !errors.Is(err, cmd.ErrGetUsage) {
+	if !errors.Is(err, cmd.ErrCloneUsage) {
 		t.Fatalf("Execute() error = %v, want usage precedence", err)
 	}
 	if !errors.Is(err, repospec.ErrUsage) {
@@ -837,14 +683,14 @@ func TestNewGetCommandParallelAggregatesUsageAndRuntimeFailures(t *testing.T) {
 	}
 }
 
-func TestNewGetCommandParallelSerializesDuplicateDestination(t *testing.T) {
+func TestNewCloneCommandParallelSerializesDuplicateDestination(t *testing.T) {
 	t.Parallel()
 
-	root := getTempRoot(t)
+	root := cloneTempRoot(t)
 	started := make(chan struct{}, 2)
 	release := make(chan struct{})
 	var cloneCalls atomic.Int32
-	git := &getGitOperations{
+	git := &cloneGitOperations{
 		clone: func(context.Context, ghcmd.CloneOptions) error {
 			cloneCalls.Add(1)
 			started <- struct{}{}
@@ -853,42 +699,79 @@ func TestNewGetCommandParallelSerializesDuplicateDestination(t *testing.T) {
 		},
 	}
 	var output bytes.Buffer
-	command := cmd.NewGetCommand(getDependencies(root, git, &output, io.Discard))
+	command := cmd.NewCloneCommand(cloneDependencies(root, git, &output, io.Discard))
 	command.SetArgs([]string{"-P", "acme/widget", "https://github.com/acme/widget.git"})
 
 	result := make(chan error, 1)
 	go func() {
 		result <- command.Execute()
 	}()
-	getReceiveWithin(t, started, "first clone start")
+	cloneReceiveWithin(t, started, "first clone start")
 	select {
 	case <-started:
 		t.Fatal("duplicate destination mutated concurrently")
 	case <-time.After(100 * time.Millisecond):
 	}
 	close(release)
-	if err := getReceiveWithin(t, result, "parallel command result"); err != nil {
-		t.Fatalf("Execute() error = %v", err)
+	if err := cloneReceiveWithin(t, result, "parallel command result"); err == nil ||
+		!strings.Contains(err.Error(), "already registered") {
+		t.Fatalf("Execute() error = %v, want duplicate registered collision", err)
 	}
 	if got := cloneCalls.Load(); got != 1 {
 		t.Fatalf("Clone() calls = %d, want 1", got)
 	}
 	path := filepath.ToSlash(filepath.Join(root, "github.com", "acme", "widget"))
-	if got, want := output.String(), path+"\n"+path+"\n"; got != want {
+	if got, want := output.String(), path+"\n"; got != want {
 		t.Fatalf("output = %q, want %q", got, want)
 	}
 }
 
-func TestNewGetCommandCreatesOnlyCloneParents(t *testing.T) {
+func TestNewCloneCommandRejectsUnregisteredExistingDestination(t *testing.T) {
 	t.Parallel()
 
-	root := getTempRoot(t)
+	root := cloneTempRoot(t)
+	destination := filepath.Join(root, "github.com", "acme", "widget")
+	if err := os.MkdirAll(destination, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var cloneCalls atomic.Int32
+	var registrations atomic.Int32
+	deps := cloneDependencies(root, &cloneGitOperations{
+		clone: func(context.Context, ghcmd.CloneOptions) error {
+			cloneCalls.Add(1)
+			return nil
+		},
+	}, io.Discard, io.Discard)
+	deps.OnAcquired = func(string, string) error {
+		registrations.Add(1)
+		return nil
+	}
+	command := cmd.NewCloneCommand(deps)
+	command.SetArgs([]string{"acme/widget"})
+
+	err := command.Execute()
+	if err == nil || !strings.Contains(err.Error(), "already exists") ||
+		!strings.Contains(err.Error(), "use add") {
+		t.Fatalf("Execute() error = %v, want existing destination guidance", err)
+	}
+	if cloneCalls.Load() != 0 {
+		t.Fatalf("Clone() calls = %d, want 0", cloneCalls.Load())
+	}
+	if registrations.Load() != 0 {
+		t.Fatalf("registrations = %d, want 0", registrations.Load())
+	}
+}
+
+func TestNewCloneCommandCreatesOnlyCloneParents(t *testing.T) {
+	t.Parallel()
+
+	root := cloneTempRoot(t)
 	destination := filepath.Join(root, "github.com", "acme", "widget")
 	var (
 		mkdirPath string
 		mkdirMode fs.FileMode
 	)
-	git := &getGitOperations{
+	git := &cloneGitOperations{
 		clone: func(_ context.Context, options ghcmd.CloneOptions) error {
 			if options.Destination != destination {
 				t.Fatalf("Clone destination = %q, want %q", options.Destination, destination)
@@ -899,13 +782,13 @@ func TestNewGetCommandCreatesOnlyCloneParents(t *testing.T) {
 			return nil
 		},
 	}
-	deps := getDependencies(root, git, io.Discard, io.Discard)
+	deps := cloneDependencies(root, git, io.Discard, io.Discard)
 	deps.MkdirAll = func(path string, mode fs.FileMode) error {
 		mkdirPath = path
 		mkdirMode = mode
 		return os.MkdirAll(path, mode)
 	}
-	command := cmd.NewGetCommand(deps)
+	command := cmd.NewCloneCommand(deps)
 	command.SetArgs([]string{"acme/widget"})
 
 	if err := command.Execute(); err != nil {
@@ -919,13 +802,13 @@ func TestNewGetCommandCreatesOnlyCloneParents(t *testing.T) {
 	}
 }
 
-func TestNewGetCommandRevalidatesContainmentAfterMkdir(t *testing.T) {
+func TestNewCloneCommandRevalidatesContainmentAfterMkdir(t *testing.T) {
 	t.Parallel()
 
-	root := getTempRoot(t)
-	outside := getTempRoot(t)
+	root := cloneTempRoot(t)
+	outside := cloneTempRoot(t)
 	var cloneCalls atomic.Int32
-	deps := getDependencies(root, &getGitOperations{
+	deps := cloneDependencies(root, &cloneGitOperations{
 		clone: func(context.Context, ghcmd.CloneOptions) error {
 			cloneCalls.Add(1)
 			return nil
@@ -934,7 +817,7 @@ func TestNewGetCommandRevalidatesContainmentAfterMkdir(t *testing.T) {
 	deps.MkdirAll = func(string, fs.FileMode) error {
 		return os.Symlink(outside, filepath.Join(root, "github.com"))
 	}
-	command := cmd.NewGetCommand(deps)
+	command := cmd.NewCloneCommand(deps)
 	command.SetArgs([]string{"acme/widget"})
 
 	err := command.Execute()
@@ -946,23 +829,23 @@ func TestNewGetCommandRevalidatesContainmentAfterMkdir(t *testing.T) {
 	}
 }
 
-func TestNewGetCommandPropagatesMkdirAndOutputErrors(t *testing.T) {
+func TestNewCloneCommandPropagatesMkdirAndOutputErrors(t *testing.T) {
 	t.Parallel()
 
 	t.Run("mkdir", func(t *testing.T) {
 		t.Parallel()
 
-		root := getTempRoot(t)
+		root := cloneTempRoot(t)
 		wantErr := errors.New("mkdir failed")
 		var cloneCalls atomic.Int32
-		deps := getDependencies(root, &getGitOperations{
+		deps := cloneDependencies(root, &cloneGitOperations{
 			clone: func(context.Context, ghcmd.CloneOptions) error {
 				cloneCalls.Add(1)
 				return nil
 			},
 		}, io.Discard, io.Discard)
 		deps.MkdirAll = func(string, fs.FileMode) error { return wantErr }
-		command := cmd.NewGetCommand(deps)
+		command := cmd.NewCloneCommand(deps)
 		command.SetArgs([]string{"acme/widget"})
 
 		err := command.Execute()
@@ -977,12 +860,12 @@ func TestNewGetCommandPropagatesMkdirAndOutputErrors(t *testing.T) {
 	t.Run("output", func(t *testing.T) {
 		t.Parallel()
 
-		root := getTempRoot(t)
+		root := cloneTempRoot(t)
 		wantErr := errors.New("write failed")
-		command := cmd.NewGetCommand(getDependencies(
+		command := cmd.NewCloneCommand(cloneDependencies(
 			root,
-			&getGitOperations{},
-			getFailingWriter{err: wantErr},
+			&cloneGitOperations{},
+			cloneFailingWriter{err: wantErr},
 			io.Discard,
 		))
 		command.SetArgs([]string{"acme/widget"})
@@ -994,10 +877,10 @@ func TestNewGetCommandPropagatesMkdirAndOutputErrors(t *testing.T) {
 	})
 }
 
-func TestNewGetCommandKeepsProgressAndWarningsOffStdout(t *testing.T) {
+func TestNewCloneCommandKeepsProgressAndWarningsOffStdout(t *testing.T) {
 	t.Parallel()
 
-	root := getTempRoot(t)
+	root := cloneTempRoot(t)
 	var output, diagnostic bytes.Buffer
 	warning := local.Warning{
 		Kind:      local.WarningInspection,
@@ -1005,19 +888,19 @@ func TestNewGetCommandKeepsProgressAndWarningsOffStdout(t *testing.T) {
 		Operation: "inspect",
 		Err:       errors.New("not a repository"),
 	}
-	deps := getDependencies(root, &getGitOperations{}, &output, &diagnostic)
+	deps := cloneDependencies(root, &cloneGitOperations{}, &output, &diagnostic)
 	deps.Discover = func(context.Context, []string) (local.DiscoveryResult, error) {
 		return local.DiscoveryResult{Warnings: []local.Warning{warning}}, nil
 	}
-	deps.GitFactory = func(stdout, _ io.Writer) cmd.GetGitOperations {
-		return &getGitOperations{
+	deps.GitFactory = func(stdout, _ io.Writer) cmd.CloneGitOperations {
+		return &cloneGitOperations{
 			clone: func(context.Context, ghcmd.CloneOptions) error {
 				_, _ = fmt.Fprintln(stdout, "git progress")
 				return nil
 			},
 		}
 	}
-	command := cmd.NewGetCommand(deps)
+	command := cmd.NewCloneCommand(deps)
 	command.SetArgs([]string{"acme/widget"})
 
 	if err := command.Execute(); err != nil {
@@ -1032,10 +915,10 @@ func TestNewGetCommandKeepsProgressAndWarningsOffStdout(t *testing.T) {
 	}
 }
 
-func TestNewGetCommandSilentSuppressesProgressButKeepsWarningsAndPaths(t *testing.T) {
+func TestNewCloneCommandSilentSuppressesProgressButKeepsWarningsAndPaths(t *testing.T) {
 	t.Parallel()
 
-	root := getTempRoot(t)
+	root := cloneTempRoot(t)
 	var output, diagnostic bytes.Buffer
 	warning := local.Warning{
 		Kind:      local.WarningInspection,
@@ -1043,19 +926,19 @@ func TestNewGetCommandSilentSuppressesProgressButKeepsWarningsAndPaths(t *testin
 		Operation: "inspect",
 		Err:       errors.New("not a repository"),
 	}
-	deps := getDependencies(root, &getGitOperations{}, &output, &diagnostic)
+	deps := cloneDependencies(root, &cloneGitOperations{}, &output, &diagnostic)
 	deps.Discover = func(context.Context, []string) (local.DiscoveryResult, error) {
 		return local.DiscoveryResult{Warnings: []local.Warning{warning}}, nil
 	}
-	deps.GitFactory = func(stdout, _ io.Writer) cmd.GetGitOperations {
-		return &getGitOperations{
+	deps.GitFactory = func(stdout, _ io.Writer) cmd.CloneGitOperations {
+		return &cloneGitOperations{
 			clone: func(context.Context, ghcmd.CloneOptions) error {
 				_, _ = fmt.Fprintln(stdout, "git progress")
 				return nil
 			},
 		}
 	}
-	command := cmd.NewGetCommand(deps)
+	command := cmd.NewCloneCommand(deps)
 	command.SetArgs([]string{"--silent", "acme/widget"})
 
 	if err := command.Execute(); err != nil {
@@ -1072,17 +955,17 @@ func TestNewGetCommandSilentSuppressesProgressButKeepsWarningsAndPaths(t *testin
 	}
 }
 
-// TestNewGetCommandOrderedNonSilentExposesPassthroughFile guards the
-// pass-through wiring that lets gh's own clone/sync output regain
+// TestNewCloneCommandOrderedNonSilentExposesPassthroughFile guards the
+// pass-through wiring that lets gh's own clone output regain
 // interactive progress and color: when gh-qw's own stderr is a real
 // *os.File (as it is in production, whether or not that file is a
-// terminal) and get runs in its default ordered, non-silent mode, the
-// writers handed to GetGitFactory must resolve through
+// terminal) and clone runs in its default ordered, non-silent mode, the
+// writers handed to CloneGitFactory must resolve through
 // procio.PassthroughFile back to that same file.
-func TestNewGetCommandOrderedNonSilentExposesPassthroughFile(t *testing.T) {
+func TestNewCloneCommandOrderedNonSilentExposesPassthroughFile(t *testing.T) {
 	t.Parallel()
 
-	root := getTempRoot(t)
+	root := cloneTempRoot(t)
 	reader, writer, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("Pipe() error = %v", err)
@@ -1093,17 +976,17 @@ func TestNewGetCommandOrderedNonSilentExposesPassthroughFile(t *testing.T) {
 	})
 
 	var gotStdout, gotStderr io.Writer
-	git := &getGitOperations{
+	git := &cloneGitOperations{
 		clone: func(context.Context, ghcmd.CloneOptions) error { return nil },
 	}
 	var output bytes.Buffer
-	deps := getDependencies(root, git, &output, writer)
-	deps.GitFactory = func(stdout, stderr io.Writer) cmd.GetGitOperations {
+	deps := cloneDependencies(root, git, &output, writer)
+	deps.GitFactory = func(stdout, stderr io.Writer) cmd.CloneGitOperations {
 		gotStdout = stdout
 		gotStderr = stderr
 		return git
 	}
-	command := cmd.NewGetCommand(deps)
+	command := cmd.NewCloneCommand(deps)
 	command.SetArgs([]string{"acme/widget"})
 
 	if err := command.Execute(); err != nil {
@@ -1126,18 +1009,18 @@ func TestNewGetCommandOrderedNonSilentExposesPassthroughFile(t *testing.T) {
 	}
 }
 
-// TestNewGetCommandPassthroughNeverLeaksGhStdoutOntoGhQwStdout guards the
+// TestNewCloneCommandPassthroughNeverLeaksGhStdoutOntoGhQwStdout guards the
 // stdout-purity contract (GH-PROC-IO-02): even in the ordered, non-silent,
 // passthrough-eligible scenario exercised by
-// TestNewGetCommandOrderedNonSilentExposesPassthroughFile, whatever gh
-// itself writes to its own stdout (mimicked here by a fake gh repo sync
+// TestNewCloneCommandOrderedNonSilentExposesPassthroughFile, whatever gh
+// itself writes to its own stdout (mimicked here by a fake gh repo clone
 // completion message, written from the clone function to the exact stdout
-// writer GetGitFactory receives) must never reach gh-qw's own stdout: only
+// writer CloneGitFactory receives) must never reach gh-qw's own stdout: only
 // the destination result path may appear there.
-func TestNewGetCommandPassthroughNeverLeaksGhStdoutOntoGhQwStdout(t *testing.T) {
+func TestNewCloneCommandPassthroughNeverLeaksGhStdoutOntoGhQwStdout(t *testing.T) {
 	t.Parallel()
 
-	root := getTempRoot(t)
+	root := cloneTempRoot(t)
 	reader, writer, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("Pipe() error = %v", err)
@@ -1147,27 +1030,27 @@ func TestNewGetCommandPassthroughNeverLeaksGhStdoutOntoGhQwStdout(t *testing.T) 
 		_ = writer.Close()
 	})
 
-	const ghMessage = `✓ Synced the "main" branch from acme/widget to local:main`
+	const ghMessage = "Cloning into 'widget'..."
 
 	// ghStream sanity-checks that the fake gh message really was written to
-	// the writer GetGitFactory received (via an io.MultiWriter alongside the
+	// the writer CloneGitFactory received (via an io.MultiWriter alongside the
 	// real passthrough writer), so the negative assertion on gh-qw's own
 	// stdout below cannot pass vacuously.
 	var ghStream bytes.Buffer
 	var output bytes.Buffer
-	git := &getGitOperations{
+	git := &cloneGitOperations{
 		clone: func(context.Context, ghcmd.CloneOptions) error { return nil },
 	}
-	deps := getDependencies(root, git, &output, writer)
-	deps.GitFactory = func(stdout, _ io.Writer) cmd.GetGitOperations {
-		return &getGitOperations{
+	deps := cloneDependencies(root, git, &output, writer)
+	deps.GitFactory = func(stdout, _ io.Writer) cmd.CloneGitOperations {
+		return &cloneGitOperations{
 			clone: func(context.Context, ghcmd.CloneOptions) error {
 				_, _ = fmt.Fprintln(io.MultiWriter(stdout, &ghStream), ghMessage)
 				return nil
 			},
 		}
 	}
-	command := cmd.NewGetCommand(deps)
+	command := cmd.NewCloneCommand(deps)
 	command.SetArgs([]string{"acme/widget"})
 
 	if err := command.Execute(); err != nil {
@@ -1186,12 +1069,12 @@ func TestNewGetCommandPassthroughNeverLeaksGhStdoutOntoGhQwStdout(t *testing.T) 
 	}
 }
 
-// TestNewGetCommandSilentAndParallelNeverExposePassthroughFile guards the
-// safety invariant behind get's pass-through wiring: --silent discards gh's
+// TestNewCloneCommandSilentAndParallelNeverExposePassthroughFile guards the
+// safety invariant behind clone's pass-through wiring: --silent discards gh's
 // progress entirely, and --parallel can run several gh subprocesses
 // concurrently, so neither must ever let a subprocess inherit gh-qw's real
-// stderr descriptor directly (bypassing getLockedWriter's mutex).
-func TestNewGetCommandSilentAndParallelNeverExposePassthroughFile(t *testing.T) {
+// stderr descriptor directly (bypassing cloneLockedWriter's mutex).
+func TestNewCloneCommandSilentAndParallelNeverExposePassthroughFile(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
@@ -1206,7 +1089,7 @@ func TestNewGetCommandSilentAndParallelNeverExposePassthroughFile(t *testing.T) 
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			root := getTempRoot(t)
+			root := cloneTempRoot(t)
 			reader, writer, err := os.Pipe()
 			if err != nil {
 				t.Fatalf("Pipe() error = %v", err)
@@ -1217,17 +1100,17 @@ func TestNewGetCommandSilentAndParallelNeverExposePassthroughFile(t *testing.T) 
 			})
 
 			var gotStdout, gotStderr io.Writer
-			git := &getGitOperations{
+			git := &cloneGitOperations{
 				clone: func(context.Context, ghcmd.CloneOptions) error { return nil },
 			}
 			var output bytes.Buffer
-			deps := getDependencies(root, git, &output, writer)
-			deps.GitFactory = func(stdout, stderr io.Writer) cmd.GetGitOperations {
+			deps := cloneDependencies(root, git, &output, writer)
+			deps.GitFactory = func(stdout, stderr io.Writer) cmd.CloneGitOperations {
 				gotStdout = stdout
 				gotStderr = stderr
 				return git
 			}
-			command := cmd.NewGetCommand(deps)
+			command := cmd.NewCloneCommand(deps)
 			command.SetArgs(testCase.args)
 
 			if err := command.Execute(); err != nil {
@@ -1250,18 +1133,18 @@ func TestNewGetCommandSilentAndParallelNeverExposePassthroughFile(t *testing.T) 
 	}
 }
 
-func TestNewGetCommandSilentKeepsGitErrors(t *testing.T) {
+func TestNewCloneCommandSilentKeepsGitErrors(t *testing.T) {
 	t.Parallel()
 
-	root := getTempRoot(t)
+	root := cloneTempRoot(t)
 	wantDiagnostic := "remote: Repository not found.\nfatal: repository not found"
-	git := &getGitOperations{
+	git := &cloneGitOperations{
 		clone: func(context.Context, ghcmd.CloneOptions) error {
-			return &getStderrError{message: "gh command failed with exit code 1", stderr: []byte(wantDiagnostic)}
+			return &cloneStderrError{message: "gh command failed with exit code 1", stderr: []byte(wantDiagnostic)}
 		},
 	}
 	var output, diagnostic bytes.Buffer
-	command := cmd.NewGetCommand(getDependencies(root, git, &output, &diagnostic))
+	command := cmd.NewCloneCommand(cloneDependencies(root, git, &output, &diagnostic))
 	command.SetArgs([]string{"--silent", "acme/widget"})
 
 	if err := command.Execute(); err == nil {
@@ -1275,20 +1158,20 @@ func TestNewGetCommandSilentKeepsGitErrors(t *testing.T) {
 	}
 }
 
-func TestNewGetCommandCustomWarningSink(t *testing.T) {
+func TestNewCloneCommandCustomWarningSink(t *testing.T) {
 	t.Parallel()
 
-	root := getTempRoot(t)
+	root := cloneTempRoot(t)
 	warning := local.Warning{Path: filepath.Join(root, "warning")}
 	var got []local.Warning
-	deps := getDependencies(root, &getGitOperations{}, io.Discard, io.Discard)
+	deps := cloneDependencies(root, &cloneGitOperations{}, io.Discard, io.Discard)
 	deps.Discover = func(context.Context, []string) (local.DiscoveryResult, error) {
 		return local.DiscoveryResult{Warnings: []local.Warning{warning}}, nil
 	}
 	deps.WarningSink = func(warning local.Warning) {
 		got = append(got, warning)
 	}
-	command := cmd.NewGetCommand(deps)
+	command := cmd.NewCloneCommand(deps)
 	command.SetArgs([]string{"acme/widget"})
 
 	if err := command.Execute(); err != nil {
@@ -1299,14 +1182,14 @@ func TestNewGetCommandCustomWarningSink(t *testing.T) {
 	}
 }
 
-func TestNewGetCommandRejectsFileSchemeInput(t *testing.T) {
+func TestNewCloneCommandRejectsFileSchemeInput(t *testing.T) {
 	t.Parallel()
 
-	// `get` delegates cloning to `gh repo clone`, which never accepts a
+	// `clone` delegates cloning to `gh repo clone`, which never accepts a
 	// file:// URL (local or pseudo-remote authority). Both forms must be
 	// rejected as a usage error before any Git operation is attempted.
 	tests := []string{
-		getFileURL(filepath.Join(getTempRoot(t), "github.com", "acme", "widget")),
+		cloneFileURL(filepath.Join(cloneTempRoot(t), "github.com", "acme", "widget")),
 		"file://ghe.example.com/acme/widget",
 	}
 	for _, input := range tests {
@@ -1314,19 +1197,19 @@ func TestNewGetCommandRejectsFileSchemeInput(t *testing.T) {
 		t.Run(input, func(t *testing.T) {
 			t.Parallel()
 
-			root := getTempRoot(t)
-			git := &getGitOperations{
+			root := cloneTempRoot(t)
+			git := &cloneGitOperations{
 				clone: func(context.Context, ghcmd.CloneOptions) error {
 					t.Fatal("Clone() called for rejected file:// input")
 					return nil
 				},
 			}
-			command := cmd.NewGetCommand(getDependencies(root, git, io.Discard, io.Discard))
+			command := cmd.NewCloneCommand(cloneDependencies(root, git, io.Discard, io.Discard))
 			command.SetArgs([]string{input})
 
 			err := command.Execute()
-			if !errors.Is(err, cmd.ErrGetUsage) {
-				t.Fatalf("Execute() error = %v, want ErrGetUsage", err)
+			if !errors.Is(err, cmd.ErrCloneUsage) {
+				t.Fatalf("Execute() error = %v, want ErrCloneUsage", err)
 			}
 			if !errors.Is(err, repospec.ErrUsage) {
 				t.Fatalf("Execute() error = %v, want repospec.ErrUsage cause", err)
@@ -1335,85 +1218,73 @@ func TestNewGetCommandRejectsFileSchemeInput(t *testing.T) {
 	}
 }
 
-type getRootResolver struct {
+type cloneRootResolver struct {
 	mu     sync.Mutex
 	result rootpkg.Result
 	err    error
 	calls  int
 }
 
-func (r *getRootResolver) Resolve() (rootpkg.Result, error) {
+func (r *cloneRootResolver) Resolve() (rootpkg.Result, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.calls++
 	return r.result, r.err
 }
 
-func (r *getRootResolver) Calls() int {
+func (r *cloneRootResolver) Calls() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.calls
 }
 
-type getIdentityResolver struct {
+type cloneIdentityResolver struct {
 	mu       sync.Mutex
 	identity ghapi.Identity
 	err      error
 	calls    int
 }
 
-func (r *getIdentityResolver) ResolveIdentity(context.Context) (ghapi.Identity, error) {
+func (r *cloneIdentityResolver) ResolveIdentity(context.Context) (ghapi.Identity, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.calls++
 	return r.identity, r.err
 }
 
-func (r *getIdentityResolver) Calls() int {
+func (r *cloneIdentityResolver) Calls() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.calls
 }
 
-type getGitOperations struct {
-	clone  func(context.Context, ghcmd.CloneOptions) error
-	update func(context.Context, string, ghcmd.SyncOptions) error
+type cloneGitOperations struct {
+	clone func(context.Context, ghcmd.CloneOptions) error
 }
 
-func (g *getGitOperations) RepoClone(ctx context.Context, options ghcmd.CloneOptions) error {
+func (g *cloneGitOperations) RepoClone(ctx context.Context, options ghcmd.CloneOptions) error {
 	if g.clone == nil {
 		return nil
 	}
 	return g.clone(ctx, options)
 }
 
-func (g *getGitOperations) RepoSync(
-	ctx context.Context,
-	dir string,
-	options ghcmd.SyncOptions,
-) error {
-	if g.update == nil {
-		return nil
-	}
-	return g.update(ctx, dir, options)
-}
-
-func getDependencies(
+func cloneDependencies(
 	root string,
-	git cmd.GetGitOperations,
+	git cmd.CloneGitOperations,
 	stdout, stderr io.Writer,
-) cmd.GetDependencies {
-	return cmd.GetDependencies{
-		RootResolver: &getRootResolver{result: rootpkg.Result{
+) cmd.CloneDependencies {
+	return cmd.CloneDependencies{
+		RootResolver: &cloneRootResolver{result: rootpkg.Result{
 			RepositoryRoots: []string{root},
 		}},
-		GitFactory: func(io.Writer, io.Writer) cmd.GetGitOperations {
+		GitFactory: func(io.Writer, io.Writer) cmd.CloneGitOperations {
 			return git
 		},
 		Discover: func(context.Context, []string) (local.DiscoveryResult, error) {
 			return local.DiscoveryResult{}, nil
 		},
-		IdentityResolver: &getIdentityResolver{
+		IdentityResolver: &cloneIdentityResolver{
 			identity: ghapi.Identity{Host: "github.com", Login: "octocat"},
 		},
 		Stdin:      strings.NewReader(""),
@@ -1423,38 +1294,38 @@ func getDependencies(
 	}
 }
 
-type getPanicReader struct{}
+type clonePanicReader struct{}
 
-func (getPanicReader) Read([]byte) (int, error) {
+func (clonePanicReader) Read([]byte) (int, error) {
 	panic("stdin must not be read")
 }
 
-type getErrorReader struct {
+type cloneErrorReader struct {
 	err error
 }
 
-func (r getErrorReader) Read([]byte) (int, error) {
+func (r cloneErrorReader) Read([]byte) (int, error) {
 	return 0, r.err
 }
 
-type getFailingWriter struct {
+type cloneFailingWriter struct {
 	err error
 }
 
-func (w getFailingWriter) Write([]byte) (int, error) {
+func (w cloneFailingWriter) Write([]byte) (int, error) {
 	return 0, w.err
 }
 
-type getLineWriter struct {
+type cloneLineWriter struct {
 	lines chan string
 }
 
-func (w *getLineWriter) Write(data []byte) (int, error) {
+func (w *cloneLineWriter) Write(data []byte) (int, error) {
 	w.lines <- strings.TrimSuffix(string(data), "\n")
 	return len(data), nil
 }
 
-func getReceiveWithin[T any](t *testing.T, channel <-chan T, description string) T {
+func cloneReceiveWithin[T any](t *testing.T, channel <-chan T, description string) T {
 	t.Helper()
 	select {
 	case value := <-channel:
@@ -1466,7 +1337,7 @@ func getReceiveWithin[T any](t *testing.T, channel <-chan T, description string)
 	}
 }
 
-func getTempRoot(t *testing.T) string {
+func cloneTempRoot(t *testing.T) string {
 	t.Helper()
 	path, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
@@ -1475,7 +1346,7 @@ func getTempRoot(t *testing.T) string {
 	return path
 }
 
-func getFileURL(path string) string {
+func cloneFileURL(path string) string {
 	slashPath := filepath.ToSlash(path)
 	if runtime.GOOS == "windows" && !strings.HasPrefix(slashPath, "/") {
 		slashPath = "/" + slashPath
@@ -1483,19 +1354,19 @@ func getFileURL(path string) string {
 	return (&url.URL{Scheme: "file", Path: slashPath}).String()
 }
 
-// getStderrError simulates a gh command failure that retains a diagnostic
+// cloneStderrError simulates a gh command failure that retains a diagnostic
 // stderr tail, mirroring the capability *ghcmd.CommandError exposes, without
 // depending on ghcmd's unexported fields or a real gh subprocess.
-type getStderrError struct {
+type cloneStderrError struct {
 	message string
 	stderr  []byte
 }
 
-func (e *getStderrError) Error() string { return e.message }
+func (e *cloneStderrError) Error() string { return e.message }
 
-func (e *getStderrError) StderrOutput() []byte { return e.stderr }
+func (e *cloneStderrError) StderrOutput() []byte { return e.stderr }
 
-func TestGetHonorsGHHostForHostlessShorthand(t *testing.T) {
+func TestCloneHonorsGHHostForHostlessShorthand(t *testing.T) {
 	t.Setenv("GH_HOST", "enterprise.example.com")
 	for _, test := range []struct{ input, want string }{
 		{"acme/widget", "https://enterprise.example.com/acme/widget"},
@@ -1504,10 +1375,10 @@ func TestGetHonorsGHHostForHostlessShorthand(t *testing.T) {
 	} {
 		t.Run(test.input, func(t *testing.T) {
 			var got string
-			git := &getGitOperations{clone: func(_ context.Context, options ghcmd.CloneOptions) error { got = options.URL; return nil }}
-			command := cmd.NewGetCommand(cmd.GetDependencies{
-				RootResolver: &getRootResolver{result: rootpkg.Result{RepositoryRoots: []string{getTempRoot(t)}}},
-				GitFactory:   func(io.Writer, io.Writer) cmd.GetGitOperations { return git },
+			git := &cloneGitOperations{clone: func(_ context.Context, options ghcmd.CloneOptions) error { got = options.URL; return nil }}
+			command := cmd.NewCloneCommand(cmd.CloneDependencies{
+				RootResolver: &cloneRootResolver{result: rootpkg.Result{RepositoryRoots: []string{cloneTempRoot(t)}}},
+				GitFactory:   func(io.Writer, io.Writer) cmd.CloneGitOperations { return git },
 				Stdout:       io.Discard, Stderr: io.Discard,
 				Discover: func(context.Context, []string) (local.DiscoveryResult, error) { return local.DiscoveryResult{}, nil },
 			})

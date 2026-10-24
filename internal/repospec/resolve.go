@@ -29,7 +29,7 @@ type Options struct {
 	WorkingDir      string
 	ResolveIdentity IdentityResolver
 	// RejectFileScheme rejects a file:// input (local or non-local
-	// authority) as a usage error. get sets this because it clones through
+	// authority) as a usage error. clone sets this because it delegates to
 	// `gh repo clone`, which never accepts a file:// URL; other callers such
 	// as list and migrate leave it unset because they support file:// input.
 	RejectFileScheme bool

@@ -32,13 +32,13 @@ type ApplicationGit interface {
 
 // ApplicationGh combines every gh operation used by the command tree.
 type ApplicationGh interface {
-	GetGitOperations
+	CloneGitOperations
 	WorktreeAddGh
 }
 
 // ApplicationAPI combines the GitHub operations used by the command tree.
 type ApplicationAPI interface {
-	GetIdentityResolver
+	CloneIdentityResolver
 	WorktreeAddAPI
 }
 
@@ -47,7 +47,7 @@ type ApplicationDependencies struct {
 	Resolver   RootResolver
 	Git        ApplicationGit
 	Gh         ApplicationGh
-	GitFactory GetGitFactory
+	GitFactory CloneGitFactory
 	API        ApplicationAPI
 	Registry   LocationRegistry
 	Discover   func(
@@ -129,18 +129,15 @@ func NewCommand(dependencies ApplicationDependencies) *cobra.Command {
 		)
 	}
 
-	getCommand := NewGetCommand(GetDependencies{
+	cloneCommand := NewCloneCommand(CloneDependencies{
 		OnAcquired:       deps.Registry.Register,
 		RootResolver:     deps.Resolver,
 		GitFactory:       deps.GitFactory,
 		Discover:         discover,
 		IdentityResolver: deps.API,
-		ValidateExisting: func(ctx context.Context, repository local.Repository) error {
-			return validateRegisteredRepository(ctx, deps.Git, repository)
-		},
-		Stdin:  deps.Stdin,
-		Stdout: deps.Stdout,
-		Stderr: deps.Stderr,
+		Stdin:            deps.Stdin,
+		Stdout:           deps.Stdout,
+		Stderr:           deps.Stderr,
 	})
 	listCommand := NewListCommand(ListDependencies{
 		Registry:             deps.Registry,
@@ -228,7 +225,7 @@ func NewCommand(dependencies ApplicationDependencies) *cobra.Command {
 	)
 
 	command.AddCommand(
-		getCommand,
+		cloneCommand,
 		addCommand,
 		forgetCommand,
 		listCommand,
@@ -277,7 +274,7 @@ func ExitCode(err error) int {
 	}
 	for _, usageError := range []error{
 		ErrCommandUsage,
-		ErrGetUsage,
+		ErrCloneUsage,
 		repospec.ErrUsage,
 		config.ErrInvalid,
 		rootpkg.ErrInvalidRoot,
@@ -311,9 +308,9 @@ func composeApplicationDependencies(deps ApplicationDependencies) ApplicationDep
 		deps.Gh = &ghcmd.Runner{Stdout: deps.Stderr, Stderr: deps.Stderr}
 	}
 	if deps.GitFactory == nil {
-		// A fake needing get-specific output streams must supply GitFactory.
+		// A fake needing clone-specific output streams must supply GitFactory.
 		// Do not discard stdout/stderr arguments for non-runner fakes.
-		deps.GitFactory = func(stdout, stderr io.Writer) GetGitOperations {
+		deps.GitFactory = func(stdout, stderr io.Writer) CloneGitOperations {
 			return &ghcmd.Runner{Stdout: stdout, Stderr: stderr}
 		}
 	}

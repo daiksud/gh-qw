@@ -172,7 +172,7 @@ func addRepository(ctx context.Context, deps MigrateDependencies, store Location
 		if err := store.Register(item.identity, item.destination); err != nil {
 			return fmt.Errorf("repository moved to %q but registration failed: %w", item.destination, err)
 		}
-		return getWritePath(stdout, item.destination)
+		return commandWritePath(stdout, item.destination)
 	}
 
 	absolute, err := migrateAbsoluteInput(source, deps.Getwd)
@@ -190,5 +190,5 @@ func addRepository(ctx context.Context, deps MigrateDependencies, store Location
 	if err := store.Register(spec.Identity.String(), snapshot.Path); err != nil {
 		return fmt.Errorf("register repository location: %w", err)
 	}
-	return getWritePath(stdout, snapshot.Path)
+	return commandWritePath(stdout, snapshot.Path)
 }

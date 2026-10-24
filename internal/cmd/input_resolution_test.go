@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/daiksud/gh-qw/internal/cmd"
@@ -20,28 +21,28 @@ import (
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
 )
 
-func TestGetSyntaxErrorHasNoResolutionOrCloneSideEffects(t *testing.T) {
+func TestCloneSyntaxErrorHasNoResolutionOrCloneSideEffects(t *testing.T) {
 	for _, args := range [][]string{{"invalid?repository"}, {"--parallel", "invalid?repository"}} {
 		t.Run(fmt.Sprint(args), func(t *testing.T) {
-			root := getTempRoot(t)
+			root := cloneTempRoot(t)
 			t.Setenv("PATH", t.TempDir())
 			var stdout bytes.Buffer
-			deps := getDependencies(root, &getGitOperations{}, &stdout, io.Discard)
-			identity := &getIdentityResolver{err: errors.New("authentication must not run")}
+			deps := cloneDependencies(root, &cloneGitOperations{}, &stdout, io.Discard)
+			identity := &cloneIdentityResolver{err: errors.New("authentication must not run")}
 			deps.IdentityResolver = identity
-			resolver := &getRootResolver{err: errors.New("root resolution must not run")}
+			resolver := &cloneRootResolver{err: errors.New("root resolution must not run")}
 			deps.RootResolver = resolver
 			deps.Discover = func(context.Context, []string) (local.DiscoveryResult, error) {
 				t.Fatal("syntax errors must not discover repositories")
 				return local.DiscoveryResult{}, nil
 			}
-			deps.GitFactory = func(io.Writer, io.Writer) cmd.GetGitOperations {
+			deps.GitFactory = func(io.Writer, io.Writer) cmd.CloneGitOperations {
 				t.Fatal("syntax errors must not construct clone operations")
 				return nil
 			}
-			command := cmd.NewGetCommand(deps)
+			command := cmd.NewCloneCommand(deps)
 			command.SetArgs(args)
-			if err := command.Execute(); !errors.Is(err, cmd.ErrGetUsage) || !errors.Is(err, repospec.ErrUsage) {
+			if err := command.Execute(); !errors.Is(err, cmd.ErrCloneUsage) || !errors.Is(err, repospec.ErrUsage) {
 				t.Fatalf("syntax error = %v, want usage classification", err)
 			}
 			if stdout.Len() != 0 || identity.Calls() != 0 {
@@ -64,9 +65,9 @@ func TestNativeRefFailuresRemainRuntimeErrors(t *testing.T) {
 		{"worktree", "add", "topic"},
 		{"worktree", "remove", "topic"},
 		{"rm", "owner/widget@topic"},
-		{"get", "--branch", "topic", "owner/widget"},
-		{"get", "owner/widget@topic"},
-		{"get", "--parallel", "owner/widget@topic"},
+		{"clone", "--branch", "topic", "owner/widget"},
+		{"clone", "owner/widget@topic"},
+		{"clone", "--parallel", "owner/widget@topic"},
 		{"list", "https://github.com/owner/widget@topic"},
 	} {
 		for _, canceled := range []bool{false, true} {
@@ -78,7 +79,7 @@ func TestNativeRefFailuresRemainRuntimeErrors(t *testing.T) {
 				}
 				var stdout bytes.Buffer
 				command := cmd.NewCommand(cmd.ApplicationDependencies{
-					Resolver: &getRootResolver{result: rootpkg.Result{RepositoryRoots: []string{t.TempDir()}}},
+					Resolver: &cloneRootResolver{result: rootpkg.Result{RepositoryRoots: []string{t.TempDir()}}},
 					Discover: func(context.Context, []string, ...local.DiscoveryOptions) (local.DiscoveryResult, error) {
 						return local.DiscoveryResult{}, nil
 					},
@@ -108,11 +109,11 @@ func TestNativeRefFailuresRemainRuntimeErrors(t *testing.T) {
 	}
 }
 
-func TestGetOrderedSyntaxFailurePreservesEarlierSuccess(t *testing.T) {
-	root := getTempRoot(t)
+func TestCloneOrderedSyntaxFailurePreservesEarlierSuccess(t *testing.T) {
+	root := cloneTempRoot(t)
 	var cloned []string
 	var stdout bytes.Buffer
-	deps := getDependencies(root, &getGitOperations{
+	deps := cloneDependencies(root, &cloneGitOperations{
 		clone: func(_ context.Context, options ghcmd.CloneOptions) error {
 			cloned = append(cloned, options.URL)
 			return nil
@@ -123,7 +124,7 @@ func TestGetOrderedSyntaxFailurePreservesEarlierSuccess(t *testing.T) {
 		discoveries++
 		return local.DiscoveryResult{}, nil
 	}
-	command := cmd.NewGetCommand(deps)
+	command := cmd.NewCloneCommand(deps)
 	command.SetArgs([]string{"github.com/owner/first", "invalid?repository", "github.com/owner/last"})
 	err := command.Execute()
 	if cmd.ExitCode(err) != 2 || !errors.Is(err, repospec.ErrUsage) {
@@ -138,14 +139,14 @@ func TestGetOrderedSyntaxFailurePreservesEarlierSuccess(t *testing.T) {
 	}
 }
 
-func TestGetParallelKeepsNativeRuntimeAndSyntaxErrorsDistinct(t *testing.T) {
+func TestCloneParallelKeepsNativeRuntimeAndSyntaxErrorsDistinct(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
-	root := getTempRoot(t)
+	root := cloneTempRoot(t)
 	var stdout bytes.Buffer
-	command := cmd.NewGetCommand(getDependencies(root, &getGitOperations{}, &stdout, io.Discard))
+	command := cmd.NewCloneCommand(cloneDependencies(root, &cloneGitOperations{}, &stdout, io.Discard))
 	command.SetArgs([]string{"--parallel", "github.com/owner/good", "invalid?repository", "github.com/owner/widget@topic"})
 	err := command.Execute()
-	var aggregate *cmd.GetAggregateError
+	var aggregate *cmd.CloneAggregateError
 	if cmd.ExitCode(err) != 2 || !errors.As(err, &aggregate) {
 		t.Fatalf("parallel result = %v, want aggregate usage status 2", err)
 	}
@@ -162,15 +163,15 @@ func TestGetParallelKeepsNativeRuntimeAndSyntaxErrorsDistinct(t *testing.T) {
 	}
 }
 
-func TestGetParallelKeepsKnownSyntaxFailureWhenRootResolutionFails(t *testing.T) {
+func TestCloneParallelKeepsKnownSyntaxFailureWhenRootResolutionFails(t *testing.T) {
 	wantErr := errors.New("cannot read root configuration")
-	deps := getDependencies(t.TempDir(), &getGitOperations{}, io.Discard, io.Discard)
-	deps.RootResolver = &getRootResolver{err: wantErr}
+	deps := cloneDependencies(t.TempDir(), &cloneGitOperations{}, io.Discard, io.Discard)
+	deps.RootResolver = &cloneRootResolver{err: wantErr}
 	deps.Discover = func(context.Context, []string) (local.DiscoveryResult, error) {
 		t.Fatal("root resolution failure must prevent discovery")
 		return local.DiscoveryResult{}, nil
 	}
-	command := cmd.NewGetCommand(deps)
+	command := cmd.NewCloneCommand(deps)
 	command.SetArgs([]string{"--parallel", "invalid?repository", "owner/widget"})
 	err := command.Execute()
 	if cmd.ExitCode(err) != 2 || !errors.Is(err, repospec.ErrUsage) || !errors.Is(err, wantErr) {
@@ -178,13 +179,13 @@ func TestGetParallelKeepsKnownSyntaxFailureWhenRootResolutionFails(t *testing.T)
 	}
 }
 
-func TestGetPassesLiteralGitValidCloneRefs(t *testing.T) {
+func TestClonePassesLiteralGitValidCloneRefs(t *testing.T) {
 	for _, branch := range []string{"HEAD", "feature/next", "topic\u00a0name", "topic./next"} {
 		t.Run(branch, func(t *testing.T) {
-			root := getTempRoot(t)
+			root := cloneTempRoot(t)
 			var cloned ghcmd.CloneOptions
 			var stdout bytes.Buffer
-			command := cmd.NewGetCommand(getDependencies(root, &getGitOperations{
+			command := cmd.NewCloneCommand(cloneDependencies(root, &cloneGitOperations{
 				clone: func(_ context.Context, options ghcmd.CloneOptions) error {
 					cloned = options
 					return nil
@@ -205,30 +206,31 @@ func TestGetPassesLiteralGitValidCloneRefs(t *testing.T) {
 	}
 }
 
-func TestExistingGetResolutionNeedsNoExternalCommands(t *testing.T) {
-	root := getTempRoot(t)
+func TestExistingCloneTargetRejectsWithoutExternalCommands(t *testing.T) {
+	root := cloneTempRoot(t)
 	repository := listRepository("github.com/owner/widget", filepath.Join(root, "github.com", "owner", "widget"), 0)
 	if err := os.MkdirAll(repository.Path, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", t.TempDir())
 	var stdout bytes.Buffer
-	deps := getDependencies(root, &getGitOperations{}, &stdout, io.Discard)
+	deps := cloneDependencies(root, &cloneGitOperations{}, &stdout, io.Discard)
 	deps.Discover = func(context.Context, []string) (local.DiscoveryResult, error) {
 		return local.DiscoveryResult{Repositories: []local.Repository{repository}}, nil
 	}
-	deps.GitFactory = func(io.Writer, io.Writer) cmd.GetGitOperations {
+	deps.GitFactory = func(io.Writer, io.Writer) cmd.CloneGitOperations {
 		t.Fatal("existing-repository lookup must not construct clone operations")
 		return nil
 	}
-	identity := &getIdentityResolver{err: errors.New("authentication must not be used")}
+	identity := &cloneIdentityResolver{err: errors.New("authentication must not be used")}
 	deps.IdentityResolver = identity
-	command := cmd.NewGetCommand(deps)
+	command := cmd.NewCloneCommand(deps)
 	command.SetArgs([]string{"ssh://git@github.com/owner/widget.git"})
-	if err := command.Execute(); err != nil {
-		t.Fatal(err)
+	err := command.Execute()
+	if err == nil || !strings.Contains(err.Error(), "already registered") {
+		t.Fatalf("Execute() error = %v, want registered collision", err)
 	}
-	if stdout.String() != filepath.ToSlash(repository.Path)+"\n" || identity.Calls() != 0 {
+	if stdout.String() != "" || identity.Calls() != 0 {
 		t.Fatalf("stdout = %q, identity calls = %d", stdout.String(), identity.Calls())
 	}
 }

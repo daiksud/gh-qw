@@ -22,48 +22,48 @@ import (
 	"golang.org/x/term"
 )
 
-const getParallelLimit = 6
+const cloneParallelLimit = 6
 
-// ErrGetUsage identifies get command failures that require exit status 2.
-var ErrGetUsage = errors.New("invalid get usage")
+// ErrCloneUsage identifies clone command failures that require exit status 2.
+var ErrCloneUsage = errors.New("invalid clone usage")
 
-// GetUsageError wraps a get-specific usage failure.
-type GetUsageError struct {
+// CloneUsageError wraps a clone-specific usage failure.
+type CloneUsageError struct {
 	Err error
 }
 
 // Error implements error.
-func (e *GetUsageError) Error() string {
+func (e *CloneUsageError) Error() string {
 	if e == nil || e.Err == nil {
-		return ErrGetUsage.Error()
+		return ErrCloneUsage.Error()
 	}
 	return e.Err.Error()
 }
 
 // Unwrap preserves the underlying parser or validation error.
-func (e *GetUsageError) Unwrap() error {
+func (e *CloneUsageError) Unwrap() error {
 	if e == nil {
 		return nil
 	}
 	return e.Err
 }
 
-// Is makes get usage failures discoverable by the root application.
-func (e *GetUsageError) Is(target error) bool {
-	return target == ErrGetUsage
+// Is makes clone usage failures discoverable by the root application.
+func (e *CloneUsageError) Is(target error) bool {
+	return target == ErrCloneUsage
 }
 
-// GetAggregateError reports every failure observed by a parallel get. Usage
+// CloneAggregateError reports every failure observed by a parallel clone. Usage
 // failures take precedence for exit-status selection.
-type GetAggregateError struct {
+type CloneAggregateError struct {
 	usageErrors   []error
 	runtimeErrors []error
 }
 
 // Error implements error.
-func (e *GetAggregateError) Error() string {
+func (e *CloneAggregateError) Error() string {
 	if e == nil {
-		return "parallel get failed"
+		return "parallel clone failed"
 	}
 
 	errorsForMessage := e.runtimeErrors
@@ -74,12 +74,12 @@ func (e *GetAggregateError) Error() string {
 	}
 	switch len(errorsForMessage) {
 	case 0:
-		return "parallel get failed"
+		return "parallel clone failed"
 	case 1:
 		return errorsForMessage[0].Error()
 	default:
 		return fmt.Sprintf(
-			"parallel get failed with %d usage and %d runtime errors; first %s error: %v",
+			"parallel clone failed with %d usage and %d runtime errors; first %s error: %v",
 			len(e.usageErrors),
 			len(e.runtimeErrors),
 			kind,
@@ -89,12 +89,12 @@ func (e *GetAggregateError) Error() string {
 }
 
 // Is exposes usage precedence without hiding runtime causes.
-func (e *GetAggregateError) Is(target error) bool {
-	return target == ErrGetUsage && e != nil && len(e.usageErrors) != 0
+func (e *CloneAggregateError) Is(target error) bool {
+	return target == ErrCloneUsage && e != nil && len(e.usageErrors) != 0
 }
 
 // Unwrap exposes every item failure to errors.Is and errors.As.
-func (e *GetAggregateError) Unwrap() []error {
+func (e *CloneAggregateError) Unwrap() []error {
 	if e == nil {
 		return nil
 	}
@@ -105,7 +105,7 @@ func (e *GetAggregateError) Unwrap() []error {
 }
 
 // UsageErrors returns a defensive copy of invalid item failures.
-func (e *GetAggregateError) UsageErrors() []error {
+func (e *CloneAggregateError) UsageErrors() []error {
 	if e == nil {
 		return nil
 	}
@@ -113,55 +113,53 @@ func (e *GetAggregateError) UsageErrors() []error {
 }
 
 // RuntimeErrors returns a defensive copy of operational item failures.
-func (e *GetAggregateError) RuntimeErrors() []error {
+func (e *CloneAggregateError) RuntimeErrors() []error {
 	if e == nil {
 		return nil
 	}
 	return append([]error(nil), e.runtimeErrors...)
 }
 
-// GetGitOperations is the mutation surface required by get. Both operations
-// delegate to gh so that GitHub authentication and host resolution follow
-// gh's own rules instead of an ambient Git credential helper.
-type GetGitOperations interface {
+// CloneGitOperations is the mutation surface required by clone. It delegates
+// acquisition to gh so GitHub authentication and host resolution follow gh's
+// own rules instead of an ambient Git credential helper.
+type CloneGitOperations interface {
 	RepoClone(context.Context, ghcmd.CloneOptions) error
-	RepoSync(context.Context, string, ghcmd.SyncOptions) error
 }
 
-// GetGitFactory creates gh operations with command-scoped streams and the
+// CloneGitFactory creates gh operations with command-scoped streams and the
 // standard gh environment. The subprocess never receives the caller's stdin.
-type GetGitFactory func(stdout, stderr io.Writer) GetGitOperations
+type CloneGitFactory func(stdout, stderr io.Writer) CloneGitOperations
 
-// GetDiscoverFunc discovers ordinary main repositories below configured roots.
-type GetDiscoverFunc func(context.Context, []string) (local.DiscoveryResult, error)
+// CloneDiscoverFunc discovers ordinary main repositories below configured roots.
+type CloneDiscoverFunc func(context.Context, []string) (local.DiscoveryResult, error)
 
-// GetIdentityResolver completes a bare repository name from gh authentication.
-type GetIdentityResolver interface {
+// CloneIdentityResolver completes a bare repository name from gh authentication.
+type CloneIdentityResolver interface {
 	ResolveIdentity(context.Context) (ghapi.Identity, error)
 }
 
-// GetTerminalDetector reports whether a reader is an interactive terminal.
-type GetTerminalDetector func(io.Reader) bool
+// CloneTerminalDetector reports whether a reader is an interactive terminal.
+type CloneTerminalDetector func(io.Reader) bool
 
-// GetDependencies supplies all external operations used by NewGetCommand.
-type GetDependencies struct {
+// CloneDependencies supplies all external operations used by NewCloneCommand.
+type CloneDependencies struct {
 	RootResolver     RootResolver
-	GitFactory       GetGitFactory
+	GitFactory       CloneGitFactory
 	MkdirAll         func(string, fs.FileMode) error
-	Discover         GetDiscoverFunc
-	IdentityResolver GetIdentityResolver
+	Lstat            func(string) (fs.FileInfo, error)
+	Discover         CloneDiscoverFunc
+	IdentityResolver CloneIdentityResolver
 	OnAcquired       func(string, string) error
-	ValidateExisting func(context.Context, local.Repository) error
 	Stdin            io.Reader
 	Stdout           io.Writer
 	Stderr           io.Writer
-	IsTerminal       GetTerminalDetector
+	IsTerminal       CloneTerminalDetector
 	WarningSink      local.WarningSink
 	WorkingDir       string
 }
 
-type getFlags struct {
-	update      bool
+type cloneFlags struct {
 	ssh         bool
 	shallow     bool
 	branch      string
@@ -171,85 +169,84 @@ type getFlags struct {
 	partial     string
 }
 
-type getTarget struct {
+type cloneTarget struct {
 	exists     bool
 	repository local.Repository
 }
 
-type getParsedItem struct {
+type cloneParsedItem struct {
 	input string
 	spec  repospec.Spec
 }
 
-type getParallelJob struct {
-	item  getParsedItem
-	state *getTarget
+type cloneParallelJob struct {
+	item  cloneParsedItem
+	state *cloneTarget
 	wait  <-chan struct{}
 	done  chan struct{}
 }
 
-type getParallelResult struct {
+type cloneParallelResult struct {
 	input string
 	path  string
 	err   error
 }
 
-// getLockedWriter serializes writes from multiple goroutines (a --parallel
-// get) onto a single diagnostic stream. passthrough additionally lets an
-// ordered (non-parallel) get expose the *os.File behind writer, when there
+// cloneLockedWriter serializes writes from multiple goroutines (a --parallel
+// clone) onto a single diagnostic stream. passthrough additionally lets an
+// ordered (non-parallel) clone expose the *os.File behind writer, when there
 // is one, so a gh or git subprocess can inherit gh-qw's own standard error
 // descriptor directly instead of being copied to over a pipe — restoring
 // terminal detection for interactive progress and color. passthrough must
 // stay false for a parallel run: handing a subprocess the raw descriptor
 // bypasses mu, which is only safe when at most one subprocess writes to it
 // at a time.
-type getLockedWriter struct {
+type cloneLockedWriter struct {
 	mu          sync.Mutex
 	writer      io.Writer
 	passthrough bool
 }
 
-func (w *getLockedWriter) Write(data []byte) (int, error) {
+func (w *cloneLockedWriter) Write(data []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return w.writer.Write(data)
 }
 
 // PassthroughFile implements procio.FileProvider.
-func (w *getLockedWriter) PassthroughFile() *os.File {
+func (w *cloneLockedWriter) PassthroughFile() *os.File {
 	if w == nil || !w.passthrough {
 		return nil
 	}
 	return procio.PassthroughFile(w.writer)
 }
 
-// NewGetCommand returns the repository acquisition command.
-func NewGetCommand(deps GetDependencies) *cobra.Command {
-	resolved := getResolveDependencies(deps)
+// NewCloneCommand returns the repository acquisition command.
+func NewCloneCommand(deps CloneDependencies) *cobra.Command {
+	resolved := cloneResolveDependencies(deps)
 	stdin, stdout, stderr := resolved.Stdin, resolved.Stdout, resolved.Stderr
-	flags := getFlags{}
+	flags := cloneFlags{}
 
 	command := &cobra.Command{
-		Use:           "get [flags] [<repo>...]",
-		Aliases:       []string{"clone"},
-		Short:         "Clone or update repositories",
+		Use:           "clone [flags] [<repo>...]",
+		Short:         "Clone and register new repositories",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE: func(command *cobra.Command, args []string) error {
-			filter, err := getPartialFilter(flags.partial)
+			filter, err := clonePartialFilter(flags.partial)
 			if err != nil {
-				return getUsageError(err)
+				return cloneUsageError(err)
 			}
 			if flags.branch != "" {
 				if err := local.ValidateBranch(command.Context(), flags.branch); err != nil {
 					if errors.Is(err, local.ErrInvalidBranch) {
-						return getUsageError(fmt.Errorf("invalid --branch value %q: %w", flags.branch, err))
+						return cloneUsageError(fmt.Errorf("invalid --branch value %q: %w", flags.branch, err))
 					}
 					return err
 				}
 			}
 
-			inputs, err := getRepositoryInputs(
+			inputs, err := cloneRepositoryInputs(
 				command.InOrStdin(),
 				args,
 				resolved.IsTerminal,
@@ -261,11 +258,11 @@ func NewGetCommand(deps GetDependencies) *cobra.Command {
 				return nil
 			}
 
-			diagnostic := &getLockedWriter{writer: command.ErrOrStderr(), passthrough: !flags.parallel}
+			diagnostic := &cloneLockedWriter{writer: command.ErrOrStderr(), passthrough: !flags.parallel}
 			warn := resolved.WarningSink
 
 			if flags.parallel {
-				return getRunParallel(
+				return cloneRunParallel(
 					command.Context(),
 					inputs,
 					flags,
@@ -276,7 +273,7 @@ func NewGetCommand(deps GetDependencies) *cobra.Command {
 					diagnostic,
 				)
 			}
-			return getRunOrdered(
+			return cloneRunOrdered(
 				command.Context(),
 				inputs,
 				flags,
@@ -289,7 +286,6 @@ func NewGetCommand(deps GetDependencies) *cobra.Command {
 		},
 	}
 
-	command.Flags().BoolVarP(&flags.update, "update", "u", false, "Fast-forward an existing repository")
 	command.Flags().BoolVarP(&flags.ssh, "p", "p", false, "Use SSH for HTTPS and shorthand repositories")
 	command.Flags().BoolVar(&flags.shallow, "shallow", false, "Clone with depth 1")
 	command.Flags().StringVarP(&flags.branch, "branch", "b", "", "Clone a single branch")
@@ -298,7 +294,7 @@ func NewGetCommand(deps GetDependencies) *cobra.Command {
 	command.Flags().BoolVarP(&flags.parallel, "parallel", "P", false, "Process at most six repositories concurrently")
 	command.Flags().StringVar(&flags.partial, "partial", "", "Partial clone mode: blobless or treeless")
 	command.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
-		return getUsageError(err)
+		return cloneUsageError(err)
 	})
 	command.SetIn(stdin)
 	command.SetOut(stdout)
@@ -307,7 +303,7 @@ func NewGetCommand(deps GetDependencies) *cobra.Command {
 	return command
 }
 
-func getResolveDependencies(deps GetDependencies) GetDependencies {
+func cloneResolveDependencies(deps CloneDependencies) CloneDependencies {
 	deps.Stdin = commandStdin(deps.Stdin)
 	deps.Stdout = commandStdout(deps.Stdout)
 	deps.Stderr = commandStderr(deps.Stderr)
@@ -315,15 +311,18 @@ func getResolveDependencies(deps GetDependencies) GetDependencies {
 		deps.RootResolver = rootpkg.NewResolver()
 	}
 	if deps.IsTerminal == nil {
-		deps.IsTerminal = getIsTerminal
+		deps.IsTerminal = cloneIsTerminal
 	}
 	if deps.GitFactory == nil {
-		deps.GitFactory = func(stdout, stderr io.Writer) GetGitOperations {
+		deps.GitFactory = func(stdout, stderr io.Writer) CloneGitOperations {
 			return &ghcmd.Runner{Stdout: stdout, Stderr: stderr}
 		}
 	}
 	if deps.MkdirAll == nil {
 		deps.MkdirAll = os.MkdirAll
+	}
+	if deps.Lstat == nil {
+		deps.Lstat = os.Lstat
 	}
 	if deps.Discover == nil {
 		deps.Discover = func(ctx context.Context, roots []string) (local.DiscoveryResult, error) {
@@ -336,32 +335,32 @@ func getResolveDependencies(deps GetDependencies) GetDependencies {
 	return deps
 }
 
-func getRunOrdered(
+func cloneRunOrdered(
 	ctx context.Context,
 	inputs []string,
-	flags getFlags,
+	flags cloneFlags,
 	filter ghcmd.PartialFilter,
-	deps GetDependencies,
+	deps CloneDependencies,
 	warn local.WarningSink,
 	stdout, stderr io.Writer,
 ) error {
 	var roots []string
-	var states map[string]*getTarget
+	var states map[string]*cloneTarget
 	for _, input := range inputs {
 		parsed, err := repospec.Parse(input)
 		if err != nil {
-			return getUsageError(err)
+			return cloneUsageError(err)
 		}
 		if roots == nil {
-			roots, err = getResolveRoots(deps.RootResolver)
+			roots, err = cloneResolveRoots(deps.RootResolver)
 			if err != nil {
 				return err
 			}
 		}
-		spec, err := getResolveRepository(ctx, parsed, roots, flags.ssh, deps)
+		spec, err := cloneResolveRepository(ctx, parsed, roots, flags.ssh, deps)
 		if err != nil {
 			if errors.Is(err, repospec.ErrUsage) {
-				return getUsageError(err)
+				return cloneUsageError(err)
 			}
 			return err
 		}
@@ -370,17 +369,17 @@ func getRunOrdered(
 			if err != nil {
 				return fmt.Errorf("discover existing repositories: %w", err)
 			}
-			if err := getEmitDiscoveryWarnings(discovery.Warnings, warn, stderr); err != nil {
+			if err := cloneEmitDiscoveryWarnings(discovery.Warnings, warn, stderr); err != nil {
 				return fmt.Errorf("write discovery warning: %w", err)
 			}
-			states = getInitialTargetStates(discovery.Repositories)
+			states = cloneInitialTargetStates(discovery.Repositories)
 		}
 
-		state, err := getResolveTarget(states, spec, roots[0])
+		state, err := cloneResolveTarget(states, spec, roots[0])
 		if err != nil {
 			return fmt.Errorf("prepare repository %q: %w", input, err)
 		}
-		path, err := getAcquire(
+		path, err := cloneAcquire(
 			ctx,
 			spec,
 			state,
@@ -390,51 +389,51 @@ func getRunOrdered(
 			stderr,
 		)
 		if err != nil {
-			return fmt.Errorf("get %q: %w", input, err)
+			return fmt.Errorf("clone %q: %w", input, err)
 		}
 		if deps.OnAcquired != nil {
 			if err := deps.OnAcquired(spec.Identity.String(), path); err != nil {
 				return fmt.Errorf("repository acquired at %q but location registration failed: %w", path, err)
 			}
 		}
-		if err := getWritePath(stdout, path); err != nil {
+		if err := commandWritePath(stdout, path); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func getRunParallel(
+func cloneRunParallel(
 	ctx context.Context,
 	inputs []string,
-	flags getFlags,
+	flags cloneFlags,
 	filter ghcmd.PartialFilter,
-	deps GetDependencies,
+	deps CloneDependencies,
 	warn local.WarningSink,
 	stdout, stderr io.Writer,
 ) error {
-	aggregate := &GetAggregateError{}
+	aggregate := &CloneAggregateError{}
 	var roots []string
-	parsed := make([]getParsedItem, 0, len(inputs))
+	parsed := make([]cloneParsedItem, 0, len(inputs))
 	for _, input := range inputs {
 		syntax, err := repospec.Parse(input)
 		if err != nil {
 			aggregate.usageErrors = append(
 				aggregate.usageErrors,
-				fmt.Errorf("get %q: %w", input, err),
+				fmt.Errorf("clone %q: %w", input, err),
 			)
 			continue
 		}
 		if roots == nil {
-			roots, err = getResolveRoots(deps.RootResolver)
+			roots, err = cloneResolveRoots(deps.RootResolver)
 			if err != nil {
 				aggregate.runtimeErrors = append(aggregate.runtimeErrors, err)
 				return aggregate
 			}
 		}
-		spec, err := getResolveRepository(ctx, syntax, roots, flags.ssh, deps)
+		spec, err := cloneResolveRepository(ctx, syntax, roots, flags.ssh, deps)
 		if err != nil {
-			err = fmt.Errorf("get %q: %w", input, err)
+			err = fmt.Errorf("clone %q: %w", input, err)
 			if errors.Is(err, repospec.ErrUsage) {
 				aggregate.usageErrors = append(aggregate.usageErrors, err)
 			} else {
@@ -442,7 +441,7 @@ func getRunParallel(
 			}
 			continue
 		}
-		parsed = append(parsed, getParsedItem{input: input, spec: spec})
+		parsed = append(parsed, cloneParsedItem{input: input, spec: spec})
 	}
 
 	if len(parsed) == 0 {
@@ -460,16 +459,16 @@ func getRunParallel(
 		)
 		return aggregate
 	}
-	if err := getEmitDiscoveryWarnings(discovery.Warnings, warn, stderr); err != nil {
+	if err := cloneEmitDiscoveryWarnings(discovery.Warnings, warn, stderr); err != nil {
 		aggregate.runtimeErrors = append(aggregate.runtimeErrors, fmt.Errorf("write discovery warning: %w", err))
 		return aggregate
 	}
 
-	states := getInitialTargetStates(discovery.Repositories)
+	states := cloneInitialTargetStates(discovery.Repositories)
 	previous := make(map[string]<-chan struct{})
-	jobs := make([]getParallelJob, 0, len(parsed))
+	jobs := make([]cloneParallelJob, 0, len(parsed))
 	for _, item := range parsed {
-		state, err := getResolveTarget(states, item.spec, roots[0])
+		state, err := cloneResolveTarget(states, item.spec, roots[0])
 		if err != nil {
 			aggregate.runtimeErrors = append(
 				aggregate.runtimeErrors,
@@ -479,7 +478,7 @@ func getRunParallel(
 		}
 
 		done := make(chan struct{})
-		jobs = append(jobs, getParallelJob{
+		jobs = append(jobs, cloneParallelJob{
 			item:  item,
 			state: state,
 			wait:  previous[item.spec.Identity.String()],
@@ -488,18 +487,18 @@ func getRunParallel(
 		previous[item.spec.Identity.String()] = done
 	}
 
-	results := make(chan getParallelResult, len(jobs))
-	semaphore := make(chan struct{}, getParallelLimit)
+	results := make(chan cloneParallelResult, len(jobs))
+	semaphore := make(chan struct{}, cloneParallelLimit)
 	var workers sync.WaitGroup
 	for _, job := range jobs {
 		workers.Add(1)
-		go func(job getParallelJob) {
+		go func(job cloneParallelJob) {
 			defer workers.Done()
 			if job.wait != nil {
 				select {
 				case <-job.wait:
 				case <-ctx.Done():
-					results <- getParallelResult{input: job.item.input, err: ctx.Err()}
+					results <- cloneParallelResult{input: job.item.input, err: ctx.Err()}
 					close(job.done)
 					return
 				}
@@ -508,11 +507,11 @@ func getRunParallel(
 			select {
 			case semaphore <- struct{}{}:
 			case <-ctx.Done():
-				results <- getParallelResult{input: job.item.input, err: ctx.Err()}
+				results <- cloneParallelResult{input: job.item.input, err: ctx.Err()}
 				close(job.done)
 				return
 			}
-			path, err := getAcquire(
+			path, err := cloneAcquire(
 				ctx,
 				job.item.spec,
 				job.state,
@@ -527,7 +526,7 @@ func getRunParallel(
 					err = fmt.Errorf("repository acquired at %q but location registration failed: %w", path, registerErr)
 				}
 			}
-			results <- getParallelResult{input: job.item.input, path: path, err: err}
+			results <- cloneParallelResult{input: job.item.input, path: path, err: err}
 			close(job.done)
 		}(job)
 	}
@@ -540,11 +539,11 @@ func getRunParallel(
 		if result.err != nil {
 			aggregate.runtimeErrors = append(
 				aggregate.runtimeErrors,
-				fmt.Errorf("get %q: %w", result.input, result.err),
+				fmt.Errorf("clone %q: %w", result.input, result.err),
 			)
 			continue
 		}
-		if err := getWritePath(stdout, result.path); err != nil {
+		if err := commandWritePath(stdout, result.path); err != nil {
 			aggregate.runtimeErrors = append(aggregate.runtimeErrors, err)
 		}
 	}
@@ -555,30 +554,30 @@ func getRunParallel(
 	return nil
 }
 
-func getResolveRoots(resolver RootResolver) ([]string, error) {
+func cloneResolveRoots(resolver RootResolver) ([]string, error) {
 	roots, err := resolver.Resolve()
 	if err != nil {
 		return nil, err
 	}
 	if len(roots.RepositoryRoots) == 0 || roots.Primary() == "" {
-		return nil, getUsageError(errors.New("no repository root is configured"))
+		return nil, cloneUsageError(errors.New("no repository root is configured"))
 	}
 	return roots.RepositoryRoots, nil
 }
 
-func getResolveRepository(
+func cloneResolveRepository(
 	ctx context.Context,
 	parsed repospec.Input,
 	roots []string,
 	ssh bool,
-	deps GetDependencies,
+	deps CloneDependencies,
 ) (repospec.Spec, error) {
 	return parsed.Resolve(ctx, repospec.Options{
 		DefaultHost: os.Getenv("GH_HOST"),
 		SSH:         ssh,
 		Roots:       roots,
 		WorkingDir:  deps.WorkingDir,
-		// get clones through `gh repo clone`, which never accepts a file://
+		// clone clones through `gh repo clone`, which never accepts a file://
 		// URL, so file:// input is rejected here rather than failing later
 		// as an opaque gh error.
 		RejectFileScheme: true,
@@ -592,8 +591,8 @@ func getResolveRepository(
 	})
 }
 
-func getInitialTargetStates(repositories []local.Repository) map[string]*getTarget {
-	states := make(map[string]*getTarget, len(repositories))
+func cloneInitialTargetStates(repositories []local.Repository) map[string]*cloneTarget {
+	states := make(map[string]*cloneTarget, len(repositories))
 	for _, repository := range repositories {
 		current, found := states[repository.Identity]
 		if found && current.repository.RootIndex <= repository.RootIndex {
@@ -601,7 +600,7 @@ func getInitialTargetStates(repositories []local.Repository) map[string]*getTarg
 		}
 		repository.Path = filepath.Clean(repository.Path)
 		repository.Root = filepath.Clean(repository.Root)
-		states[repository.Identity] = &getTarget{
+		states[repository.Identity] = &cloneTarget{
 			exists:     true,
 			repository: repository,
 		}
@@ -609,11 +608,11 @@ func getInitialTargetStates(repositories []local.Repository) map[string]*getTarg
 	return states
 }
 
-func getResolveTarget(
-	states map[string]*getTarget,
+func cloneResolveTarget(
+	states map[string]*cloneTarget,
 	spec repospec.Spec,
 	primaryRoot string,
-) (*getTarget, error) {
+) (*cloneTarget, error) {
 	if state, found := states[spec.Identity.String()]; found {
 		return state, nil
 	}
@@ -622,7 +621,7 @@ func getResolveTarget(
 	if err != nil {
 		return nil, err
 	}
-	state := &getTarget{
+	state := &cloneTarget{
 		repository: local.Repository{
 			Identity:  spec.Identity.String(),
 			Host:      spec.Host,
@@ -637,13 +636,13 @@ func getResolveTarget(
 	return state, nil
 }
 
-func getAcquire(
+func cloneAcquire(
 	ctx context.Context,
 	spec repospec.Spec,
-	state *getTarget,
-	flags getFlags,
+	state *cloneTarget,
+	flags cloneFlags,
 	filter ghcmd.PartialFilter,
-	deps GetDependencies,
+	deps CloneDependencies,
 	stderr io.Writer,
 ) (string, error) {
 	if err := ctx.Err(); err != nil {
@@ -654,36 +653,15 @@ func getAcquire(
 	}
 
 	if state.exists {
-		if deps.ValidateExisting != nil {
-			if err := deps.ValidateExisting(ctx, state.repository); err != nil {
-				return "", fmt.Errorf("validate registered repository %q at %q: %w", state.repository.Identity, state.repository.Path, err)
-			}
-		}
-		if !flags.update {
-			return getAbsolutePath(state.repository.Path)
-		}
-		path, err := rootpkg.PhysicalizeTarget(
-			state.repository.Root,
+		return "", fmt.Errorf(
+			"repository %q is already registered at %q; use add for existing checkouts",
+			state.repository.Identity,
 			state.repository.Path,
-			rootpkg.StrictlyUnder,
 		)
-		if err != nil {
-			return "", fmt.Errorf("revalidate existing repository containment: %w", err)
-		}
+	}
 
-		git, err := getGitOperations(deps.GitFactory, stderr, flags.silent || flags.parallel)
-		if err != nil {
-			return "", err
-		}
-		err = git.RepoSync(ctx, path, ghcmd.SyncOptions{
-			Host:   state.repository.Host,
-			Source: state.repository.Owner + "/" + state.repository.Repo,
-		})
-		if err != nil {
-			return "", getPreserveSilentGhError(err, stderr, flags.silent || flags.parallel)
-		}
-		state.repository.Path = path
-		return getAbsolutePath(path)
+	if err := cloneRequireMissingDestination(deps.Lstat, state.repository.Path); err != nil {
+		return "", err
 	}
 
 	path, err := rootpkg.PhysicalizeTarget(
@@ -705,6 +683,9 @@ func getAcquire(
 	if err := deps.MkdirAll(parent, 0o755); err != nil {
 		return "", fmt.Errorf("create clone parent %q: %w", parent, err)
 	}
+	if err := cloneRequireMissingDestination(deps.Lstat, state.repository.Path); err != nil {
+		return "", err
+	}
 	path, err = rootpkg.PhysicalizeTarget(
 		state.repository.Root,
 		path,
@@ -713,12 +694,15 @@ func getAcquire(
 	if err != nil {
 		return "", fmt.Errorf("revalidate clone destination after creating parents: %w", err)
 	}
+	if err := cloneRequireMissingDestination(deps.Lstat, path); err != nil {
+		return "", err
+	}
 
 	branch := flags.branch
 	if spec.Branch != "" {
 		branch = spec.Branch
 	}
-	git, err := getGitOperations(deps.GitFactory, stderr, flags.silent || flags.parallel)
+	git, err := cloneGitOperations(deps.GitFactory, stderr, flags.silent || flags.parallel)
 	if err != nil {
 		return "", err
 	}
@@ -727,33 +711,48 @@ func getAcquire(
 		Destination: path,
 		Shallow:     flags.shallow,
 		Branch:      branch,
-		Submodules:  getSubmoduleMode(flags.noRecursive),
+		Submodules:  cloneSubmoduleMode(flags.noRecursive),
 		Filter:      filter,
 	})
 	if err != nil {
-		return "", getPreserveSilentGhError(err, stderr, flags.silent || flags.parallel)
+		return "", clonePreserveSilentGhError(err, stderr, flags.silent || flags.parallel)
 	}
 
 	state.exists = true
 	state.repository.Path = path
-	return getAbsolutePath(path)
+	return cloneAbsolutePath(path)
 }
 
-// getGitOperations builds the Git operations used for one repository. gh's
+func cloneRequireMissingDestination(
+	lstat func(string) (fs.FileInfo, error),
+	path string,
+) error {
+	if lstat == nil {
+		return errors.New("check clone destination: lstat is nil")
+	}
+	if _, err := lstat(path); err == nil {
+		return fmt.Errorf("clone destination %q already exists; use add for existing checkouts", path)
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("check clone destination %q: %w", path, err)
+	}
+	return nil
+}
+
+// cloneGitOperations builds the Git operations used for one repository. gh's
 // own stdout and stderr are both directed at progress (gh-qw's stderr,
 // or io.Discard when silent): sending gh's stdout there too, rather than to
 // gh-qw's own stdout, keeps gh-qw's stdout contract intact (result paths
 // only) while still surfacing gh's output. When progress is not silenced
 // and ultimately wraps gh-qw's real stderr file (see
-// getLockedWriter.PassthroughFile), the Runner returned by factory detects
+// cloneLockedWriter.PassthroughFile), the Runner returned by factory detects
 // that and lets gh inherit the file descriptor directly instead of writing
 // through a pipe, restoring gh's own terminal detection for interactive
 // progress and color.
-func getGitOperations(
-	factory GetGitFactory,
+func cloneGitOperations(
+	factory CloneGitFactory,
 	stderr io.Writer,
 	silent bool,
-) (GetGitOperations, error) {
+) (CloneGitOperations, error) {
 	progress := stderr
 	if silent {
 		progress = io.Discard
@@ -765,14 +764,14 @@ func getGitOperations(
 	return git, nil
 }
 
-func getSubmoduleMode(noRecursive bool) ghcmd.SubmoduleMode {
+func cloneSubmoduleMode(noRecursive bool) ghcmd.SubmoduleMode {
 	if noRecursive {
 		return ghcmd.SubmodulesDisabled
 	}
 	return ghcmd.SubmodulesRecursive
 }
 
-func getPartialFilter(value string) (ghcmd.PartialFilter, error) {
+func clonePartialFilter(value string) (ghcmd.PartialFilter, error) {
 	switch value {
 	case "":
 		return ghcmd.PartialFilterNone, nil
@@ -788,16 +787,16 @@ func getPartialFilter(value string) (ghcmd.PartialFilter, error) {
 	}
 }
 
-func getRepositoryInputs(
+func cloneRepositoryInputs(
 	stdin io.Reader,
 	args []string,
-	isTerminal GetTerminalDetector,
+	isTerminal CloneTerminalDetector,
 ) ([]string, error) {
 	if len(args) != 0 {
 		return append([]string(nil), args...), nil
 	}
 	if isTerminal(stdin) {
-		return nil, getUsageError(errors.New("get requires a repository argument or non-terminal stdin"))
+		return nil, cloneUsageError(errors.New("clone requires a repository argument or non-terminal stdin"))
 	}
 
 	var inputs []string
@@ -819,15 +818,15 @@ func getRepositoryInputs(
 	}
 }
 
-func getAbsolutePath(path string) (string, error) {
+func cloneAbsolutePath(path string) (string, error) {
 	if path == "" || !filepath.IsAbs(path) {
 		return "", fmt.Errorf("result path %q is not absolute", path)
 	}
 	return filepath.Clean(path), nil
 }
 
-func getWritePath(output io.Writer, path string) error {
-	path, err := getAbsolutePath(path)
+func commandWritePath(output io.Writer, path string) error {
+	path, err := cloneAbsolutePath(path)
 	if err != nil {
 		return err
 	}
@@ -837,7 +836,7 @@ func getWritePath(output io.Writer, path string) error {
 	return nil
 }
 
-func getEmitDiscoveryWarnings(warnings []local.Warning, sink local.WarningSink, writer io.Writer) error {
+func cloneEmitDiscoveryWarnings(warnings []local.Warning, sink local.WarningSink, writer io.Writer) error {
 	if sink == nil {
 		return commandWriteWarnings(writer, warnings)
 	}
@@ -847,20 +846,20 @@ func getEmitDiscoveryWarnings(warnings []local.Warning, sink local.WarningSink, 
 	return nil
 }
 
-// getStderrOutputter is satisfied by errors that retain a bounded stderr
+// cloneStderrOutputter is satisfied by errors that retain a bounded stderr
 // tail, such as *ghcmd.CommandError. Depending on this narrow capability
-// instead of the concrete type keeps getPreserveSilentGhError usable with any
+// instead of the concrete type keeps clonePreserveSilentGhError usable with any
 // gh operation failure, including test doubles.
-type getStderrOutputter interface {
+type cloneStderrOutputter interface {
 	StderrOutput() []byte
 }
 
-func getPreserveSilentGhError(err error, stderr io.Writer, silent bool) error {
+func clonePreserveSilentGhError(err error, stderr io.Writer, silent bool) error {
 	if !silent {
 		return err
 	}
 
-	var outputter getStderrOutputter
+	var outputter cloneStderrOutputter
 	if !errors.As(err, &outputter) {
 		return err
 	}
@@ -877,18 +876,18 @@ func getPreserveSilentGhError(err error, stderr io.Writer, silent bool) error {
 	return err
 }
 
-func getUsageError(err error) error {
+func cloneUsageError(err error) error {
 	if err == nil {
 		return nil
 	}
-	var usage *GetUsageError
+	var usage *CloneUsageError
 	if errors.As(err, &usage) {
 		return err
 	}
-	return &GetUsageError{Err: err}
+	return &CloneUsageError{Err: err}
 }
 
-func getIsTerminal(reader io.Reader) bool {
+func cloneIsTerminal(reader io.Reader) bool {
 	descriptor, ok := reader.(interface{ Fd() uintptr })
 	return ok && term.IsTerminal(int(descriptor.Fd()))
 }

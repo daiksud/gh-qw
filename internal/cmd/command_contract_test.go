@@ -20,20 +20,20 @@ func (resolve commandContractResolver) Resolve() (rootpkg.Result, error) {
 	return resolve()
 }
 
-func TestGetStopsBeforeMutationWhenWarningsCannotBeWritten(t *testing.T) {
+func TestCloneStopsBeforeMutationWhenWarningsCannotBeWritten(t *testing.T) {
 	for _, parallel := range []bool{false, true} {
 		t.Run(map[bool]string{false: "ordered", true: "parallel"}[parallel], func(t *testing.T) {
 			root := t.TempDir()
 			var stdout bytes.Buffer
-			command := NewGetCommand(GetDependencies{
+			command := NewCloneCommand(CloneDependencies{
 				RootResolver: commandContractResolver(func() (rootpkg.Result, error) {
 					return rootpkg.Result{RepositoryRoots: []string{root}}, nil
 				}),
 				Discover: func(context.Context, []string) (local.DiscoveryResult, error) {
 					return local.DiscoveryResult{Warnings: []local.Warning{{Path: root}}}, nil
 				},
-				GitFactory: func(io.Writer, io.Writer) GetGitOperations {
-					t.Fatal("a failed warning must prevent clone or sync")
+				GitFactory: func(io.Writer, io.Writer) CloneGitOperations {
+					t.Fatal("a failed warning must prevent clone")
 					return nil
 				},
 				MkdirAll: func(string, fs.FileMode) error {
