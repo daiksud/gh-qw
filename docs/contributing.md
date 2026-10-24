@@ -22,6 +22,12 @@ bash .github/scripts/prepare-release.test.sh
 bash .github/scripts/release-notes.test.sh
 ```
 
+Install the pinned PR message validation tools with `mise install`, then run:
+
+```sh
+bash tests/github-actions/commitlint.sh
+```
+
 Keep changes focused and test observable behavior. Preserve safety boundaries,
 error causes, stdout/stderr ownership, and partial results. Delegate Git/gh
 semantics to the external tools. Do not add fake-only production paths.
@@ -45,6 +51,16 @@ Reviewers maintain semantic labels. The labeler adds `docs`, `test`, `build`, or
 `ci` only when every changed path matches a single category; remove stale labels
 when scope changes. Dependabot uses `build` for Go and `ci` for Actions updates.
 Keep the squash title and body consistent with the reviewed change.
+
+The independent [PRLint workflow](../.github/workflows/prlint.yml) validates the
+PR title and optional body together as the proposed squash commit message. The
+message follows Conventional Commits: use one of the types listed above, an
+optional lowercase scope, and a nonempty description without surrounding
+whitespace or a final period. Breaking headers, `BREAKING CHANGE` and the
+historical `BREAKING-CHANGE` footer, and `DEPRECATED` footers remain valid inputs
+to the release-version policy. PRLint imposes no title or body line-length limit.
+Passing syntax validation does not establish that the selected type or scope
+matches the change.
 
 ## Repository settings
 
