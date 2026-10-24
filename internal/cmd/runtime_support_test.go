@@ -65,7 +65,7 @@ func TestCommandWriteWarningsPreservesDiagnosticsAndErrors(t *testing.T) {
 	}
 }
 
-func TestApplicationCompositionUsesStreamAwareGetFactory(t *testing.T) {
+func TestApplicationCompositionUsesStreamAwareCloneFactory(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	deps := composeApplicationDependencies(ApplicationDependencies{Stdout: &stdout, Stderr: &stderr})
 	if deps.Resolver == nil || deps.Git == nil || deps.Gh == nil || deps.API == nil || deps.Discover == nil {
@@ -76,6 +76,6 @@ func TestApplicationCompositionUsesStreamAwareGetFactory(t *testing.T) {
 	}
 	runner, ok := deps.GitFactory(&stdout, &stderr).(*ghcmd.Runner)
 	if !ok || runner.Stdout != &stdout || runner.Stderr != &stderr {
-		t.Fatalf("stream-aware get factory returned %#v", runner)
+		t.Fatalf("stream-aware clone factory returned %#v", runner)
 	}
 }

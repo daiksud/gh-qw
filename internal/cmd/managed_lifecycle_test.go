@@ -148,7 +148,7 @@ func TestFlatAddRejectsInvalidWorktreeSlotBeforeDiscovery(t *testing.T) {
 	}
 }
 
-func TestGetRejectsStaleRegisteredLocation(t *testing.T) {
+func TestCloneRejectsRegisteredLocationWithoutReuse(t *testing.T) {
 	base, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -162,7 +162,7 @@ func TestGetRejectsStaleRegisteredLocation(t *testing.T) {
 		t.Fatal(err)
 	}
 	var stdout, stderr lockedBuffer
-	code := cmd.Execute(context.Background(), []string{"get", "acme/api"}, cmd.ApplicationDependencies{
+	code := cmd.Execute(context.Background(), []string{"clone", "acme/api"}, cmd.ApplicationDependencies{
 		Resolver: managedRootResolver{result: rootpkg.Result{
 			RepositoryRoots: []string{filepath.Join(base, "root")},
 			WorktreeRoot:    filepath.Join(base, "worktrees"),
@@ -171,8 +171,8 @@ func TestGetRejectsStaleRegisteredLocation(t *testing.T) {
 		Stdout:   &stdout,
 		Stderr:   &stderr,
 	})
-	if code != 1 || stdout.String() != "" || !strings.Contains(stderr.String(), "validate registered repository") {
-		t.Fatalf("stale get = %d, %q, %q", code, stdout.String(), stderr.String())
+	if code != 1 || stdout.String() != "" || !strings.Contains(stderr.String(), "already registered") {
+		t.Fatalf("registered clone = %d, %q, %q", code, stdout.String(), stderr.String())
 	}
 }
 

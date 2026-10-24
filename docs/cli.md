@@ -5,7 +5,7 @@ gh qw <command> [options]
 ```
 
 Names are case-sensitive. Every command supports `-h`/`--help`; the root supports
-`--version`. Help/version do not perform an operation. `clone` is an alias for `get`.
+`--version`. Help/version do not perform an operation.
 
 ## Results and errors
 
@@ -18,7 +18,7 @@ Names are case-sensitive. Every command supports `-h`/`--help`; the root support
 Successful data alone goes to stdout. Paths are absolute and use `/` separators
 on every platform; a path result is one line per completed item. Progress,
 warnings, plans, prompts, and errors go to stderr. Completed batch results may
-already have been printed when a later item fails. For batch `get`, invalid
+already have been printed when a later item fails. For batch `clone`, invalid
 specifications take status `2` precedence over runtime status `1`.
 
 Destructive confirmation reads the controlling terminal, defaults to no, and
@@ -35,7 +35,7 @@ ordinary progress, not errors or result paths.
 A canonical identity is `<host>/<owner>/<repo>`. A linked worktree adds `@<slot>`.
 Transport details are separate from identity.
 
-| Input to `get` | Interpretation |
+| Input to `clone` | Interpretation |
 | --- | --- |
 | `<repo>` | Complete owner using the authenticated login on `GH_HOST` or `github.com`. |
 | `<owner>/<repo>` | HTTPS on `GH_HOST` or `github.com`. |
@@ -70,7 +70,7 @@ at exactly `<host>/<owner>/<repo>[.git]` depth. It is not a destination override
 For local `file://` URLs (empty authority or `localhost`), those relative path
 components supply identity. A nonlocal file URL requires exactly
 `file://<host>/<owner>/<repo>[.git]`, with no user or port. Local discovery and
-migration can resolve file URLs; `get` rejects them as usage errors.
+migration can resolve file URLs; `clone` rejects them as usage errors.
 
 Network operations use native gh authentication for the selected host. See
 [environment and authentication](configuration.md#git-and-github-cli-environment),
@@ -84,25 +84,22 @@ Multiple matches are usage errors for mutating selection. Worktree commands use
 an explicit `-R` first; otherwise they resolve the discovered main repository
 from the current main or linked worktree. Outside one, supply `-R`.
 
-## get
+## clone
 
 ```text
-gh qw get [-u|--update] [-p] [--shallow] [-b|--branch <branch>]
-          [--no-recursive] [-s|--silent] [-P|--parallel]
-          [--partial blobless|treeless] [<repo>...]
+gh qw clone [-p] [--shallow] [-b|--branch <branch>]
+            [--no-recursive] [-s|--silent] [-P|--parallel]
+            [--partial blobless|treeless] [<repo>...]
 ```
 
-Clone missing repositories into the primary root using `gh repo clone`.
-Reuse only existing **explicitly registered** checkouts; without `--update`,
-leave them unchanged. Register each successfully acquired location before
-printing its absolute path. An unregistered checkout at the destination is not
-adopted implicitly or overwritten. A registered path that is missing or no
-longer an ordinary main Git repository is a stale-registration error, never a
-successful acquisition.
+Acquire new repositories in the primary root using `gh repo clone`. Register
+each successful clone before printing its absolute path. If the identity is
+already registered or the destination already exists, fail without reusing,
+updating, adopting, or overwriting it. Use `add` for an existing checkout.
+A failed clone is never registered.
 
 | Option | Effect |
 | --- | --- |
-| `-u`, `--update` | Sync an existing checkout's default branch from its own repository with `gh repo sync`, not a fork's parent. |
 | `-p` | Use SSH for shorthand/HTTPS input unless an HTTP(S) URL supplies a user; explicit SSH stays unchanged. |
 | `--shallow` | New clone depth `1`. |
 | `-b`, `--branch` | New clone's named branch with single-branch history. |
@@ -112,7 +109,6 @@ successful acquisition.
 | `--partial blobless` | New clone filter `blob:none`. |
 | `--partial treeless` | New clone filter `tree:0`. |
 
-Clone flags do not rewrite existing checkouts; sync has no submodule behavior.
 An unsupported partial-clone mode is a usage error.
 
 Positional inputs ignore stdin. Otherwise read one trimmed specification per

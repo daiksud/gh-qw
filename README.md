@@ -62,7 +62,7 @@ multiple roots are described in the [configuration reference](docs/configuration
 
 | Command | Result |
 | --- | --- |
-| `get` (`clone`) | Clone or update and register repositories, then print their paths. |
+| `clone` | Acquire and register a new repository; existing checkouts use `add`. |
 | `add` | Register a local repository; `--move` relocates it; `--worktree` adds a linked worktree. |
 | `list` | List registered repositories; `--worktree` selects worktrees only and `--all` both. |
 | `forget` | Unregister a repository without deleting its files. |
