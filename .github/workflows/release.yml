@@ -77,14 +77,14 @@ jobs:
       - name: Checkout frozen main
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.resolve.outputs.source-sha }}
+          ref: ${{ github.sha }}
           persist-credentials: false
       - name: Check source and build release artifact
         uses: ./.github/actions/release-build
         with:
           target: ${{ matrix.target }}
           version: ${{ needs.resolve.outputs.version }}
-          source-sha: ${{ needs.resolve.outputs.source-sha }}
+          source-sha: ${{ github.sha }}
   acceptance-stage:
     needs: [resolve, commit-stage]
     runs-on: ${{ matrix.runner }}
@@ -97,7 +97,7 @@ jobs:
       - name: Checkout frozen source separately from the consumer
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.resolve.outputs.source-sha }}
+          ref: ${{ github.sha }}
           path: .action
           persist-credentials: false
       - name: Accept the transferred release artifact
@@ -105,7 +105,7 @@ jobs:
         with:
           target: ${{ matrix.target }}
           version: ${{ needs.resolve.outputs.version }}
-          source-sha: ${{ needs.resolve.outputs.source-sha }}
+          source-sha: ${{ github.sha }}
   release:
     needs: [resolve, commit-stage, acceptance-stage]
     runs-on: ubuntu-slim
@@ -115,13 +115,13 @@ jobs:
       - name: Checkout frozen main and complete release history
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.resolve.outputs.source-sha }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
       - name: Publish accepted release artifacts
         uses: ./.github/actions/release-publish
         with:
-          source-sha: ${{ needs.resolve.outputs.source-sha }}
+          source-sha: ${{ github.sha }}
           version: ${{ needs.resolve.outputs.version }}
           previous-tag: ${{ needs.resolve.outputs.previous-tag }}
           previous-sha: ${{ needs.resolve.outputs.previous-sha }}
@@ -136,11 +136,11 @@ jobs:
       - name: Checkout frozen verification source separately from the consumer
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.resolve.outputs.source-sha }}
+          ref: ${{ github.sha }}
           path: .action
           persist-credentials: false
       - name: Verify immutable published release
         uses: ./.action/.github/actions/release-verify
         with:
-          source-sha: ${{ needs.resolve.outputs.source-sha }}
+          source-sha: ${{ github.sha }}
           version: ${{ needs.resolve.outputs.version }}
