@@ -46,6 +46,7 @@ runs:
       uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
       with:
         go-version-file: .action/go.mod
+        cache-dependency-path: .action/go.sum
         cache: true
     - name: Verify and exercise transferred product
       shell: bash
@@ -60,9 +61,13 @@ runs:
         set -euo pipefail
         bash .github/scripts/release-artifacts.sh verify \
           "$TARGET" "$VERSION" "$SOURCE_SHA" "$ARTIFACT_DIR"
-        binary="$ARTIFACT_DIR/$ASSET"
-        if [[ "$RUNNER_OS" != Windows ]]; then
-          chmod +x "$binary"
+        execution_directory="$(mktemp -d "$PWD/.release-acceptance.XXXXXXXX")"
+        trap 'rm -rf -- "$execution_directory"' EXIT
+        binary="$(bash .github/scripts/release-artifacts.sh prepare-executable \
+          "$TARGET" "$VERSION" "$SOURCE_SHA" "$ARTIFACT_DIR" "$execution_directory")"
+        test_binary="$binary"
+        if [[ "$RUNNER_OS" == Windows ]]; then
+          test_binary="$(cygpath -w "$binary")"
         fi
         [[ "$("$binary" --version)" == "gh qw version $VERSION" ]]
-        GHQW_TEST_EXECUTABLE="$binary" go test ./...
+        GHQW_TEST_EXECUTABLE="$test_binary" go test ./...

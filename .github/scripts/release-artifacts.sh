@@ -58,9 +58,9 @@ describe_target() {
 
 sha256_file() {
   if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum "$1" | awk '{print $1}'
+    sha256sum < "$1" | awk '{print $1}'
   elif command -v shasum >/dev/null 2>&1; then
-    shasum -a 256 "$1" | awk '{print $1}'
+    shasum -a 256 < "$1" | awk '{print $1}'
   else
     fail "no SHA-256 tool is available"
   fi
@@ -160,6 +160,22 @@ case "$command" in
     for target in darwin-amd64 darwin-arm64 linux-amd64 linux-arm64 windows-amd64; do
       verify_one "$target" "$2" "$3" "$4"
     done
+    ;;
+  prepare-executable)
+    [ "$#" -eq 6 ] || fail "usage: release-artifacts.sh prepare-executable TARGET VERSION SOURCE_SHA ARTIFACT_DIR EXECUTION_DIR"
+    require_version "$3"
+    require_source_sha "$4"
+    verify_single_inventory "$2" "$5"
+    verify_one "$2" "$3" "$4" "$5"
+    execution_directory="$6"
+    [ -d "$execution_directory" ] && [ ! -L "$execution_directory" ] || fail "missing execution directory"
+    [ -z "$(inventory "$execution_directory")" ] || fail "execution directory must be empty"
+    # The identity sidecar is not a Windows XML side-by-side EXE manifest.
+    # Execute identical verified bytes without placing that sidecar beside them.
+    cp -- "$5/$TARGET_ASSET" "$execution_directory/$TARGET_ASSET"
+    cmp -- "$5/$TARGET_ASSET" "$execution_directory/$TARGET_ASSET"
+    chmod +x "$execution_directory/$TARGET_ASSET"
+    printf '%s\n' "$execution_directory/$TARGET_ASSET"
     ;;
   verify-published)
     [ "$#" -eq 5 ] || fail "usage: release-artifacts.sh verify-published VERSION SOURCE_SHA ACCEPTED_DIR PUBLISHED_DIR"
