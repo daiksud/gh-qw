@@ -61,25 +61,19 @@ runs:
           cmp -- "$source_directory/$ASSET.manifest" "$execution_directory/$ASSET.manifest"
           bash .github/scripts/ci-artifacts.sh verify \
             "$TARGET" "$SOURCE_SHA" "$execution_directory"
-          binary="$execution_directory/$ASSET"
+          # Windows treats EXE.manifest as an XML side-by-side manifest.
+          # Keep the verified CI identity sidecar outside the execution directory.
+          mkdir -p "$execution_directory/run"
+          cp -- "$execution_directory/$ASSET" "$execution_directory/run/$ASSET"
+          cmp -- "$execution_directory/$ASSET" "$execution_directory/run/$ASSET"
+          binary="$execution_directory/run/$ASSET"
           test_binary="$(cygpath -w "$binary")"
         else
           binary="$ARTIFACT_DIRECTORY/$ASSET"
           test_binary="$binary"
         fi
         chmod +x "$binary"
-        if [[ "$RUNNER_OS" == Windows ]]; then
-          # Invoke the verified executable through the native Windows shell.
-          if ! version="$(CANDIDATE_BINARY="$test_binary" pwsh -NoLogo -NoProfile -NonInteractive -Command \
-            '& $env:CANDIDATE_BINARY --version; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }' | tr -d '\r')"; then
-            ls -l "$binary" >&2
-            icacls.exe "$test_binary" >&2 || true
-            exit 1
-          fi
-        else
-          version="$("$binary" --version)"
-        fi
-        [[ "$version" == 'gh qw version dev' ]]
+        [[ "$("$binary" --version)" == 'gh qw version dev' ]]
         if [[ "$TARGET" == linux-amd64 ]]; then
           GHQW_TEST_EXECUTABLE="$test_binary" go test -race ./tests
         else
