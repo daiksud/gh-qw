@@ -1,0 +1,81 @@
+name: Accept gh-qw CI artifact
+description: Verify and exercise the transferred product without rebuilding it.
+inputs:
+  target:
+    description: Allowlisted native CI target.
+    required: true
+  kind:
+    description: Allowlisted product acceptance kind.
+    required: true
+  source-sha:
+    description: Full event source commit SHA.
+    required: true
+  artifact-directory:
+    description: Downloaded product artifact directory.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Validate source, acceptance kind, target, and native runner
+      id: target
+      shell: bash
+      working-directory: .action
+      env:
+        ACCEPTANCE_KIND: ${{ inputs.kind }}
+        SOURCE_SHA: ${{ inputs.source-sha }}
+        TARGET: ${{ inputs.target }}
+      run: |
+        set -euo pipefail
+        [[ "$ACCEPTANCE_KIND" == process ]]
+        [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+        [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]]
+        bash .github/scripts/ci-artifacts.sh target "$TARGET" >> "$GITHUB_OUTPUT"
+        expected_os="$(bash .github/scripts/ci-artifacts.sh target "$TARGET" | sed -n 's/^runner-os=//p')"
+        expected_arch="$(bash .github/scripts/ci-artifacts.sh target "$TARGET" | sed -n 's/^runner-arch=//p')"
+        [[ "$RUNNER_OS" == "$expected_os" ]]
+        [[ "$RUNNER_ARCH" == "$expected_arch" ]]
+    - name: Set up Go
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version-file: .action/go.mod
+        cache: true
+    - name: Verify transferred product and run process acceptance
+      shell: bash
+      working-directory: .action
+      env:
+        ARTIFACT_DIRECTORY: ${{ inputs.artifact-directory }}
+        ASSET: ${{ steps.target.outputs.asset }}
+        SOURCE_SHA: ${{ inputs.source-sha }}
+        TARGET: ${{ inputs.target }}
+      run: |
+        set -euo pipefail
+        bash .github/scripts/ci-artifacts.sh verify \
+          "$TARGET" "$SOURCE_SHA" "$ARTIFACT_DIRECTORY"
+        if [[ "$RUNNER_OS" == Windows ]]; then
+          # Run verified bytes from an isolated workspace directory, not runner.temp.
+          source_directory="$(cygpath -u "$ARTIFACT_DIRECTORY")"
+          execution_directory="$(mktemp -d "$PWD/.ci-acceptance.XXXXXXXX")"
+          trap 'rm -rf -- "$execution_directory"' EXIT
+          cp -- "$source_directory/$ASSET" "$source_directory/$ASSET.manifest" "$execution_directory/"
+          cmp -- "$source_directory/$ASSET" "$execution_directory/$ASSET"
+          cmp -- "$source_directory/$ASSET.manifest" "$execution_directory/$ASSET.manifest"
+          bash .github/scripts/ci-artifacts.sh verify \
+            "$TARGET" "$SOURCE_SHA" "$execution_directory"
+          # Windows treats EXE.manifest as an XML side-by-side manifest.
+          # Keep the verified CI identity sidecar outside the execution directory.
+          mkdir -p "$execution_directory/run"
+          cp -- "$execution_directory/$ASSET" "$execution_directory/run/$ASSET"
+          cmp -- "$execution_directory/$ASSET" "$execution_directory/run/$ASSET"
+          binary="$execution_directory/run/$ASSET"
+          test_binary="$(cygpath -w "$binary")"
+        else
+          binary="$ARTIFACT_DIRECTORY/$ASSET"
+          test_binary="$binary"
+        fi
+        chmod +x "$binary"
+        [[ "$("$binary" --version)" == 'gh qw version dev' ]]
+        if [[ "$TARGET" == linux-amd64 ]]; then
+          GHQW_TEST_EXECUTABLE="$test_binary" go test -race ./tests
+        else
+          GHQW_TEST_EXECUTABLE="$test_binary" go test ./tests
+        fi

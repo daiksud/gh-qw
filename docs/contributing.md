@@ -19,6 +19,7 @@ go test ./...
 go test -race ./...
 go vet ./...
 bash .github/scripts/prepare-release.test.sh
+bash .github/scripts/ci-artifacts.test.sh
 bash .github/scripts/release-source.test.sh
 bash .github/scripts/release-notes.test.sh
 bash .github/scripts/release-artifacts.test.sh
@@ -89,6 +90,18 @@ amd64/arm64, macOS arm64, Windows amd64, race, format/vet, settings validation,
 and release-preparation tests. Dependabot auto-merge uses `pull_request_target`
 without checking out PR code. Required checks and resolved threads still apply.
 When a required context changes, land the workflow before applying its ruleset.
+
+The staged `ci-pr` and `ci-push` workflows additionally publish `pass`. Their
+commit stage builds one candidate on each native platform; their acceptance
+stage verifies and tests those exact transferred bytes without rebuilding the
+product. PR validation moves code changes through Draft, Commit stage, Ready,
+and Acceptance stage in one run. Title/body-only edits remain isolated in
+PRLint and do not replace code-validation results.
+
+During rollout, the existing `CI` workflow remains unchanged and `CI success`
+remains required. Changing the required context to `pass` is a separate
+repository-settings operation after the new workflows are verified. Do not
+remove the old workflow or required context as part of workflow deployment.
 
 ## Releases
 

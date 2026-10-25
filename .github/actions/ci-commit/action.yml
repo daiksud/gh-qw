@@ -1,0 +1,87 @@
+name: Build and validate gh-qw CI artifact
+description: Run commit-stage checks and build one native product artifact.
+inputs:
+  target:
+    description: Allowlisted native CI target.
+    required: true
+  source-sha:
+    description: Full event source commit SHA.
+    required: true
+outputs:
+  artifact-directory:
+    description: Directory containing the product artifact and identity manifest.
+    value: ${{ steps.target.outputs.artifact-directory }}
+runs:
+  using: composite
+  steps:
+    - name: Validate source, target, and native runner
+      id: target
+      shell: bash
+      env:
+        SOURCE_SHA: ${{ inputs.source-sha }}
+        TARGET: ${{ inputs.target }}
+      run: |
+        set -euo pipefail
+        [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+        [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]]
+        bash .github/scripts/ci-artifacts.sh target "$TARGET" >> "$GITHUB_OUTPUT"
+        expected_os="$(bash .github/scripts/ci-artifacts.sh target "$TARGET" | sed -n 's/^runner-os=//p')"
+        expected_arch="$(bash .github/scripts/ci-artifacts.sh target "$TARGET" | sed -n 's/^runner-arch=//p')"
+        [[ "$RUNNER_OS" == "$expected_os" ]]
+        [[ "$RUNNER_ARCH" == "$expected_arch" ]]
+        artifact_directory="$RUNNER_TEMP/gh-qw-ci-artifact-$TARGET"
+        mkdir -p "$artifact_directory"
+        printf 'artifact-directory=%s\n' "$artifact_directory" >> "$GITHUB_OUTPUT"
+    - name: Set up Go
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version-file: go.mod
+        cache: true
+    - name: Run shared Linux commit checks
+      if: inputs.target == 'linux-amd64'
+      shell: bash
+      run: |
+        set -euo pipefail
+        unformatted="$(gofmt -l .)"
+        [[ -z "$unformatted" ]] || {
+          printf 'Unformatted Go files:\n%s\n' "$unformatted" >&2
+          exit 1
+        }
+        go vet ./...
+        go list ./... | grep -v '/tests$' | xargs go test -race
+
+        validator="$RUNNER_TEMP/gh-infra-v0.13.0"
+        curl --proto '=https' --tlsv1.2 --location --fail --silent --show-error \
+          --output "$validator" \
+          https://github.com/babarot/gh-infra/releases/download/v0.13.0/gh-infra_linux-amd64
+        printf '%s  %s\n' \
+          ecf6dc47e6c51312308de3c514705990a3a8f24e47fb43da34425470c9a117e4 \
+          "$validator" | sha256sum --check --strict
+        chmod +x "$validator"
+        "$validator" validate .github/settings.yml
+
+        bash .github/scripts/prepare-release.test.sh
+        bash .github/scripts/release-source.test.sh
+        bash .github/scripts/release-notes.test.sh
+        bash .github/scripts/release-artifacts.test.sh
+        bash .github/scripts/ci-artifacts.test.sh
+    - name: Test non-process packages
+      shell: bash
+      run: go list ./... | grep -v '/tests$' | xargs go test
+    - name: Build native product and identity manifest
+      shell: bash
+      env:
+        ARTIFACT_DIRECTORY: ${{ steps.target.outputs.artifact-directory }}
+        ASSET: ${{ steps.target.outputs.asset }}
+        SOURCE_SHA: ${{ inputs.source-sha }}
+        TARGET: ${{ inputs.target }}
+        TARGET_GOOS: ${{ steps.target.outputs.goos }}
+        TARGET_GOARCH: ${{ steps.target.outputs.goarch }}
+      run: |
+        set -euo pipefail
+        CGO_ENABLED=0 GOOS="$TARGET_GOOS" GOARCH="$TARGET_GOARCH" \
+          go build -trimpath -o "$ARTIFACT_DIRECTORY/$ASSET" .
+        bash .github/scripts/ci-artifacts.sh manifest \
+          "$TARGET" "$SOURCE_SHA" "$ARTIFACT_DIRECTORY"
+        bash .github/scripts/ci-artifacts.sh verify \
+          "$TARGET" "$SOURCE_SHA" "$ARTIFACT_DIRECTORY"
