@@ -23,7 +23,20 @@ for target in linux-amd64 linux-arm64 darwin-arm64 windows-amd64; do
   bash "$TOOL" verify "$target" "$SOURCE_SHA" "$directory"
 done
 
-cp -R "$TEMP/linux-amd64" "$TEMP/corrupt"
+# A Windows-style path must produce a portable digest after relocation.
+escaped_directory="$TEMP/with\backslashes"
+mkdir -p "$escaped_directory"
+cp "$TEMP/linux-amd64/gh-qw-linux-amd64" "$escaped_directory/"
+bash "$TOOL" manifest linux-amd64 "$SOURCE_SHA" "$escaped_directory"
+digest="$(sed -n 's/^sha256=//p' "$escaped_directory/gh-qw-linux-amd64.manifest")"
+[[ "$digest" =~ ^[0-9a-f]{64}$ ]] || {
+  echo "FAIL path-dependent CI artifact digest" >&2
+  exit 1
+}
+cp -R "$escaped_directory" "$TEMP/relocated"
+bash "$TOOL" verify linux-amd64 "$SOURCE_SHA" "$TEMP/relocated"
+
+NaN
 printf 'corrupt\n' >> "$TEMP/corrupt/gh-qw-linux-amd64"
 if bash "$TOOL" verify linux-amd64 "$SOURCE_SHA" "$TEMP/corrupt" >/dev/null 2>&1; then
   echo "FAIL corrupt CI artifact was accepted" >&2
