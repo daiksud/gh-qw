@@ -84,7 +84,7 @@ jobs:
           artifact-directory: ${{ runner.temp }}/product
   pass:
     needs: [resolve, commit-stage, acceptance-stage]
-    if: always()
+    if: always() && !cancelled()
     runs-on: ubuntu-slim
     timeout-minutes: 3
     permissions: {}
