@@ -91,6 +91,8 @@ transferred bytes without rebuilding the product. PR code and base changes move
 through Draft, Commit stage, Ready, and Acceptance stage in one run. Title/body-
 only edits remain isolated in PRLint and do not replace code-validation results.
 The `ci-push` workflow runs the same Commit and Acceptance stages for `main`.
+Fork and Dependabot pull requests that cannot change Draft/Ready state are not
+supported; a maintainer must handle them manually without a privileged fallback.
 
 Together the staged workflows preserve Go builds and tests on Linux amd64/arm64,
 macOS arm64, and Windows amd64, plus race, format/vet, settings validation, and
