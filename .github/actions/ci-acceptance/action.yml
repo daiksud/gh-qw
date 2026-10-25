@@ -57,8 +57,17 @@ runs:
           execution_directory="$(mktemp -d "$PWD/.ci-acceptance.XXXXXXXX")"
           trap 'rm -rf -- "$execution_directory"' EXIT
           cp -- "$source_directory/$ASSET" "$source_directory/$ASSET.manifest" "$execution_directory/"
-          bash .github/scripts/ci-artifacts.sh verify \
-            "$TARGET" "$SOURCE_SHA" "$execution_directory"
+          sha256sum "$source_directory/$ASSET" "$execution_directory/$ASSET"
+          cmp -- "$source_directory/$ASSET" "$execution_directory/$ASSET"
+          cmp -- "$source_directory/$ASSET.manifest" "$execution_directory/$ASSET.manifest"
+          if ! bash .github/scripts/ci-artifacts.sh verify \
+            "$TARGET" "$SOURCE_SHA" "$execution_directory"; then
+            printf 'Transferred manifest:\n' >&2
+            cat "$source_directory/$ASSET.manifest" >&2
+            printf 'Workspace manifest:\n' >&2
+            cat "$execution_directory/$ASSET.manifest" >&2
+            exit 1
+          fi
           binary="$execution_directory/$ASSET"
           test_binary="$(cygpath -w "$binary")"
         else
