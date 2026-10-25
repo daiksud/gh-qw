@@ -1,0 +1,149 @@
+name: ci-pr
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+permissions: {}
+defaults:
+  run:
+    shell: bash
+concurrency:
+  # Metadata edits must not cancel code validation.
+  group: ci-pr-${{ github.event.pull_request.number }}-${{ github.event.action == 'edited' && github.event.changes.base == null && 'metadata' || 'code' }}
+  cancel-in-progress: true
+jobs:
+  code-start:
+    if: github.event.action != 'edited' || github.event.changes.base != null
+    runs-on: ubuntu-slim
+    timeout-minutes: 3
+    permissions: {statuses: write}
+    steps:
+      - name: Mark code validation pending
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$HEAD_SHA" \
+            -f state=pending -f context=pass \
+            -f description='Code validation is running' \
+            -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+  draft:
+    needs: code-start
+    runs-on: ubuntu-slim
+    timeout-minutes: 3
+    permissions: {pull-requests: write}
+    steps:
+      - name: Set draft state
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: gh pr ready "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --undo
+  resolve:
+    needs: draft
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    permissions: {contents: read}
+    outputs:
+      build-matrix: ${{ steps.metadata.outputs.build-matrix }}
+      acceptance-matrix: ${{ steps.metadata.outputs.acceptance-matrix }}
+    steps:
+      - name: Checkout validation source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Resolve CI target matrices
+        id: metadata
+        uses: ./.github/actions/ci-metadata
+  commit-stage:
+    needs: resolve
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    permissions: {contents: read}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.resolve.outputs.build-matrix) }}
+    steps:
+      - name: Checkout validation source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Check source and build candidate
+        id: build
+        uses: ./.github/actions/ci-commit
+        with:
+          target: ${{ matrix.target }}
+          source-sha: ${{ github.sha }}
+      - name: Transfer candidate artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ci-${{ matrix.target }}-${{ github.sha }}
+          path: ${{ steps.build.outputs.artifact-directory }}
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 1
+  ready:
+    needs: commit-stage
+    runs-on: ubuntu-slim
+    timeout-minutes: 3
+    permissions: {pull-requests: write}
+    steps:
+      - name: Set ready state
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: gh pr ready "$PR_NUMBER" --repo "$GITHUB_REPOSITORY"
+  acceptance-stage:
+    needs: [resolve, commit-stage, ready]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    permissions: {contents: read}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.resolve.outputs.acceptance-matrix) }}
+    steps:
+      - name: Checkout candidate source separately from the consumer
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: .action
+          persist-credentials: false
+      - name: Retrieve this run's candidate artifact
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ci-${{ matrix.target }}-${{ github.sha }}
+          path: ${{ runner.temp }}/product
+          digest-mismatch: error
+      - name: Accept the transferred candidate
+        uses: ./.action/.github/actions/ci-acceptance
+        with:
+          target: ${{ matrix.target }}
+          kind: ${{ matrix.kind }}
+          source-sha: ${{ github.sha }}
+          artifact-directory: ${{ runner.temp }}/product
+  code-result:
+    needs: [code-start, draft, resolve, commit-stage, ready, acceptance-stage]
+    # Metadata-only runs never replace the required code status with skipped success.
+    if: always() && !cancelled() && (github.event.action != 'edited' || github.event.changes.base != null)
+    runs-on: ubuntu-slim
+    timeout-minutes: 3
+    permissions: {statuses: write}
+    steps:
+      - name: Publish aggregate code result
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          state=failure
+          description='Code validation did not succeed'
+          if jq -e 'length == 6 and all(.[]; .result == "success")' <<< "$RESULTS" > /dev/null; then
+            state=success
+            description='Code validation passed'
+          fi
+          gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$HEAD_SHA" \
+            -f state="$state" -f context=pass -f description="$description" \
+            -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          [[ "$state" == success ]]

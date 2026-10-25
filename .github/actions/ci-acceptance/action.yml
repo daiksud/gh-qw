@@ -1,0 +1,63 @@
+name: Accept gh-qw CI artifact
+description: Verify and exercise the transferred product without rebuilding it.
+inputs:
+  target:
+    description: Allowlisted native CI target.
+    required: true
+  kind:
+    description: Allowlisted product acceptance kind.
+    required: true
+  source-sha:
+    description: Full event source commit SHA.
+    required: true
+  artifact-directory:
+    description: Downloaded product artifact directory.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Validate source, acceptance kind, target, and native runner
+      id: target
+      shell: bash
+      working-directory: .action
+      env:
+        ACCEPTANCE_KIND: ${{ inputs.kind }}
+        SOURCE_SHA: ${{ inputs.source-sha }}
+        TARGET: ${{ inputs.target }}
+      run: |
+        set -euo pipefail
+        [[ "$ACCEPTANCE_KIND" == process ]]
+        [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+        [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]]
+        bash .github/scripts/ci-artifacts.sh target "$TARGET" >> "$GITHUB_OUTPUT"
+        expected_os="$(bash .github/scripts/ci-artifacts.sh target "$TARGET" | sed -n 's/^runner-os=//p')"
+        expected_arch="$(bash .github/scripts/ci-artifacts.sh target "$TARGET" | sed -n 's/^runner-arch=//p')"
+        [[ "$RUNNER_OS" == "$expected_os" ]]
+        [[ "$RUNNER_ARCH" == "$expected_arch" ]]
+    - name: Set up Go
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version-file: .action/go.mod
+        cache: true
+    - name: Verify transferred product and run process acceptance
+      shell: bash
+      working-directory: .action
+      env:
+        ARTIFACT_DIRECTORY: ${{ inputs.artifact-directory }}
+        ASSET: ${{ steps.target.outputs.asset }}
+        SOURCE_SHA: ${{ inputs.source-sha }}
+        TARGET: ${{ inputs.target }}
+      run: |
+        set -euo pipefail
+        bash .github/scripts/ci-artifacts.sh verify \
+          "$TARGET" "$SOURCE_SHA" "$ARTIFACT_DIRECTORY"
+        binary="$ARTIFACT_DIRECTORY/$ASSET"
+        if [[ "$RUNNER_OS" != Windows ]]; then
+          chmod +x "$binary"
+        fi
+        [[ "$("$binary" --version)" == 'gh qw version dev' ]]
+        if [[ "$TARGET" == linux-amd64 ]]; then
+          GHQW_TEST_EXECUTABLE="$binary" go test -race ./tests
+        else
+          GHQW_TEST_EXECUTABLE="$binary" go test ./tests
+        fi
