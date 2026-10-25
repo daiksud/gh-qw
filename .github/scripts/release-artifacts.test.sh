@@ -25,11 +25,41 @@ done
 bash "$TOOL" verify-all "$VERSION" "$SOURCE_SHA" "$TEMP/all"
 bash "$TOOL" verify-published "$VERSION" "$SOURCE_SHA" "$TEMP/all" "$TEMP/published"
 
+# Relocating across Windows-style paths must not change digest text.
+escaped_directory="$TEMP/with\\backslashes"
+mkdir -p "$escaped_directory"
+cp "$TEMP/all/gh-qw-windows-amd64.exe" "$TEMP/all/gh-qw-windows-amd64.exe.manifest" "$escaped_directory/"
+bash "$TOOL" verify windows-amd64 "$VERSION" "$SOURCE_SHA" "$escaped_directory"
+mkdir -p "$TEMP/execution"
+binary="$(bash "$TOOL" prepare-executable windows-amd64 "$VERSION" "$SOURCE_SHA" "$escaped_directory" "$TEMP/execution")"
+cmp "$TEMP/all/gh-qw-windows-amd64.exe" "$binary"
+[[ ! -e "$binary.manifest" ]]
+
 cp -R "$TEMP/all" "$TEMP/corrupt"
 printf 'corrupt\n' >> "$TEMP/corrupt/gh-qw-linux-amd64"
 if bash "$TOOL" verify-all "$VERSION" "$SOURCE_SHA" "$TEMP/corrupt" >/dev/null 2>&1; then
   echo "FAIL corrupt asset was accepted" >&2
   exit 1
+fi
+
+mkdir -p "$TEMP/corrupt-execution"
+mkdir -p "$TEMP/corrupt-single"
+cp "$TEMP/corrupt/gh-qw-linux-amd64" "$TEMP/corrupt/gh-qw-linux-amd64.manifest" "$TEMP/corrupt-single/"
+if bash "$TOOL" prepare-executable linux-amd64 "$VERSION" "$SOURCE_SHA" "$TEMP/corrupt-single" "$TEMP/corrupt-execution" >/dev/null 2>&1; then
+  echo "FAIL corrupt executable was prepared" >&2
+  exit 1
+fi
+
+# Native CI supplies its built candidate so Windows exercises real PE execution.
+if [[ "$#" -eq 2 ]]; then
+  target="$1"
+  candidate="$2"
+  asset="$(bash "$TOOL" target "$target" | sed -n 's/^asset=//p')"
+  mkdir -p "$TEMP/native" "$TEMP/native-run"
+  cp "$candidate" "$TEMP/native/$asset"
+  bash "$TOOL" manifest "$target" "$VERSION" "$SOURCE_SHA" "$TEMP/native"
+  binary="$(bash "$TOOL" prepare-executable "$target" "$VERSION" "$SOURCE_SHA" "$TEMP/native" "$TEMP/native-run")"
+  [[ "$("$binary" --version)" == 'gh qw version dev' ]]
 fi
 
 cp -R "$TEMP/all" "$TEMP/extra"

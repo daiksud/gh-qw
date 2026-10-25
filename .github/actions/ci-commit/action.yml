@@ -85,3 +85,4 @@ runs:
           "$TARGET" "$SOURCE_SHA" "$ARTIFACT_DIRECTORY"
         bash .github/scripts/ci-artifacts.sh verify \
           "$TARGET" "$SOURCE_SHA" "$ARTIFACT_DIRECTORY"
+        bash .github/scripts/release-artifacts.test.sh "$TARGET" "$ARTIFACT_DIRECTORY/$ASSET"
