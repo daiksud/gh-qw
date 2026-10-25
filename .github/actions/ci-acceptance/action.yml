@@ -51,13 +51,18 @@ runs:
         set -euo pipefail
         bash .github/scripts/ci-artifacts.sh verify \
           "$TARGET" "$SOURCE_SHA" "$ARTIFACT_DIRECTORY"
-        binary="$ARTIFACT_DIRECTORY/$ASSET"
-        if [[ "$RUNNER_OS" != Windows ]]; then
+        if [[ "$RUNNER_OS" == Windows ]]; then
+          artifact_directory="$(cygpath -u "$ARTIFACT_DIRECTORY")"
+          binary="$artifact_directory/$ASSET"
+          test_binary="$(cygpath -w "$binary")"
+        else
+          binary="$ARTIFACT_DIRECTORY/$ASSET"
+          test_binary="$binary"
           chmod +x "$binary"
         fi
         [[ "$("$binary" --version)" == 'gh qw version dev' ]]
         if [[ "$TARGET" == linux-amd64 ]]; then
-          GHQW_TEST_EXECUTABLE="$binary" go test -race ./tests
+          GHQW_TEST_EXECUTABLE="$test_binary" go test -race ./tests
         else
-          GHQW_TEST_EXECUTABLE="$binary" go test ./tests
+          GHQW_TEST_EXECUTABLE="$test_binary" go test ./tests
         fi
