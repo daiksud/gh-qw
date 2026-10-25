@@ -85,23 +85,19 @@ Settings not represented in the manifest are managed separately through GitHub.
 Only squash merges are allowed. The squash commit uses the reviewed PR title
 and body; the inactive merge-commit defaults retain the same values.
 
-The required status is `CI success`, aggregating Go builds/tests on Linux
-amd64/arm64, macOS arm64, Windows amd64, race, format/vet, settings validation,
-and release-preparation tests. Dependabot auto-merge uses `pull_request_target`
+The required status is `pass`. The `ci-pr` commit stage builds one candidate on
+each native platform; its acceptance stage verifies and tests those exact
+transferred bytes without rebuilding the product. PR code and base changes move
+through Draft, Commit stage, Ready, and Acceptance stage in one run. Title/body-
+only edits remain isolated in PRLint and do not replace code-validation results.
+The `ci-push` workflow runs the same Commit and Acceptance stages for `main`.
+Fork and Dependabot pull requests that cannot change Draft/Ready state are not
+supported; a maintainer must handle them manually without a privileged fallback.
+
+Together the staged workflows preserve Go builds and tests on Linux amd64/arm64,
+macOS arm64, and Windows amd64, plus race, format/vet, settings validation, and
+release-preparation tests. Dependabot auto-merge uses `pull_request_target`
 without checking out PR code. Required checks and resolved threads still apply.
-When a required context changes, land the workflow before applying its ruleset.
-
-The staged `ci-pr` and `ci-push` workflows additionally publish `pass`. Their
-commit stage builds one candidate on each native platform; their acceptance
-stage verifies and tests those exact transferred bytes without rebuilding the
-product. PR validation moves code changes through Draft, Commit stage, Ready,
-and Acceptance stage in one run. Title/body-only edits remain isolated in
-PRLint and do not replace code-validation results.
-
-During rollout, the existing `CI` workflow remains unchanged and `CI success`
-remains required. Changing the required context to `pass` is a separate
-repository-settings operation after the new workflows are verified. Do not
-remove the old workflow or required context as part of workflow deployment.
 
 ## Releases
 
