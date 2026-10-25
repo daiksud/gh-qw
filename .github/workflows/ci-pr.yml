@@ -31,7 +31,7 @@ jobs:
     needs: code-start
     runs-on: ubuntu-slim
     timeout-minutes: 3
-    permissions: {pull-requests: write}
+    permissions: {contents: write, pull-requests: write}
     steps:
       - name: Set draft state
         env:
@@ -87,7 +87,7 @@ jobs:
     needs: commit-stage
     runs-on: ubuntu-slim
     timeout-minutes: 3
-    permissions: {pull-requests: write}
+    permissions: {contents: write, pull-requests: write}
     steps:
       - name: Set ready state
         env:
