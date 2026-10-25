@@ -68,7 +68,18 @@ runs:
           test_binary="$binary"
         fi
         chmod +x "$binary"
-        [[ "$("$binary" --version)" == 'gh qw version dev' ]]
+        if [[ "$RUNNER_OS" == Windows ]]; then
+          # Invoke the verified executable through the native Windows shell.
+          if ! version="$(CANDIDATE_BINARY="$test_binary" pwsh -NoLogo -NoProfile -NonInteractive -Command \
+            '& $env:CANDIDATE_BINARY --version; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }' | tr -d '\r')"; then
+            ls -l "$binary" >&2
+            icacls.exe "$test_binary" >&2 || true
+            exit 1
+          fi
+        else
+          version="$("$binary" --version)"
+        fi
+        [[ "$version" == 'gh qw version dev' ]]
         if [[ "$TARGET" == linux-amd64 ]]; then
           GHQW_TEST_EXECUTABLE="$test_binary" go test -race ./tests
         else
