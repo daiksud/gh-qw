@@ -58,8 +58,8 @@ runs:
         else
           binary="$ARTIFACT_DIRECTORY/$ASSET"
           test_binary="$binary"
-          chmod +x "$binary"
         fi
+        chmod +x "$binary"
         [[ "$("$binary" --version)" == 'gh qw version dev' ]]
         if [[ "$TARGET" == linux-amd64 ]]; then
           GHQW_TEST_EXECUTABLE="$test_binary" go test -race ./tests
