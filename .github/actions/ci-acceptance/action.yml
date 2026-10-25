@@ -60,7 +60,7 @@ runs:
           cmp -- "$source_directory/$ASSET" "$execution_directory/$ASSET"
           cmp -- "$source_directory/$ASSET.manifest" "$execution_directory/$ASSET.manifest"
           bash .github/scripts/ci-artifacts.sh verify \
-            "$TARGET" "$SOURCE_SHA" "$execution_directory"NaN
+            "$TARGET" "$SOURCE_SHA" "$execution_directory"
           binary="$execution_directory/$ASSET"
           test_binary="$(cygpath -w "$binary")"
         else
