@@ -36,7 +36,7 @@ digest="$(sed -n 's/^sha256=//p' "$escaped_directory/gh-qw-linux-amd64.manifest"
 cp -R "$escaped_directory" "$TEMP/relocated"
 bash "$TOOL" verify linux-amd64 "$SOURCE_SHA" "$TEMP/relocated"
 
-NaN
+cp -R "$TEMP/linux-amd64" "$TEMP/corrupt"
 printf 'corrupt\n' >> "$TEMP/corrupt/gh-qw-linux-amd64"
 if bash "$TOOL" verify linux-amd64 "$SOURCE_SHA" "$TEMP/corrupt" >/dev/null 2>&1; then
   echo "FAIL corrupt CI artifact was accepted" >&2
