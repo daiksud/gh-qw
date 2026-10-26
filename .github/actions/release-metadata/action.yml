@@ -33,7 +33,7 @@ runs:
         [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
         [[ "$(git rev-parse HEAD)" == "$SOURCE_SHA" ]]
 
-        metadata="$(bash .github/scripts/prepare-release.sh)"
+        metadata="$(python3 .github/scripts/release-version.py)"
         [[ "$(grep -c '^version=' <<< "$metadata")" -eq 1 ]]
         [[ "$(grep -c '^previous-tag=' <<< "$metadata")" -eq 1 ]]
         [[ "$(grep -c '^previous-sha=' <<< "$metadata")" -eq 1 ]]

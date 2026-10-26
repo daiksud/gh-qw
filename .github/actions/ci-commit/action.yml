@@ -60,7 +60,7 @@ runs:
         chmod +x "$validator"
         "$validator" validate .github/settings.yml
 
-        bash .github/scripts/prepare-release.test.sh
+        python3 -m unittest discover -s .github/scripts -p "test_release_version.py" -q
         bash .github/scripts/release-source.test.sh
         bash .github/scripts/release-notes.test.sh
         bash .github/scripts/release-artifacts.test.sh
