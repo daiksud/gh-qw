@@ -36,7 +36,7 @@ semantics to the external tools. Do not add fake-only production paths.
 Review security, correctness, data-loss risks, concurrency, and current-contract
 coverage. Resolve actionable findings, pass required CI on the final HEAD, merge
 normally, and verify CI on the actual merged commit. Record any unavailable
-review or validation honestly. Use only the exceptional PR-only administrator
+review or validation honestly. Use only the exceptional administrator
 bypass permitted by [AGENTS.md](../AGENTS.md#review-approvals-and-bypass).
 
 Documentation is plain Markdown. Use relative links, check paths and anchors,
