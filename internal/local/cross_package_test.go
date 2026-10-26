@@ -91,35 +91,26 @@ func TestRepositorySpecificationsRoundTripThroughDeterministicMainPath(t *testin
 	}
 }
 
-func TestResolvedWorktreeRootContainsSlashSlotsAndRejectsRuntimeSymlinkEscape(t *testing.T) {
+func TestResolvedWorktreeRootRejectsRuntimeSymlinkEscape(t *testing.T) {
 	base := physicalTestDir(t)
 	repositoryRoot := filepath.Join(base, "repositories")
-	physicalWorktreeRoot := filepath.Join(base, "physical-worktrees")
-	worktreeRootAlias := filepath.Join(base, "worktree-root-alias")
-	for _, path := range []string{repositoryRoot, physicalWorktreeRoot} {
-		if err := os.MkdirAll(path, 0o755); err != nil {
-			t.Fatalf("MkdirAll(%q) error = %v", path, err)
-		}
-	}
-	if err := os.Symlink(physicalWorktreeRoot, worktreeRootAlias); err != nil {
-		t.Skipf("symbolic links are unavailable: %v", err)
+	worktreeRoot := filepath.Join(repositoryRoot, "worktrees")
+	if err := os.MkdirAll(worktreeRoot, 0o755); err != nil {
+		t.Fatal(err)
 	}
 
 	resolver := root.NewResolverWithOptions(root.Options{
 		ConfigLoader: staticConfigLoader{config: config.Config{
-			Roots:        []string{repositoryRoot},
-			WorktreeRoot: worktreeRootAlias,
+			Roots: []string{repositoryRoot},
 		}},
-		LookupEnv: func(string) (string, bool) {
-			return "", false
-		},
+		LookupEnv: func(string) (string, bool) { return "", false },
 	})
 	resolved, err := resolver.Resolve()
 	if err != nil {
 		t.Fatalf("Resolve() error = %v", err)
 	}
-	if resolved.WorktreeRoot != physicalWorktreeRoot {
-		t.Fatalf("WorktreeRoot = %q, want physical path %q", resolved.WorktreeRoot, physicalWorktreeRoot)
+	if resolved.WorktreeRoot != worktreeRoot {
+		t.Fatalf("WorktreeRoot = %q, want %q", resolved.WorktreeRoot, worktreeRoot)
 	}
 
 	path, err := local.WorktreePath(
@@ -128,60 +119,36 @@ func TestResolvedWorktreeRootContainsSlashSlotsAndRejectsRuntimeSymlinkEscape(t 
 		"github.com",
 		"acme",
 		"widget",
-		"feature/login",
+		"feature-login",
 	)
 	if err != nil {
-		t.Fatalf("WorktreePath(feature/login) error = %v", err)
+		t.Fatalf("WorktreePath() error = %v", err)
 	}
-	wantPath := filepath.Join(
-		physicalWorktreeRoot,
-		"github.com",
-		"acme",
-		"widget",
-		"feature",
-		"login",
-	)
+	wantPath := filepath.Join(worktreeRoot, "feature-login", "widget")
 	if path != wantPath {
-		t.Fatalf("WorktreePath(feature/login) = %q, want %q", path, wantPath)
+		t.Fatalf("WorktreePath() = %q, want %q", path, wantPath)
 	}
 
-	worktreeBase, err := local.WorktreeBasePath(
-		resolved.WorktreeRoot,
-		"github.com",
-		"acme",
-		"widget",
-	)
-	if err != nil {
-		t.Fatalf("WorktreeBasePath() error = %v", err)
-	}
-	if err := os.MkdirAll(worktreeBase, 0o755); err != nil {
-		t.Fatalf("MkdirAll(%q) error = %v", worktreeBase, err)
-	}
 	outside := filepath.Join(base, "outside")
 	if err := os.MkdirAll(outside, 0o755); err != nil {
-		t.Fatalf("MkdirAll(%q) error = %v", outside, err)
+		t.Fatal(err)
 	}
-	if err := os.Symlink(outside, filepath.Join(worktreeBase, "feature")); err != nil {
+	if err := os.Symlink(outside, filepath.Join(worktreeRoot, "feature-login")); err != nil {
 		t.Skipf("symbolic links are unavailable: %v", err)
 	}
-
 	_, err = local.WorktreePath(
-		context.Background(),
-		resolved.WorktreeRoot,
-		"github.com",
-		"acme",
-		"widget",
-		"feature/login",
+		context.Background(), resolved.WorktreeRoot,
+		"github.com", "acme", "widget", "feature-login",
 	)
 	if !errors.Is(err, root.ErrUnsafeTarget) {
-		t.Fatalf("WorktreePath() symlink escape error = %v, want root.ErrUnsafeTarget", err)
+		t.Fatalf("WorktreePath() symlink escape = %v, want root.ErrUnsafeTarget", err)
 	}
 	var safetyError *root.SafetyError
 	if !errors.As(err, &safetyError) {
 		t.Fatalf("WorktreePath() error = %T %v, want *root.SafetyError", err, err)
 	}
-	if safetyError.Root() != worktreeBase {
-		t.Fatalf("SafetyError.Root() = %q, want per-repository boundary %q", safetyError.Root(), worktreeBase)
+	if safetyError.Root() != worktreeRoot {
+		t.Fatalf("SafetyError.Root() = %q, want %q", safetyError.Root(), worktreeRoot)
 	}
 }
 
