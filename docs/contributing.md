@@ -45,23 +45,40 @@ and keep each rule in one owning document. No documentation build is required.
 ## PR classification
 
 Use Conventional Commit titles with `feat`, `fix`, `perf`, `revert`, `docs`,
-`refactor`, `style`, `test`, `build`, `ci`, or `chore`. `feat` and `fix` describe
-user-visible gh-qw changes, not additions to CI or tests. Branch names are
-identifiers only and do not determine labels or versions.
+`refactor`, `style`, `test`, `build`, `ci`, or `chore`. Each focused PR
+has one type. `feat`, `fix`, and `perf` concern user-observable gh-qw
+behavior, not improvements to internal CI or build tooling. Branch names are
+identifiers, not classification inputs.
 
-Reviewers maintain semantic labels. The labeler adds `docs`, `test`, `build`, or
-`ci` only when every changed path matches a single category; remove stale labels
-when scope changes. Dependabot uses `build` for Go and `ci` for Actions updates.
-Keep the merge title and body consistent with the reviewed change.
+The same 20 labels are used in gh-settings: eleven change types, the
+compatibility labels `BREAKING CHANGE` and `DEPRECATED`, and seven independent
+triage labels (`accessibility`, `duplicate`, `good first issue`,
+`help wanted`, `invalid`, `question`, and `wontfix`).
+[Repository settings](../.github/settings.yml) owns their descriptions and
+colors. Compatibility labels can accompany the change type. Reviewers use the
+final diff and its product impact, not only paths or the Issue's initial type.
+
+The [Labeler](../.github/labeler.yml) suggests `docs`, `test`, `build`, or
+`ci` only when **every changed file** matches one category. Docs cover root
+guides, `docs/**`, skill instructions and PR templates; tests cover
+`tests/**` and `**/*_test.go`; build covers `go.mod`, `go.sum`, and
+`mise.toml`; CI covers CI/PRLint/Labeler workflows, and CI-specific local
+Actions/scripts. Release tooling, other workflows, public interfaces, and mixed
+changes require manual classification. Hidden paths are included; labels are
+add-only, so reviewers remove stale suggestions. Dependabot proposes `build`
+for Go modules and `ci` for GitHub Actions updates, without automatic merging.
+
+[Issue forms](../.github/ISSUE_TEMPLATE) initially label bug reports `fix` and
+feature requests `feat`. Tasks and blank issues have no initial label; their
+eventual implementation PRs can use a different type.
 
 The independent [PRLint workflow](../.github/workflows/prlint.yml) validates the
-PR title and optional body together as the proposed merge commit message. The
-message follows Conventional Commits: use one of the types listed above, an
-optional scope, and a nonempty description under the preset's default rules.
-A `!` header or `BREAKING CHANGE:` footer signals incompatibility. The preset's
-default ignores, style rules, and line-length checks apply unchanged.
-Passing syntax validation does not establish that the selected type or scope
-matches the change.
+PR title and optional body together as the proposed merge commit message. It
+checks Conventional Commits with one type, an optional scope, and a nonempty
+description under the preset's default rules. A `!` header or
+`BREAKING CHANGE:` footer marks an incompatibility. Passing syntax validation
+does not establish correct semantic classification. Squash messages determine
+versions; reviewed PR labels classify release notes.
 
 ## Repository settings
 

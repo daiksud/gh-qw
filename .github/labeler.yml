@@ -1,21 +1,18 @@
 # Add a path label only when every changed file matches that category.
-# Branch names and PR titles are not classification inputs.
+# Branch names, PR titles, and product behavior are not classification inputs.
 docs:
   - changed-files:
       - any-glob-to-all-files:
-          - "{docs/**,**/*.md}"
-
+          - "{README.md,CONTRIBUTING.md,AGENTS.md,docs/**,.agents/skills/**/SKILL.md,.github/pull_request_template.md}"
 test:
   - changed-files:
       - any-glob-to-all-files:
           - "{tests/**,**/*_test.go}"
-
 build:
   - changed-files:
       - any-glob-to-all-files:
-          - "{go.mod,go.sum}"
-
+          - "{go.mod,go.sum,mise.toml}"
 ci:
   - changed-files:
       - any-glob-to-all-files:
-          - "{.github/workflows/**,.github/scripts/**}"
+          - "{.github/workflows/ci-*.yml,.github/workflows/prlint.yml,.github/workflows/labeler.yml,.github/labeler.yml,.github/actions/ci-*/**,.github/scripts/ci-*}"

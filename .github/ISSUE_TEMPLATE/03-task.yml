@@ -1,0 +1,17 @@
+name: Task
+description: Plan refactoring, documentation, tests, or repository maintenance.
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to address
+      description: What maintenance problem, cost, or risk does this work address?
+    validations:
+      required: true
+  - type: textarea
+    id: completion-criteria
+    attributes:
+      label: Completion criteria
+      description: What concrete result will complete this task? Identify the affected area and how the result will be checked. Keep the task small enough for one PR where practical.
+    validations:
+      required: true
