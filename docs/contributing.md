@@ -36,7 +36,8 @@ semantics to the external tools. Do not add fake-only production paths.
 Review security, correctness, data-loss risks, concurrency, and current-contract
 coverage. Resolve actionable findings, pass required CI on the final HEAD, merge
 normally, and verify CI on the actual merged commit. Record any unavailable
-review or validation honestly. Do not bypass protections.
+review or validation honestly. Administrative bypass is disabled. Follow the review and approval policy
+in [AGENTS.md](../AGENTS.md#review-approvals) even when reviewers are unavailable.
 
 Documentation is plain Markdown. Use relative links, check paths and anchors,
 and keep each rule in one owning document. No documentation build is required.
@@ -81,6 +82,21 @@ Inspect the plan before applying. Keep administrative credentials out of CI.
 Settings not represented in the manifest are managed separately through GitHub.
 Only squash merges are allowed. The squash commit uses the reviewed PR title
 and body; the inactive merge-commit defaults retain the same values.
+
+The declared main Ruleset requires one approving review, dismisses approvals
+after new commits, resolves review threads, uses strict up-to-date checks, and
+requires signed commits and linear history. CODEOWNER approval is required; another eligible reviewer (including the
+configured GitHub Actions bot) may approve when the sole owner is the author. No administrator bypass actors are configured; every merge must satisfy the [normal review policy](../AGENTS.md#review-approvals).
+
+The [Codex approval workflow](../.github/workflows/approve-codex-review.yml)
+handles the Codex bot's review-summary updates and reruns the approval
+check after successful PR CI. It verifies that code and security reviews completed for the exact current HEAD without unresolved
+findings and that Codex reacted with 👍. It then creates a GitHub Actions
+approval for that commit when the repository permits Actions approvals.
+Copilot's reviews and Codex comments alone do not satisfy the approval rule.
+The ruleset and Actions approval setting require a separate authorized
+`gh infra apply`; the YAML and passing offline CI do not prove the live
+GitHub configuration changed.
 
 The required status is `pass`. The `ci-pr` commit stage builds one candidate on
 each native platform; its acceptance stage verifies and tests those exact
