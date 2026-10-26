@@ -45,18 +45,19 @@ gh qw list --all
 ```
 
 Main repositories live at `<root>/<host>/<owner>/<repo>`. Linked worktrees live
-at `<worktree-root>/<host>/<owner>/<repo>/<slot>`. The default roots are `~/ghqw`
-and `~/.local/share/ghqw/worktrees`, respectively.
+at `<root>/worktrees/<unique-slot>/<repo>`. The default root is `~/ghqw`.
+Slot directories are single components unique across repositories; branch slashes
+are escaped (for example, `feature/docs` becomes `feature%2Fdocs`).
 
 Optional configuration in `~/.config/ghqw/config.toml`:
 
 ```toml
 root = "~/ghqw"
-worktree_root = "~/.local/share/ghqw/worktrees"
 ```
 
-`GHQW_ROOT` and `GHQW_WORKTREE_ROOT` override those settings. XDG locations and
-multiple roots are described in the [configuration reference](docs/configuration.md).
+`GHQW_ROOT` overrides `root`; worktrees always use the primary root's `worktrees`
+subdirectory. Multiple roots and XDG locations are described in the
+[configuration reference](docs/configuration.md).
 
 ## Commands
 

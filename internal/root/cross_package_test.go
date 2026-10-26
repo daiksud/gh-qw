@@ -16,7 +16,6 @@ func TestConfigRawValuesFlowThroughResolverWithoutSharedSlices(t *testing.T) {
 	home := filepath.Join(base, "home")
 	writeConfig(t, home, `
 root = ["~/repositories", "~/archive"]
-worktree_root = "~/.ghqw/worktrees"
 `)
 
 	var reads atomic.Int32
@@ -36,8 +35,7 @@ worktree_root = "~/.ghqw/worktrees"
 		t.Fatalf("Load() error = %v", err)
 	}
 	wantRaw := config.Config{
-		Roots:        []string{"~/repositories", "~/archive"},
-		WorktreeRoot: "~/.ghqw/worktrees",
+		Roots: []string{"~/repositories", "~/archive"},
 	}
 	if !reflect.DeepEqual(raw, wantRaw) {
 		t.Fatalf("Load() = %#v, want raw values %#v", raw, wantRaw)
@@ -45,7 +43,6 @@ worktree_root = "~/.ghqw/worktrees"
 
 	raw.Roots[0] = "~/caller-mutated"
 	raw.Roots = append(raw.Roots, "~/caller-added")
-	raw.WorktreeRoot = "~/caller-worktrees"
 
 	resolver := root.NewResolverWithOptions(root.Options{
 		ConfigLoader: loader,
@@ -63,7 +60,7 @@ worktree_root = "~/.ghqw/worktrees"
 			filepath.Join(home, "repositories"),
 			filepath.Join(home, "archive"),
 		},
-		WorktreeRoot: filepath.Join(home, ".ghqw", "worktrees"),
+		WorktreeRoot: filepath.Join(home, "repositories", "worktrees"),
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Resolve() = %#v, want %#v", got, want)
@@ -92,7 +89,6 @@ func TestResolverAppliesEachEnvironmentOverrideBeforeRawPathValidation(t *testin
 		environmentTwo := filepath.Join(base, "environment-two")
 		resolver := integratedResolver(t, home, `
 root = "relative/file-root"
-worktree_root = "~/file-worktrees"
 `, map[string]string{
 			"GHQW_ROOT": environmentOne +
 				string(os.PathListSeparator) +
@@ -105,20 +101,19 @@ worktree_root = "~/file-worktrees"
 		}
 		want := root.Result{
 			RepositoryRoots: []string{environmentOne, environmentTwo},
-			WorktreeRoot:    filepath.Join(home, "file-worktrees"),
+			WorktreeRoot:    filepath.Join(environmentOne, "worktrees"),
 		}
 		if !reflect.DeepEqual(got, want) {
 			t.Fatalf("Resolve() = %#v, want %#v", got, want)
 		}
 	})
 
-	t.Run("worktree environment replaces file worktree root", func(t *testing.T) {
+	t.Run("worktree environment no longer overrides primary root", func(t *testing.T) {
 		base := physicalTestDir(t)
 		home := filepath.Join(base, "home")
 		environmentWorktrees := filepath.Join(base, "environment-worktrees")
 		resolver := integratedResolver(t, home, `
 root = ["~/file-primary", "~/file-secondary"]
-worktree_root = "relative/file-worktrees"
 `, map[string]string{
 			"GHQW_WORKTREE_ROOT": environmentWorktrees,
 		})
@@ -132,7 +127,7 @@ worktree_root = "relative/file-worktrees"
 				filepath.Join(home, "file-primary"),
 				filepath.Join(home, "file-secondary"),
 			},
-			WorktreeRoot: environmentWorktrees,
+			WorktreeRoot: filepath.Join(home, "file-primary", "worktrees"),
 		}
 		if !reflect.DeepEqual(got, want) {
 			t.Fatalf("Resolve() = %#v, want %#v", got, want)

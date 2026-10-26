@@ -37,7 +37,9 @@ separate from host/login and filesystem-based input resolution.
 ## Filesystem and failure boundaries
 
 Repository identity is `<host>/<owner>/<repo>` and excludes transport details.
-Linked worktrees have deterministic slots independent of their current branch.
+Linked worktrees live at `<primary-root>/worktrees/<unique-slot>/<repo>`,
+independent of their current branch. Slot directories are exclusively reserved
+across repositories and never reused during creation.
 The explicit XDG location registry owns gh-qw's managed main-repository set.
 Git remains the source of truth for actual worktree registrations, and the
 filesystem for existing files. Configured roots determine default placement;

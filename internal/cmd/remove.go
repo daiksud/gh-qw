@@ -642,27 +642,8 @@ func removePreflightWhole(
 		return removePlan{}, fmt.Errorf("plan main parent cleanup: %w", err)
 	}
 
-	if plan.worktreeBaseDir == nil {
-		base, exists, captureErr := removal.CaptureOptionalDirectory(commandRuntime.fs.observations(),
-			plan.WorktreeRoot.Path,
-			plan.WorktreeBase,
-		)
-		if captureErr != nil {
-			return removePlan{}, fmt.Errorf("inspect worktree base: %w", captureErr)
-		}
-		if exists {
-			plan.worktreeBaseDir = &base
-		}
-	}
-	if plan.worktreeBaseDir != nil {
-		plan.worktreeCleanup, err = removal.CaptureCleanupChain(commandRuntime.fs.observations(),
-			plan.WorktreeRoot.Path,
-			plan.WorktreeBase,
-		)
-		if err != nil {
-			return removePlan{}, fmt.Errorf("plan worktree-base cleanup: %w", err)
-		}
-	}
+	// Each linked slot cleans its own directory. The shared worktrees root
+	// is never a cleanup target during whole-repository removal.
 
 	plan.whole = true
 	return plan, nil
@@ -979,14 +960,6 @@ func removeExecuteWhole(
 		plan.mainCleanup,
 	); err != nil {
 		return true, state.failure("cleanup empty repository owner and host directories", err)
-	}
-	if plan.worktreeBaseDir != nil {
-		if err := commandRuntime.fs.executor(commandRuntime.git).CleanupEmptyChain(
-			ctx, plan.WorktreeRoot,
-			plan.worktreeCleanup,
-		); err != nil {
-			return true, state.failure("cleanup empty worktree-base directories", err)
-		}
 	}
 	if err := removeWriteProgress(
 		commandRuntime.stderr,

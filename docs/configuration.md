@@ -4,17 +4,15 @@
 
 Read `$XDG_CONFIG_HOME/ghqw/config.toml` when `XDG_CONFIG_HOME` is absolute;
 otherwise read `~/.config/ghqw/config.toml`. This rule applies on every platform.
-The file and both keys are optional.
+The file and `root` setting are optional.
 
 ```toml
 root = ["~/ghqw", "~/work/repos"]
-worktree_root = "~/.local/share/ghqw/worktrees"
 ```
 
 | Key | Type | Meaning |
 | --- | --- | --- |
 | `root` | String or nonempty string array | Ordered repository roots; the first is primary. |
-| `worktree_root` | String | Root for linked worktree slots. |
 
 Unknown keys or tables, duplicates, empty values or arrays, mixed array types,
 and invalid TOML are configuration errors (status `2`). File I/O failures are
@@ -37,38 +35,42 @@ longer resolvable; live path checks occur in commands that need the checkout.
 
 ## Precedence
 
-Each setting is resolved independently, highest priority first:
+The repository roots use the first nonempty value, highest priority first:
 
-| Setting | Environment | File | Default |
-| --- | --- | --- | --- |
-| Repository roots | Nonempty `GHQW_ROOT` | `root` | `~/ghqw` |
-| Worktree root | Nonempty `GHQW_WORKTREE_ROOT` | `worktree_root` | `$XDG_DATA_HOME/ghqw/worktrees` when XDG is absolute; otherwise `~/.local/share/ghqw/worktrees` |
+| Environment | File | Default |
+| --- | --- | --- |
+| `GHQW_ROOT` | `root` | `~/ghqw` |
 
-`GHQW_ROOT` replaces the entire list. Its separator is `:` on POSIX and `;` on
-Windows; empty entries are invalid. The worktree root is one path, not a list.
+`GHQW_ROOT` replaces the entire ordered list; `:` separates entries on POSIX
+and `;` on Windows. Empty entries are invalid. The first root is primary.
+The linked-worktree root is always `<primary-root>/worktrees`; it has no
+independent configuration or environment override.
 
 ## Layout and physical boundaries
 
 ```text
 main:   <repository-root>/<host>/<owner>/<repo>
-linked: <worktree-root>/<host>/<owner>/<repo>/<slot>
+linked: <primary-root>/worktrees/<unique-slot>/<repo>
 ```
 
 Roots expand a leading `~` or `~/`, require an absolute path, normalize path
 components and volumes, resolve existing symlink prefixes, and append missing
 suffixes. `~other-user` is invalid. Equivalent roots are deduplicated in order.
-The worktree root must neither equal, contain, nor lie within any repository
-root after physical resolution.
+The worktree root is reserved directly below the primary repository root.
+Symlinks cannot redirect that directory. Other configured roots must not
+overlap it, and the host name `worktrees` is reserved in the main layout.
 
 The XDG registry, not the directory layout, determines which repositories are
 managed. Configured roots determine default destinations for `clone` and
 `add --move`; a checkout under a configured root is not registered implicitly.
 Reading configuration or listing roots does not create missing directories.
 
-Slots may contain `/`, but must remain beneath their repository's worktree
-directory. Absolute slots, empty or dot components, dot-ended components, and
-prefix collisions such as `feat` and `feat/x` are rejected. A slot is a storage
-path, not a promise about the currently checked-out branch.
+Slots use Git-valid ref names, including slash-separated branches. Directory
+names are single components encoded as URL path segments: `feature/login`
+becomes `feature%2Flogin` and a literal `%` is escaped as `%25`. Encoded slot
+names must be unique across all repositories; existing slot directories are
+never reused. Empty, dot-ended, and invalid Git ref names are rejected. A slot
+is a storage name, not a promise about the checked-out branch.
 
 Targets are checked again before mutation against the established boundary.
 A replaced root or symlink cannot authorize a new destination. Cleanup never

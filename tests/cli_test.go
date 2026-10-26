@@ -135,10 +135,8 @@ func TestCLIRepositoryAndWorktreeLifecycle(t *testing.T) {
 	featureBranch := "feature/e2e"
 	featurePath := filepath.Join(
 		fixture.worktreeRoot,
-		"github.com",
-		"acme",
+		"feature%2Fe2e",
 		"widget",
-		filepath.FromSlash(featureBranch),
 	)
 	featureOutput := filepath.ToSlash(featurePath)
 	result = fixture.runCLI(
@@ -174,13 +172,11 @@ func TestCLIRepositoryAndWorktreeLifecycle(t *testing.T) {
 	assertContains(t, result.stderr, "removed worktree "+featureOutput)
 	assertPathMissing(t, featurePath)
 
-	goneBranch := "gone/e2e"
+	goneBranch := "gone-e2e"
 	gonePath := filepath.Join(
 		fixture.worktreeRoot,
-		"github.com",
-		"acme",
+		goneBranch,
 		"widget",
-		filepath.FromSlash(goneBranch),
 	)
 	result = fixture.runCLI(
 		t,
@@ -194,9 +190,9 @@ func TestCLIRepositoryAndWorktreeLifecycle(t *testing.T) {
 	)
 	assertStatus(t, result, 0)
 	assertPathExists(t, gonePath)
-	goneUpstream := "refs/remotes/origin/gone/e2e"
+	goneUpstream := "refs/remotes/origin/gone-e2e"
 	fixture.runGit(t, mainPath, "update-ref", goneUpstream, "HEAD")
-	fixture.runGit(t, mainPath, "branch", "--set-upstream-to=origin/gone/e2e", goneBranch)
+	fixture.runGit(t, mainPath, "branch", "--set-upstream-to=origin/gone-e2e", goneBranch)
 	fixture.runGit(t, mainPath, "update-ref", "-d", goneUpstream)
 	result = fixture.runCLI(t, "list", "--worktree", "--gone")
 	assertStatus(t, result, 0)
@@ -225,13 +221,11 @@ func TestCLIRepositoryAndWorktreeLifecycle(t *testing.T) {
 		t.Fatalf("gone cleanup removed local branch %q", goneBranch)
 	}
 
-	staleBranch := "stale/e2e"
+	staleBranch := "stale-e2e"
 	stalePath := filepath.Join(
 		fixture.worktreeRoot,
-		"github.com",
-		"acme",
+		staleBranch,
 		"widget",
-		filepath.FromSlash(staleBranch),
 	)
 	result = fixture.runCLI(
 		t,
@@ -257,13 +251,11 @@ func TestCLIRepositoryAndWorktreeLifecycle(t *testing.T) {
 		t.Fatalf("Git prune retained stale worktree metadata:\n%s", output)
 	}
 
-	removeBranch := "topic/remove@v2"
+	removeBranch := "topic-remove@v2"
 	removePath := filepath.Join(
 		fixture.worktreeRoot,
-		"github.com",
-		"acme",
+		removeBranch,
 		"widget",
-		filepath.FromSlash(removeBranch),
 	)
 	result = fixture.runCLI(
 		t,
@@ -285,13 +277,11 @@ func TestCLIRepositoryAndWorktreeLifecycle(t *testing.T) {
 	assertPathMissing(t, removePath)
 	assertPathExists(t, mainPath)
 
-	wholeBranch := "whole/linked"
+	wholeBranch := "whole-linked"
 	wholePath := filepath.Join(
 		fixture.worktreeRoot,
-		"github.com",
-		"acme",
+		wholeBranch,
 		"widget",
-		filepath.FromSlash(wholeBranch),
 	)
 	result = fixture.runCLI(
 		t,
@@ -424,25 +414,25 @@ func TestCLIAPILookupsUseGHPathAndKeepStdoutPure(t *testing.T) {
 	// The explicit repository host wins over the ambient host. The local main
 	// branch supplies the start point returned by the external REST lookup.
 	env = append(env, "GH_HOST=unrelated.example.com", "GHQW_TEST_API_OUTPUT=main")
-	result = fixture.runCLIWithEnv(t, env, "add", "--worktree", "-R", "ghe.example.com/octocat/widget", "-b", "feature/from-api")
+	result = fixture.runCLIWithEnv(t, env, "add", "--worktree", "-R", "ghe.example.com/octocat/widget", "-b", "feature-from-api")
 	assertStatus(t, result, 0)
-	worktreePath := filepath.Join(fixture.worktreeRoot, "ghe.example.com", "octocat", "widget", "feature", "from-api")
+	worktreePath := filepath.Join(fixture.worktreeRoot, "feature-from-api", "widget")
 	assertStdout(t, result, filepath.ToSlash(worktreePath)+"\n")
 	assertContains(t, result.stderr, "fake gh: api ghe.example.com/repos/octocat/widget")
 
-	result = fixture.runCLIWithEnv(t, append(env, "GHQW_TEST_API_OUTPUT="), "add", "--worktree", "-R", "ghe.example.com/octocat/widget", "-b", "feature/missing-default")
+	result = fixture.runCLIWithEnv(t, append(env, "GHQW_TEST_API_OUTPUT="), "add", "--worktree", "-R", "ghe.example.com/octocat/widget", "-b", "feature-missing-default")
 	assertStatus(t, result, 1)
 	assertStdout(t, result, "")
 	assertContains(t, result.stderr, "API response did not include default_branch")
-	assertPathMissing(t, filepath.Join(fixture.worktreeRoot, "ghe.example.com", "octocat", "widget", "feature", "missing-default"))
+	assertPathMissing(t, filepath.Join(fixture.worktreeRoot, "feature-missing-default", "widget"))
 
 	// An unusable GH_PATH must not affect help, local inputs, or attaching an
 	// existing branch: none requires resolving or starting gh.
 	localEnv := append(env, "GH_PATH="+filepath.Join(fixture.base, "missing-gh"))
-	fixture.runGit(t, mainPath, "branch", "feature/existing", "main")
+	fixture.runGit(t, mainPath, "branch", "feature-existing", "main")
 	for _, args := range [][]string{
 		{"--help"}, {"--version"}, {"root"}, {"list"},
-		{"add", "--worktree", "-R", "ghe.example.com/octocat/widget", "feature/existing"},
+		{"add", "--worktree", "-R", "ghe.example.com/octocat/widget", "feature-existing"},
 	} {
 		result := fixture.runCLIWithEnv(t, localEnv, args...)
 		assertStatus(t, result, 0)
@@ -589,7 +579,7 @@ func newCLIFixture(t *testing.T) *cliFixture {
 		home:         filepath.Join(base, "home"),
 		repository:   filepath.Join(base, "repositories"),
 		remoteRoot:   filepath.Join(base, "remotes"),
-		worktreeRoot: filepath.Join(base, "worktrees"),
+		worktreeRoot: filepath.Join(base, "repositories", "worktrees"),
 	}
 	for _, directory := range []string{
 		fixture.home,
@@ -647,7 +637,6 @@ func isolatedEnvironment(fixture *cliFixture) []string {
 			[]string{fixture.repository, fixture.remoteRoot},
 			string(os.PathListSeparator),
 		),
-		"GHQW_WORKTREE_ROOT="+fixture.worktreeRoot,
 		"GIT_CONFIG_NOSYSTEM=1",
 		"GIT_CONFIG_SYSTEM="+os.DevNull,
 		"GIT_CONFIG_GLOBAL="+os.DevNull,

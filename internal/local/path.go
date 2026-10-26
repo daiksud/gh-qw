@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"unicode"
@@ -65,19 +66,21 @@ func ValidateBranch(ctx context.Context, branch string) error {
 	return nil
 }
 
-// ValidateSlotLayout applies gh-qw's portable directory layout restriction
-// without starting Git. It is safe to use during argument parsing.
+// ValidateSlotLayout rejects path component endings that are unsuitable on
+// portable filesystems without constraining Git's slash-separated ref names.
 func ValidateSlotLayout(_ context.Context, slot string) error {
 	for _, component := range strings.Split(slot, "/") {
 		if strings.HasSuffix(component, ".") {
-			return &ValidationError{
-				Kind:   ErrInvalidBranch,
-				Value:  slot,
-				Reason: "slot components must not end with a dot",
-			}
+			return &ValidationError{Kind: ErrInvalidBranch, Value: slot, Reason: "slot components must not end with a dot"}
 		}
 	}
 	return nil
+}
+
+// WorktreeSlotDirectoryName encodes a Git ref as one reversible directory name.
+// Escaping also distinguishes a slash from a literal percent escape.
+func WorktreeSlotDirectoryName(slot string) string {
+	return url.PathEscape(slot)
 }
 
 // ValidateSlot applies branch validation and gh-qw's portable directory layout
@@ -96,6 +99,9 @@ func MainPath(rootPath, host, owner, repo string) (string, error) {
 		return "", err
 	}
 
+	if host == "worktrees" {
+		return "", fmt.Errorf("derive main repository path: %w: host worktrees is reserved for linked worktrees", root.ErrUnsafeTarget)
+	}
 	target := filepath.Join(rootPath, host, owner, repo)
 	physical, err := root.PhysicalizeTarget(rootPath, target, root.StrictlyUnder)
 	if err != nil {
@@ -104,14 +110,16 @@ func MainPath(rootPath, host, owner, repo string) (string, error) {
 	return physical, nil
 }
 
-// WorktreeBasePath returns the contained per-repository directory below the
-// worktree root.
+// WorktreeBasePath returns the reserved root used for linked-worktree cleanup.
+// Repository identity remains validated even though the layout omits host and owner.
 func WorktreeBasePath(worktreeRoot, host, owner, repo string) (string, error) {
-	return MainPath(worktreeRoot, host, owner, repo)
+	if _, err := CanonicalIdentity(host, owner, repo); err != nil {
+		return "", err
+	}
+	return root.PhysicalizeTarget(worktreeRoot, worktreeRoot, root.AllowEqual)
 }
 
-// WorktreePath returns the contained physical destination for a branch slot.
-// Slashes in branch form nested directories.
+// WorktreePath returns <worktree-root>/<escaped-slot>/<repo>.
 func WorktreePath(ctx context.Context, worktreeRoot, host, owner, repo, branch string) (string, error) {
 	if err := ValidateSlot(ctx, branch); err != nil {
 		return "", err
@@ -121,7 +129,7 @@ func WorktreePath(ctx context.Context, worktreeRoot, host, owner, repo, branch s
 	if err != nil {
 		return "", err
 	}
-	target := filepath.Join(base, filepath.FromSlash(branch))
+	target := filepath.Join(base, WorktreeSlotDirectoryName(branch), repo)
 	physical, err := root.PhysicalizeTarget(base, target, root.StrictlyUnder)
 	if err != nil {
 		return "", fmt.Errorf("derive linked worktree path: %w", err)

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"io/fs"
 	"path/filepath"
-	"strings"
 )
 
 // DestinationOptions supplies the filesystem seam for add-time path
@@ -65,55 +64,19 @@ func ValidateWorktreeDestination(
 		}
 	}
 
-	base, err := WorktreeBasePath(
-		worktreeRoot,
-		repository.Host,
-		repository.Owner,
-		repository.Repo,
-	)
-	if err != nil {
-		return "", err
-	}
-	components := strings.Split(slot, "/")
-	current := base
-	for index, component := range components[:len(components)-1] {
-		current = filepath.Join(current, filepath.FromSlash(component))
-		info, statErr := filesystem.lstat(current)
-		if errors.Is(statErr, fs.ErrNotExist) {
-			break
-		}
-		if statErr != nil {
-			return "", &WorktreeError{
-				Kind:       ErrUnsafeWorktree,
-				Repository: repository.Identity,
-				Slot:       slot,
-				Path:       current,
-				Reason:     "cannot inspect proposed slot prefix",
-				Err:        statErr,
-			}
-		}
-		if !info.IsDir() {
-			return "", &SlotCollisionError{
-				Slot:         slot,
-				ExistingSlot: strings.Join(components[:index+1], "/"),
-			}
-		}
-
-		gitMarker := filepath.Join(current, ".git")
-		if _, markerErr := filesystem.lstat(gitMarker); markerErr == nil {
-			return "", &SlotCollisionError{
-				Slot:         slot,
-				ExistingSlot: strings.Join(components[:index+1], "/"),
-			}
-		} else if !errors.Is(markerErr, fs.ErrNotExist) {
-			return "", &WorktreeError{
-				Kind:       ErrUnsafeWorktree,
-				Repository: repository.Identity,
-				Slot:       slot,
-				Path:       gitMarker,
-				Reason:     "cannot inspect proposed slot prefix Git marker",
-				Err:        markerErr,
-			}
+	// The slot namespace is shared by every repository. Reserve the slot
+	// directory itself instead of allowing two repositories to share a name.
+	slotDirectory := filepath.Join(worktreeRoot, WorktreeSlotDirectoryName(slot))
+	if _, err := filesystem.lstat(slotDirectory); err == nil {
+		return "", &SlotCollisionError{Slot: slot, ExistingSlot: slot}
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return "", &WorktreeError{
+			Kind:       ErrUnsafeWorktree,
+			Repository: repository.Identity,
+			Slot:       slot,
+			Path:       slotDirectory,
+			Reason:     "cannot inspect proposed slot directory",
+			Err:        err,
 		}
 	}
 

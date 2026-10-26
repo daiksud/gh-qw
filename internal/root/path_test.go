@@ -159,12 +159,10 @@ func TestPhysicalizeTargetRejectsSymlinkEscapes(t *testing.T) {
 		configuredRoot := filepath.Join(base, "repositories")
 		originalRoot := filepath.Join(base, "repositories-original")
 		outside := filepath.Join(base, "outside")
-		worktrees := filepath.Join(base, "worktrees")
 		mustMkdirAll(t, configuredRoot)
 		mustMkdirAll(t, outside)
 		resolver, _ := newTestResolver(home, config.Config{
-			Roots:        []string{configuredRoot},
-			WorktreeRoot: worktrees,
+			Roots: []string{configuredRoot},
 		}, nil)
 		resolved, err := resolver.Resolve()
 		if err != nil {

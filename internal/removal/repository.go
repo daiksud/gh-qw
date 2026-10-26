@@ -73,7 +73,10 @@ func (observer Observer) ObserveRepository(
 			roots.WorktreeRoot,
 		)
 	}
-	for _, repositoryRoot := range roots.RepositoryRoots {
+	for index, repositoryRoot := range roots.RepositoryRoots {
+		if index == 0 && physicalpath.SamePath(roots.WorktreeRoot, filepath.Join(repositoryRoot, "worktrees")) {
+			continue
+		}
 		if pathsOverlap(repositoryRoot, roots.WorktreeRoot) {
 			return RepositoryObservation{}, fmt.Errorf(
 				"%w: repository root %q overlaps worktree root %q",
@@ -254,34 +257,15 @@ func parseGitPath(
 }
 
 // expectedWorktreeBase validates the deterministic managed worktree layout.
-func expectedWorktreeBase(
-	worktreeRoot string,
-	repository local.Repository,
-) (string, error) {
-	expected := filepath.Join(
-		worktreeRoot,
-		repository.Host,
-		repository.Owner,
-		repository.Repo,
-	)
-	derived, err := local.WorktreeBasePath(
-		worktreeRoot,
-		repository.Host,
-		repository.Owner,
-		repository.Repo,
-	)
+func expectedWorktreeBase(worktreeRoot string, repository local.Repository) (string, error) {
+	derived, err := local.WorktreeBasePath(worktreeRoot, repository.Host, repository.Owner, repository.Repo)
 	if err != nil {
 		return "", fmt.Errorf("derive worktree base: %w", err)
 	}
-	if !physicalpath.SamePath(derived, expected) {
-		return "", fmt.Errorf(
-			"%w: expected worktree base %q resolves to %q",
-			ErrSafety,
-			expected,
-			derived,
-		)
+	if !physicalpath.SamePath(derived, worktreeRoot) {
+		return "", fmt.Errorf("%w: worktree base %q redirects to %q", ErrSafety, worktreeRoot, derived)
 	}
-	return expected, nil
+	return worktreeRoot, nil
 }
 
 // CompareRepository compares established roots and repository identities.

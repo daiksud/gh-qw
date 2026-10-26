@@ -21,8 +21,8 @@ func TestWorktreeRemoveMissingSlotPreservesManagedError(t *testing.T) {
 		name, slot  string
 		missingBase bool
 	}{
-		{name: "missing nested parent", slot: "feature/missing"},
-		{name: "missing base for nested slot", slot: "feature/missing", missingBase: true},
+		{name: "missing nested parent", slot: "feature-missing"},
+		{name: "missing base for nested slot", slot: "feature-missing", missingBase: true},
 		{name: "missing base for flat slot", slot: "missing", missingBase: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -55,7 +55,7 @@ func TestWorktreeRemoveRequiresConfirmedRegistrationRemoval(t *testing.T) {
 			name = "unknown registration state"
 		}
 		t.Run(name, func(t *testing.T) {
-			fixture := worktreeRemoveNewFixture(t, "feature/registration")
+			fixture := worktreeRemoveNewFixture(t, "feature-registration")
 			listErr := errors.New("registration observation failed")
 			if unknown {
 				fixture.git.postRemovalListErr = listErr
@@ -191,7 +191,7 @@ func TestWorktreeRemoveGonePostRemovalFailurePolicies(t *testing.T) {
 // inject failures only at the subprocess and diagnostic boundaries.
 func removalExecutionRepositories(t *testing.T) (string, rootpkg.Result, string, []string) {
 	root := worktreeRemovePhysicalPath(t, t.TempDir())
-	roots := rootpkg.Result{RepositoryRoots: []string{filepath.Join(root, "repositories")}, WorktreeRoot: filepath.Join(root, "worktrees")}
+	roots := rootpkg.Result{RepositoryRoots: []string{filepath.Join(root, "repositories")}, WorktreeRoot: filepath.Join(root, "repositories", "worktrees")}
 	repository := filepath.Join(roots.RepositoryRoots[0], "github.com", "acme", "widget")
 	if err := os.MkdirAll(repository, 0o700); err != nil {
 		t.Fatal(err)
@@ -202,8 +202,8 @@ func removalExecutionRepositories(t *testing.T) (string, rootpkg.Result, string,
 	worktreeRemoveRunGit(t, repository, "commit", "--allow-empty", "-m", "initial")
 	worktreeRemoveRunGit(t, repository, "config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*")
 	var paths []string
-	for _, branch := range []string{"a/first", "b/second"} {
-		path := filepath.Join(roots.WorktreeRoot, "github.com", "acme", "widget", filepath.FromSlash(branch))
+	for _, branch := range []string{"a-first", "b-second"} {
+		path := filepath.Join(roots.WorktreeRoot, branch, "widget")
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 			t.Fatal(err)
 		}

@@ -194,8 +194,9 @@ The XDG registry is the sole source of managed-repository membership.
 Missing registrations are never imported from configured roots. Sort emitted
 strings bytewise. No matches succeeds with empty stdout.
 
-Managed linked slots come from the path relative to the repository's worktree
-directory. External attached worktrees use their short branch; external
+Managed linked slots are decoded from the single directory name between
+`worktrees` and `<repo>` (e.g. `feature%2Flogin` maps to `feature/login`).
+External attached worktrees use their short branch; external
 detached worktrees use their final path component. Unsafe or ambiguous slots
 are rejected rather than treated as a managed target.
 
@@ -238,8 +239,8 @@ removal.
 Single-worktree mode verifies the linked slot's association and invokes Git.
 It never removes the main worktree. Force supplies one level only; Git locks
 that require stronger intervention remain errors. Verify path and registration
-absence, then clean empty parents up to, but excluding, the per-repository
-worktree directory. Preserve nonempty directories and symlinks; reject replaced
+absence, then clean the empty slot directory, never the shared `worktrees`
+root. Preserve nonempty directories and symlinks; reject replaced
 identities or boundaries. Refuse deletion when another explicitly registered
 repository is physically nested in the linked target, and re-read that managed
 inventory immediately before mutation. Cleanup failures still report a
@@ -273,9 +274,12 @@ argument combinations return `2`.
 
 ### Linked-worktree creation
 
-The path is always `<worktree-root>/<identity>/<branch>`. Validate its slot,
-existing-path and prefix collisions, physical boundary, and parent directories
-before mutation. `-f` never bypasses these conditions.
+The path is always `<primary-root>/worktrees/<slot>/<repo>`, without host or
+owner components. Git-valid slash-separated slot names are URL path-segment
+escaped into a single directory component. Encoded slot directories are unique
+across repositories; a pre-existing slot directory is a collision. Validate the
+physical boundary and reserve the slot before mutation. `-f` never bypasses
+these conditions.
 
 Automatic mode delegates the literal branch to `git worktree add`: Git selects
 existing local/remote candidates, honors `checkout.defaultRemote`, and rejects

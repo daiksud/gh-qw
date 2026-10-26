@@ -46,7 +46,7 @@ func TestManagedRepositoryLifecycle(t *testing.T) {
 	if err := os.MkdirAll(root, 0700); err != nil {
 		t.Fatal(err)
 	}
-	roots := rootpkg.Result{RepositoryRoots: []string{root}, WorktreeRoot: filepath.Join(base, "worktrees")}
+	roots := rootpkg.Result{RepositoryRoots: []string{root}, WorktreeRoot: filepath.Join(root, "worktrees")}
 
 	run := func(args ...string) (int, string, string) {
 		t.Helper()
@@ -85,7 +85,7 @@ func TestManagedRepositoryLifecycle(t *testing.T) {
 		t.Fatalf("incompatible list modes = %d, %q", code, errText)
 	}
 
-	worktree := filepath.Join(base, "worktrees", "github.com", "acme", "api", "review")
+	worktree := filepath.Join(root, "worktrees", "review", "api")
 	if code, output, errText := run("add", "--worktree", "-R", "acme/api", "-b", "review", "HEAD"); code != 0 ||
 		strings.TrimSpace(output) != filepath.ToSlash(worktree) {
 		t.Fatalf("add linked worktree = %d, %q, %q", code, output, errText)
@@ -165,7 +165,7 @@ func TestCloneRejectsRegisteredLocationWithoutReuse(t *testing.T) {
 	code := cmd.Execute(context.Background(), []string{"clone", "acme/api"}, cmd.ApplicationDependencies{
 		Resolver: managedRootResolver{result: rootpkg.Result{
 			RepositoryRoots: []string{filepath.Join(base, "root")},
-			WorktreeRoot:    filepath.Join(base, "worktrees"),
+			WorktreeRoot:    filepath.Join(base, "root", "worktrees"),
 		}},
 		Registry: store,
 		Stdout:   &stdout,

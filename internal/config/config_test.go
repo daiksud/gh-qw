@@ -36,31 +36,13 @@ func TestLoaderValidConfigurations(t *testing.T) {
 			want: Config{Roots: []string{"/second-volume/repos", "~/ghqw", "relative/repos"}},
 		},
 		{
-			name: "worktree root only",
-			data: `worktree_root = "~/.ghqw/worktrees"`,
-			want: Config{WorktreeRoot: "~/.ghqw/worktrees"},
-		},
-		{
-			name: "both keys",
-			data: `
-root = ["/repos/primary", "/repos/archive"]
-worktree_root = "/worktrees"
-`,
-			want: Config{
-				Roots:        []string{"/repos/primary", "/repos/archive"},
-				WorktreeRoot: "/worktrees",
-			},
-		},
-		{
 			name: "comments and escapes",
 			data: `
 # Escapes in basic strings are decoded by TOML. Literal strings retain slashes.
 root = ["~/repo\u0020one", 'C:\repos'] # ordered roots
-worktree_root = "~/.ghqw/\u0077orktrees"
 `,
 			want: Config{
-				Roots:        []string{"~/repo one", `C:\repos`},
-				WorktreeRoot: "~/.ghqw/worktrees",
+				Roots: []string{"~/repo one", `C:\repos`},
 			},
 		},
 		{
@@ -247,14 +229,14 @@ path = "/one"
 			data: `root = [["/one"]]`,
 		},
 		{
-			name:           "empty worktree root",
-			data:           `worktree_root = ""`,
-			reasonContains: "must not be empty",
+			name:           "unsupported worktree root",
+			data:           `worktree_root = "/worktrees"`,
+			reasonContains: "unknown top-level key",
 		},
 		{
-			name:           "whitespace worktree root",
+			name:           "unsupported worktree value",
 			data:           `worktree_root = " \t "`,
-			reasonContains: "only whitespace",
+			reasonContains: "unknown top-level key",
 		},
 		{
 			name: "worktree root array",

@@ -63,10 +63,10 @@ func TestCloneStopsBeforeMutationWhenWarningsCannotBeWritten(t *testing.T) {
 }
 
 func TestWorktreeAddStopsBeforeMutationWhenWarningsCannotBeWritten(t *testing.T) {
-	fixture := worktreeAddNewFixture(t, "feature/warning")
+	fixture := worktreeAddNewFixture(t, "feature-warning")
 	fixture.discoveryWarning = &local.Warning{Path: fixture.repository.Path}
 	fixture.stderrWriter = commandTestWriter(func([]byte) (int, error) { return 0, nil })
-	err := fixture.worktreeAddExecute("feature/warning")
+	err := fixture.worktreeAddExecute("feature-warning")
 	if !errors.Is(err, io.ErrShortWrite) || ExitCode(err) != 1 {
 		t.Fatalf("warning failure = %v, exit = %d", err, ExitCode(err))
 	}
@@ -79,9 +79,9 @@ func TestWorktreeAddStopsBeforeMutationWhenWarningsCannotBeWritten(t *testing.T)
 }
 
 func TestWorktreeAddReportsShortOutputWithoutUndoingCreation(t *testing.T) {
-	fixture := worktreeAddNewFixture(t, "feature/output")
+	fixture := worktreeAddNewFixture(t, "feature-output")
 	fixture.stdoutWriter = commandTestWriter(func([]byte) (int, error) { return 0, nil })
-	err := fixture.worktreeAddExecute("feature/output")
+	err := fixture.worktreeAddExecute("feature-output")
 	if !errors.Is(err, io.ErrShortWrite) || ExitCode(err) != 1 {
 		t.Fatalf("result failure = %v, exit = %d", err, ExitCode(err))
 	}

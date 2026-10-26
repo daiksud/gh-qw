@@ -278,6 +278,20 @@ func worktreeAddRun(
 	if lstat == nil {
 		lstat = os.Lstat
 	}
+	// The slot name must be unique across all repositories. Mkdir is the
+	// exclusive reservation; a concurrent creator must not be adopted.
+	slotDirectory := filepath.Join(roots.WorktreeRoot, local.WorktreeSlotDirectoryName(request.branch))
+	reserved := false
+	for _, parent := range createdParents {
+		if filepath.Clean(parent) == slotDirectory {
+			reserved = true
+			break
+		}
+	}
+	if !reserved {
+		return worktreeAddFailure(fmt.Errorf("reserve worktree slot: %w", &local.SlotCollisionError{Slot: request.branch, ExistingSlot: request.branch}))
+	}
+
 	if _, err := lstat(destination); err == nil {
 		return worktreeAddFailure(fmt.Errorf(
 			"validate worktree destination: %w",

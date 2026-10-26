@@ -55,7 +55,7 @@ func TestRemoveParseSelectionExactFormsAndFirstDelimiter(t *testing.T) {
 		"/absolute/widget",
 		"https://github.com/acme/widget",
 		"owner/repo/extra/path",
-		"github.com/acme/widget@feature/team/login",
+		"github.com/acme/widget@feature-team/login",
 		"acme/widget@feature@tail",
 		"widget@",
 		"widget@HEAD",
@@ -85,7 +85,7 @@ func TestNewRemoveCommandRejectsUsageBeforeResolution(t *testing.T) {
 		t.Run(strings.Join(args, "_"), func(t *testing.T) {
 			t.Parallel()
 
-			fixture := newRemoveTestFixture(t, "feature/test")
+			fixture := newRemoveTestFixture(t, "feature-test")
 			err := fixture.execute(args...)
 			if !errors.Is(err, repospec.ErrUsage) {
 				t.Fatalf("Execute() error = %v, want usage", err)
@@ -126,13 +126,13 @@ func TestNewRemoveCommandAcceptsEveryExactSelectorForm(t *testing.T) {
 func TestNewRemoveCommandDryRunValidatesAndPrintsExactStablePlan(t *testing.T) {
 	t.Parallel()
 
-	fixture := newRemoveTestFixture(t, "zeta", "feature/alpha")
+	fixture := newRemoveTestFixture(t, "zeta", "feature-alpha")
 	if err := fixture.execute("--dry-run", "acme/widget"); err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
 
 	want := "Removal plan:\n" +
-		"  linked worktree: " + removeOutputPath(fixture.linkedPath("feature/alpha")) + "\n" +
+		"  linked worktree: " + removeOutputPath(fixture.linkedPath("feature-alpha")) + "\n" +
 		"  linked worktree: " + removeOutputPath(fixture.linkedPath("zeta")) + "\n" +
 		"  main repository: " + removeOutputPath(fixture.repository.Path) + "\n"
 	if got := fixture.stderr.String(); got != want {
@@ -154,7 +154,7 @@ func TestNewRemoveCommandDeclineAndNonTTYNeverMutate(t *testing.T) {
 	t.Run("decline", func(t *testing.T) {
 		t.Parallel()
 
-		fixture := newRemoveTestFixture(t, "feature/no")
+		fixture := newRemoveTestFixture(t, "feature-no")
 		fixture.prompt = func(context.Context, io.Writer, string) (bool, error) {
 			fixture.promptCalls++
 			return false, nil
@@ -169,7 +169,7 @@ func TestNewRemoveCommandDeclineAndNonTTYNeverMutate(t *testing.T) {
 	t.Run("no controlling terminal", func(t *testing.T) {
 		t.Parallel()
 
-		fixture := newRemoveTestFixture(t, "feature/non-tty")
+		fixture := newRemoveTestFixture(t, "feature-non-tty")
 		wantErr := errors.New("no controlling terminal")
 		dependencies := fixture.dependencies()
 		dependencies.Prompt = nil
@@ -190,7 +190,7 @@ func TestNewRemoveCommandDeclineAndNonTTYNeverMutate(t *testing.T) {
 func TestNewRemoveCommandUsesControllingTerminalNotCommandInput(t *testing.T) {
 	t.Parallel()
 
-	fixture := newRemoveTestFixture(t, "feature/tty")
+	fixture := newRemoveTestFixture(t, "feature-tty")
 	dependencies := fixture.dependencies()
 	dependencies.Prompt = nil
 	dependencies.OpenTerminal = func() (io.ReadCloser, error) {
@@ -203,7 +203,7 @@ func TestNewRemoveCommandUsesControllingTerminalNotCommandInput(t *testing.T) {
 	if err := command.Execute(); err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
-	if _, err := os.Lstat(fixture.linkedPath("feature/tty")); !errors.Is(err, fs.ErrNotExist) {
+	if _, err := os.Lstat(fixture.linkedPath("feature-tty")); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("linked target remains: %v", err)
 	}
 	if _, err := os.Lstat(fixture.repository.Path); !errors.Is(err, fs.ErrNotExist) {
@@ -262,15 +262,15 @@ func TestNewRemoveCommandCompletesAllCleanlinessChecksBeforePrompt(t *testing.T)
 		dirty  string
 		output []byte
 	}{
-		{name: "tracked linked", dirty: "feature/dirty", output: []byte(" M file\x00")},
-		{name: "untracked linked", dirty: "feature/dirty", output: []byte("?? new\x00")},
+		{name: "tracked linked", dirty: "feature-dirty", output: []byte(" M file\x00")},
+		{name: "untracked linked", dirty: "feature-dirty", output: []byte("?? new\x00")},
 		{name: "dirty main", dirty: "main", output: []byte(" M README\x00")},
 	} {
 		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			fixture := newRemoveTestFixture(t, "alpha", "feature/dirty")
+			fixture := newRemoveTestFixture(t, "alpha", "feature-dirty")
 			path := fixture.linkedPath(test.dirty)
 			if test.dirty == "main" {
 				path = fixture.repository.Path
@@ -302,25 +302,25 @@ func TestNewRemoveCommandRejectsUnsafeLinkedTargetsBeforePrompt(t *testing.T) {
 		{
 			name: "locked",
 			configure: func(fixture *removeTestFixture) {
-				fixture.linkedRecord("feature/unsafe").Locked = true
+				fixture.linkedRecord("feature-unsafe").Locked = true
 			},
 		},
 		{
 			name: "prunable",
 			configure: func(fixture *removeTestFixture) {
-				fixture.linkedRecord("feature/unsafe").Prunable = true
+				fixture.linkedRecord("feature-unsafe").Prunable = true
 			},
 		},
 		{
 			name: "bare",
 			configure: func(fixture *removeTestFixture) {
-				fixture.linkedRecord("feature/unsafe").Bare = true
+				fixture.linkedRecord("feature-unsafe").Bare = true
 			},
 		},
 		{
 			name: "detached ambiguity",
 			configure: func(fixture *removeTestFixture) {
-				record := fixture.linkedRecord("feature/unsafe")
+				record := fixture.linkedRecord("feature-unsafe")
 				record.Detached = true
 				record.Branch = ""
 			},
@@ -334,14 +334,14 @@ func TestNewRemoveCommandRejectsUnsafeLinkedTargetsBeforePrompt(t *testing.T) {
 		{
 			name: "foreign repository",
 			configure: func(fixture *removeTestFixture) {
-				fixture.linkedRecord("feature/unsafe").Repository.Identity =
+				fixture.linkedRecord("feature-unsafe").Repository.Identity =
 					"github.com/other/repository"
 			},
 		},
 		{
 			name: "missing",
 			configure: func(fixture *removeTestFixture) {
-				if err := os.RemoveAll(fixture.linkedPath("feature/unsafe")); err != nil {
+				if err := os.RemoveAll(fixture.linkedPath("feature-unsafe")); err != nil {
 					t.Fatal(err)
 				}
 			},
@@ -351,7 +351,7 @@ func TestNewRemoveCommandRejectsUnsafeLinkedTargetsBeforePrompt(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 
-			fixture := newRemoveTestFixture(t, "feature/unsafe")
+			fixture := newRemoveTestFixture(t, "feature-unsafe")
 			test.configure(fixture)
 			err := fixture.execute("widget")
 			if err == nil {
@@ -414,8 +414,8 @@ func TestNewRemoveCommandRejectsSymlinkAndReplacementTOCTOU(t *testing.T) {
 	})
 
 	t.Run("linked path becomes symlink after prompt", func(t *testing.T) {
-		fixture := newRemoveTestFixture(t, "feature/toctou")
-		target := fixture.linkedPath("feature/toctou")
+		fixture := newRemoveTestFixture(t, "feature-toctou")
+		target := fixture.linkedPath("feature-toctou")
 		outside := filepath.Join(fixture.base, "outside")
 		if err := os.Mkdir(outside, 0o755); err != nil {
 			t.Fatal(err)
@@ -445,8 +445,8 @@ func TestNewRemoveCommandRejectsSymlinkAndReplacementTOCTOU(t *testing.T) {
 	})
 
 	t.Run("same path replacement after prompt", func(t *testing.T) {
-		fixture := newRemoveTestFixture(t, "feature/replaced")
-		target := fixture.linkedPath("feature/replaced")
+		fixture := newRemoveTestFixture(t, "feature-replaced")
+		target := fixture.linkedPath("feature-replaced")
 		original := filepath.Join(fixture.base, "original-linked")
 		fixture.prompt = func(context.Context, io.Writer, string) (bool, error) {
 			fixture.promptCalls++
@@ -473,9 +473,9 @@ func TestNewRemoveCommandRejectsSymlinkAndReplacementTOCTOU(t *testing.T) {
 func TestNewRemoveCommandWholeRepositoryStableOrderExactBoundaryAndCleanup(t *testing.T) {
 	t.Parallel()
 
-	fixture := newRemoveTestFixture(t, "zeta", "feature/alpha")
+	fixture := newRemoveTestFixture(t, "zeta", "feature-alpha")
 	mainPath := fixture.repository.Path
-	alphaPath := fixture.linkedPath("feature/alpha")
+	alphaPath := fixture.linkedPath("feature-alpha")
 	zetaPath := fixture.linkedPath("zeta")
 
 	if err := fixture.execute("github.com/acme/widget"); err != nil {
@@ -497,7 +497,7 @@ func TestNewRemoveCommandWholeRepositoryStableOrderExactBoundaryAndCleanup(t *te
 	if !reflect.DeepEqual(fixture.removeAllCalls, []string{mainPath}) {
 		t.Fatalf("RemoveAll calls = %#v, want exact main only", fixture.removeAllCalls)
 	}
-	for _, path := range []string{alphaPath, zetaPath, mainPath, fixture.worktreeBase} {
+	for _, path := range []string{alphaPath, zetaPath, mainPath, filepath.Dir(alphaPath), filepath.Dir(zetaPath)} {
 		if _, err := os.Lstat(path); !errors.Is(err, fs.ErrNotExist) {
 			t.Fatalf("%q remains: %v", path, err)
 		}
@@ -510,7 +510,7 @@ func TestNewRemoveCommandWholeRepositoryStableOrderExactBoundaryAndCleanup(t *te
 	if _, err := os.Lstat(filepath.Join(fixture.repositoryRoot, "github.com")); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("empty repository host parent remains: %v", err)
 	}
-	if _, err := os.Lstat(filepath.Join(fixture.worktreeRoot, "github.com")); !errors.Is(err, fs.ErrNotExist) {
+	if _, err := os.Lstat(filepath.Join(fixture.worktreeRoot, "feature-alpha")); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("empty worktree host parent remains: %v", err)
 	}
 	fixture.assertStdoutEmpty(t)
@@ -660,8 +660,8 @@ func TestNewRemoveCommandRevalidatesNestedRegistrationsAfterConfirmation(t *test
 func TestNewRemoveCommandRejectsRegistrationInsideLinkedRemovalTarget(t *testing.T) {
 	t.Parallel()
 
-	fixture := newRemoveTestFixture(t, "feature/nested")
-	childPath := filepath.Join(fixture.linkedPath("feature/nested"), "child")
+	fixture := newRemoveTestFixture(t, "feature-nested")
+	childPath := filepath.Join(fixture.linkedPath("feature-nested"), "child")
 	if err := os.MkdirAll(filepath.Join(childPath, ".git"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -671,7 +671,7 @@ func TestNewRemoveCommandRejectsRegistrationInsideLinkedRemovalTarget(t *testing
 		Owner:     "acme",
 		Repo:      "child",
 		Path:      childPath,
-		Root:      fixture.linkedPath("feature/nested"),
+		Root:      fixture.linkedPath("feature-nested"),
 		RootIndex: len(fixture.resolver.result.RepositoryRoots),
 	})
 
@@ -689,8 +689,8 @@ func TestNewRemoveCommandRejectsRegistrationInsideLinkedRemovalTarget(t *testing
 }
 
 func TestNewRemoveCommandRevalidatesRegistrationInsideLinkedTarget(t *testing.T) {
-	fixture := newRemoveTestFixture(t, "feature/nested")
-	childPath := filepath.Join(fixture.linkedPath("feature/nested"), "child")
+	fixture := newRemoveTestFixture(t, "feature-nested")
+	childPath := filepath.Join(fixture.linkedPath("feature-nested"), "child")
 	fixture.prompt = func(context.Context, io.Writer, string) (bool, error) {
 		fixture.promptCalls++
 		if err := os.MkdirAll(filepath.Join(childPath, ".git"), 0o755); err != nil {
@@ -702,7 +702,7 @@ func TestNewRemoveCommandRevalidatesRegistrationInsideLinkedTarget(t *testing.T)
 			Owner:     "acme",
 			Repo:      "child",
 			Path:      childPath,
-			Root:      fixture.linkedPath("feature/nested"),
+			Root:      fixture.linkedPath("feature-nested"),
 			RootIndex: len(fixture.resolver.result.RepositoryRoots),
 		})
 		return true, nil
@@ -796,7 +796,7 @@ func TestNewRemoveCommandRevalidatesMainAfterLinkedMutation(t *testing.T) {
 		t.Skip("symbolic-link behavior is platform-specific")
 	}
 
-	fixture := newRemoveTestFixture(t, "feature/one")
+	fixture := newRemoveTestFixture(t, "feature-one")
 	outside := filepath.Join(fixture.base, "outside-main")
 	if err := os.MkdirAll(filepath.Join(outside, ".git"), 0o755); err != nil {
 		t.Fatal(err)
@@ -879,15 +879,15 @@ func TestNewRemoveCommandWarningsAndWriterErrors(t *testing.T) {
 	t.Run("progress writer failure reports completed target", func(t *testing.T) {
 		t.Parallel()
 
-		fixture := newRemoveTestFixture(t, "feature/write")
+		fixture := newRemoveTestFixture(t, "feature-write")
 		wantErr := errors.New("progress write failed")
 		fixture.stderrWriter = &removeTestNthWriteError{failAt: 2, err: wantErr}
 		err := fixture.execute("widget")
 		if !errors.Is(err, wantErr) ||
-			!strings.Contains(err.Error(), "removed ["+removeOutputPath(fixture.linkedPath("feature/write"))+"]") {
+			!strings.Contains(err.Error(), "removed ["+removeOutputPath(fixture.linkedPath("feature-write"))+"]") {
 			t.Fatalf("Execute() error = %v, want explicit completed target", err)
 		}
-		if _, statErr := os.Lstat(fixture.linkedPath("feature/write")); !errors.Is(statErr, fs.ErrNotExist) {
+		if _, statErr := os.Lstat(fixture.linkedPath("feature-write")); !errors.Is(statErr, fs.ErrNotExist) {
 			t.Fatalf("linked target remains: %v", statErr)
 		}
 	})
@@ -896,7 +896,7 @@ func TestNewRemoveCommandWarningsAndWriterErrors(t *testing.T) {
 func TestNewRemoveCommandRealGitWholeLifecycle(t *testing.T) {
 	base := removeTestPhysicalPath(t, t.TempDir())
 	repositoryRoot := filepath.Join(base, "repositories")
-	worktreeRoot := filepath.Join(base, "worktrees")
+	worktreeRoot := filepath.Join(repositoryRoot, "worktrees")
 	repositoryPath := filepath.Join(repositoryRoot, "github.com", "acme", "widget")
 	for _, path := range []string{repositoryPath, worktreeRoot} {
 		if err := os.MkdirAll(path, 0o755); err != nil {
@@ -914,13 +914,11 @@ func TestNewRemoveCommandRealGitWholeLifecycle(t *testing.T) {
 	removeTestRunGit(t, repositoryPath, "commit", "-m", "initial")
 
 	paths := make(map[string]string)
-	for _, slot := range []string{"zeta", "feature/alpha"} {
+	for _, slot := range []string{"zeta", "feature-alpha"} {
 		path := filepath.Join(
 			worktreeRoot,
-			"github.com",
-			"acme",
+			slot,
 			"widget",
-			filepath.FromSlash(slot),
 		)
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)
@@ -950,10 +948,11 @@ func TestNewRemoveCommandRealGitWholeLifecycle(t *testing.T) {
 		t.Fatalf("stdout = %q, want empty", stdout.String())
 	}
 	for _, path := range []string{
-		paths["feature/alpha"],
+		paths["feature-alpha"],
 		paths["zeta"],
 		repositoryPath,
-		filepath.Join(worktreeRoot, "github.com", "acme", "widget"),
+		filepath.Join(worktreeRoot, "feature-alpha"),
+		filepath.Join(worktreeRoot, "zeta"),
 	} {
 		if _, err := os.Lstat(path); !errors.Is(err, fs.ErrNotExist) {
 			t.Fatalf("%q remains after lifecycle: %v", path, err)
@@ -964,7 +963,7 @@ func TestNewRemoveCommandRealGitWholeLifecycle(t *testing.T) {
 			t.Fatalf("root %q changed: %v, %v", root, info, err)
 		}
 	}
-	alphaIndex := strings.Index(stderr.String(), removeOutputPath(paths["feature/alpha"]))
+	alphaIndex := strings.Index(stderr.String(), removeOutputPath(paths["feature-alpha"]))
 	zetaIndex := strings.Index(stderr.String(), removeOutputPath(paths["zeta"]))
 	if alphaIndex < 0 || zetaIndex < 0 || alphaIndex >= zetaIndex {
 		t.Fatalf("stderr does not preserve stable alpha-before-zeta order: %q", stderr.String())
@@ -1087,9 +1086,9 @@ func newRemoveTestFixture(t *testing.T, slots ...string) *removeTestFixture {
 
 	base := removeTestPhysicalPath(t, t.TempDir())
 	repositoryRoot := filepath.Join(base, "repositories")
-	worktreeRoot := filepath.Join(base, "worktrees")
+	worktreeRoot := filepath.Join(repositoryRoot, "worktrees")
 	repositoryPath := filepath.Join(repositoryRoot, "github.com", "acme", "widget")
-	worktreeBase := filepath.Join(worktreeRoot, "github.com", "acme", "widget")
+	worktreeBase := worktreeRoot
 	for _, path := range []string{
 		filepath.Join(repositoryPath, ".git"),
 		worktreeRoot,
@@ -1177,7 +1176,7 @@ func (fixture *removeTestFixture) addLinked(t *testing.T, slot string) {
 }
 
 func (fixture *removeTestFixture) linkedPath(slot string) string {
-	return filepath.Join(fixture.worktreeBase, filepath.FromSlash(slot))
+	return filepath.Join(fixture.worktreeBase, slot, fixture.repository.Repo)
 }
 
 func (fixture *removeTestFixture) linkedRecord(slot string) *local.Worktree {
