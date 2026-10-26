@@ -169,7 +169,7 @@ func TestCLIRepositoryAndWorktreeLifecycle(t *testing.T) {
 	assertStatus(t, result, 0)
 	assertStdout(t, result,
 		testIdentity+"@github-com-acme-widget-feature-e2e\n"+
-		testIdentity+"@github-com-acme-widget-feature-e2e-1\n")
+			testIdentity+"@github-com-acme-widget-feature-e2e-1\n")
 	assertStderr(t, result, "")
 
 	result = fixture.runCLI(
