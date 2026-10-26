@@ -33,32 +33,32 @@ func TestAddWorktreeAutomaticResolution(t *testing.T) {
 	}{
 		{
 			name:        "attaches existing local branch and ignores explicit commit-ish",
-			args:        []string{"feature/local", "ignored"},
-			configure:   func(f *worktreeAddFixture) { f.git.localBranches["feature/local"] = true },
-			wantOptions: gitcmd.WorktreeAddOptions{Commitish: "feature/local"},
+			args:        []string{"feature-local", "ignored"},
+			configure:   func(f *worktreeAddFixture) { f.git.localBranches["feature-local"] = true },
+			wantOptions: gitcmd.WorktreeAddOptions{Commitish: "feature-local"},
 		},
 		{
 			name:        "delegates branch selection to Git without speculative API",
-			args:        []string{"feature/requested"},
-			wantOptions: gitcmd.WorktreeAddOptions{Commitish: "feature/requested"},
+			args:        []string{"feature-requested"},
+			wantOptions: gitcmd.WorktreeAddOptions{Commitish: "feature-requested"},
 		},
 		{
 			name:        "creates branch from explicit commit-ish through Git",
-			args:        []string{"feature/explicit", "release-base"},
-			wantOptions: gitcmd.WorktreeAddOptions{Commitish: "release-base", NewBranch: "feature/explicit"},
+			args:        []string{"feature-explicit", "release-base"},
+			wantOptions: gitcmd.WorktreeAddOptions{Commitish: "release-base", NewBranch: "feature-explicit"},
 		},
 		{
 			name:         "explicit new branch starts at local GitHub default",
-			args:         []string{"-b", "feature/api-local"},
+			args:         []string{"-b", "feature-api-local"},
 			configure:    func(f *worktreeAddFixture) { f.git.localBranches["main"] = true },
-			wantOptions:  gitcmd.WorktreeAddOptions{Commitish: "refs/heads/main", NewBranch: "feature/api-local"},
+			wantOptions:  gitcmd.WorktreeAddOptions{Commitish: "refs/heads/main", NewBranch: "feature-api-local"},
 			wantAPICalls: 1,
 		},
 		{
 			name:         "explicit new branch synchronizes missing local default",
-			args:         []string{"-b", "feature/api-sync"},
+			args:         []string{"-b", "feature-api-sync"},
 			configure:    func(f *worktreeAddFixture) { f.gh.syncCreatesLocalBranch = true },
-			wantOptions:  gitcmd.WorktreeAddOptions{Commitish: "refs/heads/main", NewBranch: "feature/api-sync"},
+			wantOptions:  gitcmd.WorktreeAddOptions{Commitish: "refs/heads/main", NewBranch: "feature-api-sync"},
 			wantAPICalls: 1,
 			wantSyncs:    []ghcmd.SyncOptions{{Host: "github.com", Source: "acme/widget", Branch: "main"}},
 		},
@@ -96,10 +96,10 @@ func TestAddWorktreeAutomaticResolution(t *testing.T) {
 
 func TestAddWorktreeFetchesDefaultBranchThroughAPIAndSync(t *testing.T) {
 	t.Setenv("GH_HOST", "ambient.example.com")
-	fixture := worktreeAddNewFixture(t, "feature/api-fetch")
+	fixture := worktreeAddNewFixture(t, "feature-api-fetch")
 	fixture.api.branch = "main"
 	fixture.gh.syncCreatesLocalBranch = true
-	if err := fixture.worktreeAddExecute("-b", "feature/api-fetch"); err != nil {
+	if err := fixture.worktreeAddExecute("-b", "feature-api-fetch"); err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
 	if fixture.api.calls != 1 || len(fixture.gh.syncs) != 1 {
@@ -139,8 +139,8 @@ func TestAddWorktreeModesAndForce(t *testing.T) {
 		},
 		{
 			name:   "detached explicit target",
-			branch: "review/123",
-			args:   []string{"--detach", "-f", "review/123", "refs/pull/123/head"},
+			branch: "review-123",
+			args:   []string{"--detach", "-f", "review-123", "refs/pull/123/head"},
 			wantOptions: gitcmd.WorktreeAddOptions{
 				Commitish: "refs/pull/123/head",
 				Detach:    true,
@@ -195,34 +195,34 @@ func TestAddWorktreeModeValidation(t *testing.T) {
 	}{
 		{
 			name: "new and reset",
-			args: []string{"-b", "-B", "feature/x"},
+			args: []string{"-b", "-B", "feature-x"},
 			want: "mutually exclusive",
 		},
 		{
 			name: "new and detached",
-			args: []string{"-b", "--detach", "feature/x"},
+			args: []string{"-b", "--detach", "feature-x"},
 			want: "mutually exclusive",
 		},
 		{
 			name: "reset and orphan",
-			args: []string{"-B", "--orphan", "feature/x"},
+			args: []string{"-B", "--orphan", "feature-x"},
 			want: "mutually exclusive",
 		},
 		{
 			name: "orphan commit-ish",
-			args: []string{"--orphan", "feature/x", "main"},
+			args: []string{"--orphan", "feature-x", "main"},
 			want: "cannot have a start point",
 		},
 		{
 			name: "invalid slot",
-			args: []string{"feature/../x"},
+			args: []string{"feature-../x"},
 			want: "invalid worktree branch",
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			fixture := worktreeAddNewFixture(t, "feature/x")
+			fixture := worktreeAddNewFixture(t, "feature-x")
 			err := fixture.worktreeAddExecute(test.args...)
 			if err == nil || !strings.Contains(err.Error(), test.want) {
 				t.Fatalf("Execute() error = %v, want containing %q", err, test.want)
@@ -276,11 +276,11 @@ func TestAddWorktreeAPIAndSyncFailures(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			fixture := worktreeAddNewFixture(t, "feature/api-failure")
+			fixture := worktreeAddNewFixture(t, "feature-api-failure")
 			fixture.api.branch = "main"
 			test.configure(fixture)
 
-			err := fixture.worktreeAddExecute("-b", "feature/api-failure")
+			err := fixture.worktreeAddExecute("-b", "feature-api-failure")
 			if err == nil || !strings.Contains(err.Error(), test.want) {
 				t.Fatalf("Execute() error = %v, want containing %q", err, test.want)
 			}
@@ -293,11 +293,11 @@ func TestAddWorktreeAPIAndSyncFailures(t *testing.T) {
 
 func TestAddWorktreeRepositorySelection(t *testing.T) {
 	t.Run("current descendant", func(t *testing.T) {
-		fixture := worktreeAddNewFixture(t, "feature/current")
-		fixture.git.localBranches["feature/current"] = true
+		fixture := worktreeAddNewFixture(t, "feature-current")
+		fixture.git.localBranches["feature-current"] = true
 		fixture.cwd = filepath.Join(fixture.repository.Path, "nested", "directory")
 
-		if err := fixture.worktreeAddExecute("feature/current"); err != nil {
+		if err := fixture.worktreeAddExecute("feature-current"); err != nil {
 			t.Fatalf("Execute() error = %v", err)
 		}
 		if fixture.currentCalls != 1 || fixture.currentCwd != fixture.cwd {
@@ -311,7 +311,7 @@ func TestAddWorktreeRepositorySelection(t *testing.T) {
 	})
 
 	t.Run("explicit selector wins", func(t *testing.T) {
-		fixture := worktreeAddNewFixture(t, "feature/selected")
+		fixture := worktreeAddNewFixture(t, "feature-selected")
 		second := worktreeAddRepository(
 			filepath.Join(fixture.base, "repositories-two"),
 			"github.com/other/second",
@@ -323,10 +323,10 @@ func TestAddWorktreeRepositorySelection(t *testing.T) {
 		fixture.repositories = append(fixture.repositories, second)
 		fixture.repository = second
 		fixture.destination = worktreeAddDestination(fixture.worktreeRoot, second, fixture.branch)
-		fixture.git.localBranches["feature/selected"] = true
+		fixture.git.localBranches["feature-selected"] = true
 		fixture.currentErr = errors.New("must not be called")
 
-		if err := fixture.worktreeAddExecute("-R", "other/second", "feature/selected"); err != nil {
+		if err := fixture.worktreeAddExecute("-R", "other/second", "feature-selected"); err != nil {
 			t.Fatalf("Execute() error = %v", err)
 		}
 		if fixture.currentCalls != 0 {
@@ -338,10 +338,10 @@ func TestAddWorktreeRepositorySelection(t *testing.T) {
 	})
 
 	t.Run("outside requires repo", func(t *testing.T) {
-		fixture := worktreeAddNewFixture(t, "feature/outside")
+		fixture := worktreeAddNewFixture(t, "feature-outside")
 		fixture.currentErr = local.ErrCurrentUnmanaged
 
-		err := fixture.worktreeAddExecute("feature/outside")
+		err := fixture.worktreeAddExecute("feature-outside")
 		if err == nil || !strings.Contains(err.Error(), "use -R") {
 			t.Fatalf("Execute() error = %v, want -R guidance", err)
 		}
@@ -351,10 +351,10 @@ func TestAddWorktreeRepositorySelection(t *testing.T) {
 	})
 
 	t.Run("explicit empty selector does not fall back to current", func(t *testing.T) {
-		fixture := worktreeAddNewFixture(t, "feature/empty-selector")
+		fixture := worktreeAddNewFixture(t, "feature-empty-selector")
 		fixture.currentErr = errors.New("must not be called")
 
-		err := fixture.worktreeAddExecute("--repo=", "feature/empty-selector")
+		err := fixture.worktreeAddExecute("--repo=", "feature-empty-selector")
 		if !errors.Is(err, local.ErrInvalidSelector) {
 			t.Fatalf("Execute() error = %v, want ErrInvalidSelector", err)
 		}
@@ -371,7 +371,7 @@ func TestAddWorktreeHandlesDuplicateRepositoryIdentity(t *testing.T) {
 			name = "explicit"
 		}
 		t.Run(name, func(t *testing.T) {
-			fixture := worktreeAddNewFixture(t, "feature/duplicate")
+			fixture := worktreeAddNewFixture(t, "feature-duplicate")
 			duplicate := fixture.repository
 			duplicate.Root = filepath.Join(fixture.base, "repositories-two")
 			duplicate.Path = filepath.Join(
@@ -385,9 +385,9 @@ func TestAddWorktreeHandlesDuplicateRepositoryIdentity(t *testing.T) {
 				t.Fatalf("MkdirAll(duplicate) error = %v", err)
 			}
 			fixture.repositories = append(fixture.repositories, duplicate)
-			fixture.git.localBranches["feature/duplicate"] = true
+			fixture.git.localBranches["feature-duplicate"] = true
 
-			args := []string{"feature/duplicate"}
+			args := []string{"feature-duplicate"}
 			if explicit {
 				args = append([]string{"-R", fixture.repository.Identity}, args...)
 			}
@@ -416,17 +416,17 @@ func TestAddWorktreeHandlesDuplicateRepositoryIdentity(t *testing.T) {
 
 func TestAddWorktreePathSafety(t *testing.T) {
 	t.Run("registered parent slot", func(t *testing.T) {
-		fixture := worktreeAddNewFixture(t, "feat/x")
+		fixture := worktreeAddNewFixture(t, "feat-x")
 		fixture.initialWorktrees = append(fixture.initialWorktrees, local.Worktree{
 			Repository: fixture.repository,
-			Identity:   fixture.repository.Identity + "@feat",
-			Slot:       "feat",
+			Identity:   fixture.repository.Identity + "@feat-x",
+			Slot:       "feat-x",
 			Path:       filepath.Join(fixture.worktreeRoot, "existing"),
 			Branch:     "feat",
 		})
-		fixture.git.localBranches["feat/x"] = true
+		fixture.git.localBranches["feat-x"] = true
 
-		err := fixture.worktreeAddExecute("-f", "feat/x")
+		err := fixture.worktreeAddExecute("-f", "feat-x")
 		if !errors.Is(err, local.ErrSlotCollision) {
 			t.Fatalf("Execute() error = %v, want ErrSlotCollision", err)
 		}
@@ -436,7 +436,7 @@ func TestAddWorktreePathSafety(t *testing.T) {
 	})
 
 	t.Run("existing exact destination", func(t *testing.T) {
-		fixture := worktreeAddNewFixture(t, "feature/existing-path")
+		fixture := worktreeAddNewFixture(t, "feature-existing-path")
 		if err := os.MkdirAll(fixture.destination, 0o755); err != nil {
 			t.Fatalf("MkdirAll(destination) error = %v", err)
 		}
@@ -449,7 +449,7 @@ func TestAddWorktreePathSafety(t *testing.T) {
 	})
 
 	t.Run("filesystem Git marker prefix", func(t *testing.T) {
-		fixture := worktreeAddNewFixture(t, "feature/child")
+		fixture := worktreeAddNewFixture(t, "feature-child")
 		prefix := filepath.Dir(fixture.destination)
 		if err := os.MkdirAll(prefix, 0o755); err != nil {
 			t.Fatalf("MkdirAll(prefix) error = %v", err)
@@ -469,12 +469,12 @@ func TestAddWorktreePathSafety(t *testing.T) {
 		if runtime.GOOS == "windows" {
 			t.Skip("symlink creation requires platform privileges")
 		}
-		fixture := worktreeAddNewFixture(t, "feature/symlink")
+		fixture := worktreeAddNewFixture(t, "feature-symlink")
 		outside := filepath.Join(fixture.base, "outside")
 		if err := os.MkdirAll(outside, 0o755); err != nil {
 			t.Fatalf("MkdirAll(outside) error = %v", err)
 		}
-		if err := os.Symlink(outside, filepath.Join(fixture.worktreeRoot, "github.com")); err != nil {
+		if err := os.Symlink(outside, filepath.Join(fixture.worktreeRoot, fixture.branch)); err != nil {
 			t.Fatalf("Symlink() error = %v", err)
 		}
 		fixture.git.localBranches[fixture.branch] = true
@@ -490,7 +490,7 @@ func TestAddWorktreePathSafety(t *testing.T) {
 }
 
 func TestAddWorktreeCleansOnlyNewEmptyParents(t *testing.T) {
-	fixture := worktreeAddNewFixture(t, "feature/cleanup")
+	fixture := worktreeAddNewFixture(t, "feature-cleanup")
 	basePath := filepath.Dir(filepath.Dir(fixture.destination))
 	if err := os.MkdirAll(basePath, 0o755); err != nil {
 		t.Fatalf("MkdirAll(basePath) error = %v", err)
@@ -518,13 +518,13 @@ func TestAddWorktreeCleansOnlyNewEmptyParents(t *testing.T) {
 }
 
 func TestAddWorktreeCleansAfterMkdirFailure(t *testing.T) {
-	fixture := worktreeAddNewFixture(t, "feature/deep/cleanup")
+	fixture := worktreeAddNewFixture(t, "feature-deep/cleanup")
 	fixture.git.localBranches[fixture.branch] = true
 	mkdirCalls := 0
 	realMkdir := os.Mkdir
 	fixture.mkdir = func(path string, mode fs.FileMode) error {
 		mkdirCalls++
-		if mkdirCalls == 3 {
+		if mkdirCalls == 1 {
 			return errors.New("mkdir failed")
 		}
 		return realMkdir(path, mode)
@@ -575,7 +575,7 @@ func TestAddWorktreePostValidationFailurePreservesGitState(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			fixture := worktreeAddNewFixture(t, "feature/post")
+			fixture := worktreeAddNewFixture(t, "feature-post")
 			fixture.git.localBranches[fixture.branch] = true
 			test.configure(fixture)
 
@@ -594,7 +594,7 @@ func TestAddWorktreePostValidationFailurePreservesGitState(t *testing.T) {
 }
 
 func TestAddWorktreePropagatesWriteFailureWithoutDeletingWorktree(t *testing.T) {
-	fixture := worktreeAddNewFixture(t, "feature/write")
+	fixture := worktreeAddNewFixture(t, "feature-write")
 	fixture.git.localBranches[fixture.branch] = true
 	wantErr := errors.New("write failed")
 	fixture.stdoutWriter = worktreeAddFailingWriter{err: wantErr}
@@ -609,7 +609,7 @@ func TestAddWorktreePropagatesWriteFailureWithoutDeletingWorktree(t *testing.T) 
 }
 
 func TestAddWorktreePropagatesDiagnosticWriteFailure(t *testing.T) {
-	fixture := worktreeAddNewFixture(t, "feature/diagnostic-write")
+	fixture := worktreeAddNewFixture(t, "feature-diagnostic-write")
 	wantErr := errors.New("diagnostic write failed")
 	fixture.stderrWriter = worktreeAddFailingWriter{err: wantErr}
 	fixture.discoveryWarning = &local.Warning{
@@ -631,7 +631,7 @@ func TestAddWorktreePropagatesDiagnosticWriteFailure(t *testing.T) {
 }
 
 func TestAddWorktreeWritesDiscoveryWarningsToStderr(t *testing.T) {
-	fixture := worktreeAddNewFixture(t, "feature/warning")
+	fixture := worktreeAddNewFixture(t, "feature-warning")
 	fixture.git.localBranches[fixture.branch] = true
 	fixture.discoveryWarning = &local.Warning{
 		Kind:      local.WarningInspection,
@@ -661,7 +661,7 @@ func TestAddWorktreeRealGitLifecycle(t *testing.T) {
 
 	base := worktreeAddPhysicalPath(t, t.TempDir())
 	repositoryRoot := filepath.Join(base, "repositories")
-	worktreeRoot := filepath.Join(base, "worktrees")
+	worktreeRoot := filepath.Join(repositoryRoot, "worktrees")
 	repository := worktreeAddRepository(
 		repositoryRoot,
 		"github.com/acme/widget",
@@ -680,7 +680,7 @@ func TestAddWorktreeRealGitLifecycle(t *testing.T) {
 	}
 	worktreeAddRunGit(t, repository.Path, "add", "README")
 	worktreeAddRunGit(t, repository.Path, "commit", "-m", "initial")
-	branch := "feature/lifecycle"
+	branch := "feature-lifecycle"
 	worktreeAddRunGit(t, repository.Path, "branch", branch)
 
 	var stdout bytes.Buffer
@@ -755,7 +755,7 @@ func worktreeAddNewFixture(t *testing.T, branch string) *worktreeAddFixture {
 	t.Helper()
 	base := worktreeAddPhysicalPath(t, t.TempDir())
 	repositoryRoot := filepath.Join(base, "repositories")
-	worktreeRoot := filepath.Join(base, "worktrees")
+	worktreeRoot := filepath.Join(repositoryRoot, "worktrees")
 	repository := worktreeAddRepository(
 		repositoryRoot,
 		"github.com/acme/widget",
@@ -1065,13 +1065,7 @@ func worktreeAddDestination(
 	repository local.Repository,
 	branch string,
 ) string {
-	return filepath.Join(
-		worktreeRoot,
-		repository.Host,
-		repository.Owner,
-		repository.Repo,
-		filepath.FromSlash(branch),
-	)
+	return filepath.Join(worktreeRoot, branch, repository.Repo)
 }
 
 func worktreeAddRunGit(t *testing.T, dir string, args ...string) {
