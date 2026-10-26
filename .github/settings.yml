@@ -106,7 +106,7 @@ spec:
     enforcement: active
     bypass_actors:
     - role: admin
-      bypass_mode: pull_request
+      bypass_mode: always
     conditions:
       ref_name:
         include:
