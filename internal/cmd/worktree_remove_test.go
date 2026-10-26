@@ -1022,9 +1022,11 @@ func TestNewRemoveCommandWorktreeGoneKeepsParentOfRegisteredWorktree(t *testing.
 	if got := ExitCode(err); got != 1 {
 		t.Fatalf("ExitCode(error=%v) = %d, want 1; stderr=%q", err, got, stderr.String())
 	}
-	if stdout.Len() != 0 || !strings.Contains(stderr.String(), "keep slot=\"gone\"") ||
-		!strings.Contains(stderr.String(), "contains registered worktree") {
-		t.Fatalf("output stdout=%q stderr=%q", stdout.String(), stderr.String())
+	if err == nil || !strings.Contains(err.Error(), "outside <slot>/<repo> layout") {
+		t.Fatalf("nested worktree layout was not rejected: %v", err)
+	}
+	if stdout.Len() != 0 || stderr.Len() != 0 {
+		t.Fatalf("refused removal unexpectedly wrote output: stdout=%q stderr=%q", stdout.String(), stderr.String())
 	}
 	for _, path := range []string{parentPath, childPath} {
 		if info, statErr := os.Stat(path); statErr != nil || !info.IsDir() {
