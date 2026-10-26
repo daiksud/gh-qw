@@ -17,7 +17,7 @@ runs:
         set -euo pipefail
         build_matrix="$(bash .github/scripts/ci-artifacts.sh build-matrix)"
         acceptance_matrix="$(bash .github/scripts/ci-artifacts.sh acceptance-matrix)"
-        jq -e '.include == [{"target":"linux-amd64","runner":"ubuntu-slim"},{"target":"linux-arm64","runner":"ubuntu-24.04-arm"},{"target":"darwin-arm64","runner":"macos-14"},{"target":"windows-amd64","runner":"windows-latest"}]' <<< "$build_matrix" >/dev/null
-        jq -e '.include == [{"target":"linux-amd64","kind":"process","runner":"ubuntu-slim"},{"target":"linux-arm64","kind":"process","runner":"ubuntu-24.04-arm"},{"target":"darwin-arm64","kind":"process","runner":"macos-14"},{"target":"windows-amd64","kind":"process","runner":"windows-latest"}]' <<< "$acceptance_matrix" >/dev/null
+        jq -e '.include == [{"target":"linux-amd64","runner":"ubuntu-slim"},{"target":"darwin-arm64","runner":"macos-14"},{"target":"windows-amd64","runner":"windows-latest"}]' <<< "$build_matrix" >/dev/null
+        jq -e '.include == [{"target":"linux-amd64","kind":"process","runner":"ubuntu-slim"},{"target":"darwin-arm64","kind":"process","runner":"macos-14"},{"target":"windows-amd64","kind":"process","runner":"windows-latest"}]' <<< "$acceptance_matrix" >/dev/null
         printf 'build-matrix=%s\nacceptance-matrix=%s\n' \
           "$build_matrix" "$acceptance_matrix" >> "$GITHUB_OUTPUT"
