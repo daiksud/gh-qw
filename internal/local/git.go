@@ -1,11 +1,12 @@
 package local
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"path/filepath"
+
+	"github.com/daiksud/gh-qw/internal/gitcmd"
 )
 
 // GitOutputter is the read-only Git output seam used for repository and
@@ -47,18 +48,11 @@ func gitTopLevelAndCommon(
 }
 
 func parseGitPath(output []byte, relativeTo, description string) (string, error) {
-	output = bytes.TrimSuffix(output, []byte{'\n'})
-	output = bytes.TrimSuffix(output, []byte{'\r'})
-	if len(output) == 0 {
-		return "", fmt.Errorf("Git returned an empty %s", description)
-	}
-	if bytes.IndexByte(output, 0) >= 0 ||
-		bytes.IndexByte(output, '\n') >= 0 ||
-		bytes.IndexByte(output, '\r') >= 0 {
-		return "", fmt.Errorf("Git returned a non-single-line %s", description)
+	path, err := gitcmd.ParseLine(output, description)
+	if err != nil {
+		return "", err
 	}
 
-	path := string(output)
 	if !filepath.IsAbs(path) {
 		if relativeTo == "" {
 			return "", errors.New("cannot resolve relative Git path without a base directory")

@@ -1,11 +1,11 @@
 package removal
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"path/filepath"
 
+	"github.com/daiksud/gh-qw/internal/gitcmd"
 	"github.com/daiksud/gh-qw/internal/local"
 	"github.com/daiksud/gh-qw/internal/physicalpath"
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
@@ -239,17 +239,11 @@ func parseGitPath(
 	output []byte,
 	relativeTo, description string,
 ) (string, error) {
-	output = bytes.TrimSuffix(output, []byte{'\n'})
-	output = bytes.TrimSuffix(output, []byte{'\r'})
-	if len(output) == 0 {
-		return "", fmt.Errorf("Git returned an empty %s", description)
+	path, err := gitcmd.ParseLine(output, description)
+	if err != nil {
+		return "", err
 	}
-	if bytes.IndexByte(output, 0) >= 0 ||
-		bytes.IndexByte(output, '\n') >= 0 ||
-		bytes.IndexByte(output, '\r') >= 0 {
-		return "", fmt.Errorf("Git returned a non-single-line %s", description)
-	}
-	path := string(output)
+
 	if !filepath.IsAbs(path) {
 		path = filepath.Join(relativeTo, path)
 	}
