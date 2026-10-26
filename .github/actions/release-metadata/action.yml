@@ -47,8 +47,8 @@ runs:
 
         build_matrix="$(bash .github/scripts/release-artifacts.sh build-matrix)"
         acceptance_matrix="$(bash .github/scripts/release-artifacts.sh acceptance-matrix)"
-        jq -e '.include == [{"target":"darwin-amd64","runner":"ubuntu-slim"},{"target":"darwin-arm64","runner":"ubuntu-slim"},{"target":"linux-amd64","runner":"ubuntu-slim"},{"target":"linux-arm64","runner":"ubuntu-slim"},{"target":"windows-amd64","runner":"ubuntu-slim"}]' <<< "$build_matrix" >/dev/null
-        jq -e '.include == [{"target":"linux-amd64","runner":"ubuntu-slim"},{"target":"linux-arm64","runner":"ubuntu-24.04-arm"},{"target":"darwin-arm64","runner":"macos-14"},{"target":"windows-amd64","runner":"windows-latest"}]' <<< "$acceptance_matrix" >/dev/null
+        jq -e '.include == [{"target":"darwin-arm64","runner":"ubuntu-slim"},{"target":"linux-amd64","runner":"ubuntu-slim"},{"target":"windows-amd64","runner":"ubuntu-slim"}]' <<< "$build_matrix" >/dev/null
+        jq -e '.include == [{"target":"linux-amd64","runner":"ubuntu-slim"},{"target":"darwin-arm64","runner":"macos-14"},{"target":"windows-amd64","runner":"windows-latest"}]' <<< "$acceptance_matrix" >/dev/null
 
         printf 'version=%s\nprevious-tag=%s\nprevious-sha=%s\n' \
           "$version" "$previous_tag" "$previous_sha" >> "$GITHUB_OUTPUT"
