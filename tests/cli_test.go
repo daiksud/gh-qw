@@ -135,7 +135,7 @@ func TestCLIRepositoryAndWorktreeLifecycle(t *testing.T) {
 	featureBranch := "feature/e2e"
 	featurePath := filepath.Join(
 		fixture.worktreeRoot,
-		"feature%2Fe2e",
+		"feature-e2e",
 		"widget",
 	)
 	featureOutput := filepath.ToSlash(featurePath)
@@ -154,9 +154,17 @@ func TestCLIRepositoryAndWorktreeLifecycle(t *testing.T) {
 	assertContains(t, result.stderr, "Preparing worktree")
 	assertPathExists(t, featurePath)
 
+	if got := strings.TrimSpace(fixture.runGit(t, featurePath, "branch", "--show-current")); got != featureBranch {
+		t.Fatalf("Git branch = %q, want %q", got, featureBranch)
+	}
+
+	collision := fixture.runCLI(t, "add", "--worktree", "-R", testIdentity, "-b", "feature-e2e", "main")
+	assertStatus(t, collision, 1)
+	assertPathExists(t, featurePath)
+
 	result = fixture.runCLI(t, "list", "--worktree")
 	assertStatus(t, result, 0)
-	assertStdout(t, result, testIdentity+"@"+featureBranch+"\n")
+	assertStdout(t, result, testIdentity+"@feature-e2e\n")
 	assertStderr(t, result, "")
 
 	result = fixture.runCLI(

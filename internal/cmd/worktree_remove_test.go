@@ -625,7 +625,7 @@ func TestNewRemoveCommandWorktreeRealGitLifecycle(t *testing.T) {
 	worktreeRemoveRunGit(t, repositoryPath, "add", "README")
 	worktreeRemoveRunGit(t, repositoryPath, "commit", "-m", "initial")
 
-	branch := "feature-real"
+	branch := "feature/real"
 	target := filepath.Join(worktreeRoot, "feature-real", "widget")
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 		t.Fatal(err)

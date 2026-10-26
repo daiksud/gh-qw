@@ -374,6 +374,11 @@ func TestNewListCommandWorktreesAndWorktreeQueries(t *testing.T) {
 			want: []string{"github.com/acme/widget@feature-x"},
 		},
 		{
+			name: "exact slot accepts slash-separated input",
+			args: []string{"--worktree", "--exact", "acme/widget@feature/x"},
+			want: []string{"github.com/acme/widget@feature-x"},
+		},
+		{
 			name: "exact URL slot canonicalizes",
 			args: []string{"--worktree", "-e", "https://github.com/acme/widget.git@feature-x"},
 			want: []string{"github.com/acme/widget@feature-x"},

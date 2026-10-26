@@ -680,7 +680,7 @@ func TestAddWorktreeRealGitLifecycle(t *testing.T) {
 	}
 	worktreeAddRunGit(t, repository.Path, "add", "README")
 	worktreeAddRunGit(t, repository.Path, "commit", "-m", "initial")
-	branch := "feature-lifecycle"
+	branch := "feature/lifecycle"
 	worktreeAddRunGit(t, repository.Path, "branch", branch)
 
 	var stdout bytes.Buffer
@@ -1065,7 +1065,7 @@ func worktreeAddDestination(
 	repository local.Repository,
 	branch string,
 ) string {
-	return filepath.Join(worktreeRoot, branch, repository.Repo)
+	return filepath.Join(worktreeRoot, local.WorktreeSlotDirectoryName(branch), repository.Repo)
 }
 
 func worktreeAddRunGit(t *testing.T, dir string, args ...string) {

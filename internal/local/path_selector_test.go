@@ -40,13 +40,13 @@ func TestDeterministicPathsAreContainedAndDoNotCreateDirectories(t *testing.T) {
 	}
 	wantWorktree := filepath.Join(
 		worktreeRoot,
-		"feature%2Flogin",
+		"feature-login",
 		"Widget",
 	)
 	if worktreePath != wantWorktree {
 		t.Fatalf("WorktreePath() = %q, want %q", worktreePath, wantWorktree)
 	}
-	if _, err := os.Lstat(filepath.Join(worktreeRoot, "feature%2Flogin")); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Lstat(filepath.Join(worktreeRoot, "feature-login")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("WorktreePath() created a directory or returned unexpected Lstat error: %v", err)
 	}
 }
@@ -112,7 +112,7 @@ func TestDeterministicPathsRejectInvalidValuesAndSymlinkEscapes(t *testing.T) {
 	}
 }
 
-func TestWorktreeSlotsEncodeSlashAndLiteralPercentWithoutColliding(t *testing.T) {
+func TestWorktreeSlotsFlattenSlashAndRejectNameCollisions(t *testing.T) {
 	worktrees := []Worktree{{Slot: "feat"}, {Slot: "release"}}
 	for _, slot := range []string{"feat", "release"} {
 		if err := ValidateSlotAvailable(context.Background(), worktrees, slot); !errors.Is(err, ErrSlotCollision) {
@@ -125,12 +125,22 @@ func TestWorktreeSlotsEncodeSlashAndLiteralPercentWithoutColliding(t *testing.T)
 		}
 	}
 	for _, pair := range [][2]string{
-		{"feature/login", "feature%2Flogin"},
-		{"feature%2Flogin", "feature%252Flogin"},
+		{"feature/login", "feature-login"},
+		{"feature-login", "feature-login"},
+		{"feature%2Flogin", "feature%2Flogin"},
 		{"feat", "feat"},
 	} {
 		if got := WorktreeSlotDirectoryName(pair[0]); got != pair[1] {
 			t.Fatalf("WorktreeSlotDirectoryName(%q) = %q, want %q", pair[0], got, pair[1])
+		}
+	}
+	for _, existing := range []string{"feature/login", "feature-login"} {
+		for _, requested := range []string{"feature/login", "feature-login"} {
+			if err := ValidateSlotAvailable(
+				context.Background(), []Worktree{{Slot: existing}}, requested,
+			); !errors.Is(err, ErrSlotCollision) {
+				t.Fatalf("existing %q requested %q = %v, want collision", existing, requested, err)
+			}
 		}
 	}
 }
@@ -154,6 +164,14 @@ func TestValidateWorktreeDestinationReservesGlobalSlot(t *testing.T) {
 		context.Background(), worktreeRoot, repository, "occupied", nil,
 	); !errors.Is(err, ErrSlotCollision) {
 		t.Fatalf("globally occupied slot = %v, want collision", err)
+	}
+	if err := os.MkdirAll(filepath.Join(worktreeRoot, "feature-login", "other-repo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ValidateWorktreeDestination(
+		context.Background(), worktreeRoot, repository, "feature/login", nil,
+	); !errors.Is(err, ErrSlotCollision) {
+		t.Fatalf("flattened slot from another repository = %v, want collision", err)
 	}
 	got, err := ValidateWorktreeDestination(context.Background(), worktreeRoot, repository, "free", nil)
 	if err != nil {
