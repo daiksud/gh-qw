@@ -328,8 +328,8 @@ func TestNewListCommandWorktreesAndWorktreeQueries(t *testing.T) {
 	worktrees := []local.Worktree{
 		{Identity: "not-canonical", Main: true, Path: mainPath},
 		{Identity: "ignored", Slot: "review", Path: reviewPath},
-		{Identity: "ignored", Slot: "feature/x", Path: featurePath},
-		{Identity: "ignored", Slot: "feature/x", Path: listAbsolutePath("duplicate")},
+		{Identity: "ignored", Slot: "feature-x", Path: featurePath},
+		{Identity: "ignored", Slot: "feature-x", Path: listAbsolutePath("duplicate")},
 	}
 
 	tests := []struct {
@@ -341,7 +341,7 @@ func TestNewListCommandWorktreesAndWorktreeQueries(t *testing.T) {
 			name: "linked worktrees only",
 			args: []string{"--worktree"},
 			want: []string{
-				"github.com/acme/widget@feature/x",
+				"github.com/acme/widget@feature-x",
 				"github.com/acme/widget@review",
 			},
 		},
@@ -350,33 +350,33 @@ func TestNewListCommandWorktreesAndWorktreeQueries(t *testing.T) {
 			args: []string{"--all"},
 			want: []string{
 				"github.com/acme/widget",
-				"github.com/acme/widget@feature/x",
+				"github.com/acme/widget@feature-x",
 				"github.com/acme/widget@review",
 			},
 		},
 		{
 			name: "slot substring",
 			args: []string{"--worktree", "feature"},
-			want: []string{"github.com/acme/widget@feature/x"},
+			want: []string{"github.com/acme/widget@feature-x"},
 		},
 		{
 			name: "exact repository includes main and linked",
 			args: []string{"--all", "-e", "widget"},
 			want: []string{
 				"github.com/acme/widget",
-				"github.com/acme/widget@feature/x",
+				"github.com/acme/widget@feature-x",
 				"github.com/acme/widget@review",
 			},
 		},
 		{
 			name: "exact slot narrows",
-			args: []string{"--worktree", "--exact", "acme/widget@feature/x"},
-			want: []string{"github.com/acme/widget@feature/x"},
+			args: []string{"--worktree", "--exact", "acme/widget@feature-x"},
+			want: []string{"github.com/acme/widget@feature-x"},
 		},
 		{
 			name: "exact URL slot canonicalizes",
-			args: []string{"--worktree", "-e", "https://github.com/acme/widget.git@feature/x"},
-			want: []string{"github.com/acme/widget@feature/x"},
+			args: []string{"--worktree", "-e", "https://github.com/acme/widget.git@feature-x"},
+			want: []string{"github.com/acme/widget@feature-x"},
 		},
 		{
 			name: "exact slot is case sensitive",
@@ -522,7 +522,7 @@ func TestNewListCommandUniqueWorktreeSuffixCollisions(t *testing.T) {
 		enumeration.byIdentity[repository.Identity] = []local.Worktree{
 			{Main: true, Path: repository.Path},
 			{
-				Slot: "feature/x",
+				Slot: "feature-x",
 				Path: listAbsolutePath(
 					"worktrees",
 					repository.Host,
@@ -554,9 +554,9 @@ func TestNewListCommandUniqueWorktreeSuffixCollisions(t *testing.T) {
 		t.Fatalf("Execute() error = %v", err)
 	}
 	if got, want := stdout.String(), listSortedLines(
-		"github.com/acme/widget@feature/x",
-		"gitlab.com/acme/widget@feature/x",
-		"other/widget@feature/x",
+		"github.com/acme/widget@feature-x",
+		"gitlab.com/acme/widget@feature-x",
+		"other/widget@feature-x",
 	); got != want {
 		t.Fatalf("stdout = %q, want %q", got, want)
 	}
