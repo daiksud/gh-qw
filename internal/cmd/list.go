@@ -283,68 +283,13 @@ func listGoneWorktreePaths(
 	worktrees []local.Worktree,
 	git ListGit,
 ) (map[string]struct{}, error) {
-	attached := make(map[string]struct{}, len(worktrees))
-	for _, worktree := range worktrees {
-		if worktree.Main || worktree.Detached || worktree.Branch == "" {
-			continue
-		}
-		attached[worktree.Branch] = struct{}{}
-	}
-
-	upstreams, err := git.BranchUpstreams(ctx, repository.Path)
+	candidates, err := goneWorktreeCandidates(ctx, repository, worktrees, git)
 	if err != nil {
-		return nil, fmt.Errorf("inspect branch upstreams for %q: %w", repository.Identity, err)
+		return nil, err
 	}
-	upstreamByBranch := make(map[string]string, len(attached))
-	for _, upstream := range upstreams {
-		if _, exists := attached[upstream.Branch]; !exists {
-			continue
-		}
-		if err := local.ValidateBranch(ctx, upstream.Branch); err != nil {
-			return nil, fmt.Errorf(
-				"inspect branch upstreams for %q: invalid branch %q: %w",
-				repository.Identity,
-				upstream.Branch,
-				err,
-			)
-		}
-		if _, duplicate := upstreamByBranch[upstream.Branch]; duplicate {
-			return nil, fmt.Errorf(
-				"inspect branch upstreams for %q: duplicate branch %q",
-				repository.Identity,
-				upstream.Branch,
-			)
-		}
-		upstreamByBranch[upstream.Branch] = upstream.Upstream
-	}
-
-	goneRefs := make(map[string]bool, len(upstreamByBranch))
-	selected := make(map[string]struct{}, len(worktrees))
-	for _, worktree := range worktrees {
-		if worktree.Main || worktree.Detached || worktree.Branch == "" {
-			continue
-		}
-		upstream := upstreamByBranch[worktree.Branch]
-		if upstream == "" {
-			continue
-		}
-		gone, inspected := goneRefs[upstream]
-		if !inspected {
-			exists, refErr := git.RefExists(ctx, repository.Path, upstream)
-			if refErr != nil {
-				return nil, fmt.Errorf(
-					"verify upstream ref %q for branch %q: %w",
-					upstream,
-					worktree.Branch,
-					refErr,
-				)
-			}
-			gone = !exists
-			goneRefs[upstream] = gone
-		}
-		if gone {
-			selected[worktree.Path] = struct{}{}
-		}
+	selected := make(map[string]struct{}, len(candidates))
+	for _, candidate := range candidates {
+		selected[candidate.worktree.Path] = struct{}{}
 	}
 	return selected, nil
 }
