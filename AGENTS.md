@@ -63,11 +63,11 @@ Run relevant normal/race/vet tests and inspect the final diff. Resolve review
 findings, pass required CI on the final HEAD, merge normally, and verify CI on
 the exact merged commit. Report validation or review limitations accurately.
 
-## Review approvals and bypass
+## Review approvals
 
 Protected `main` requires one approving review, dismissal of stale approvals after a push, and resolved review threads. Require CODEOWNER approval. When the sole CODEOWNER authors a PR, another eligible reviewer, including a permitted GitHub Actions bot approval, can satisfy the review requirement; the author cannot approve their own PR. The `approve-codex-review` workflow creates a GitHub Actions approval only after Codex's code and security reviews both complete for the current HEAD without unresolved findings and Codex reacts with 👍. Comments, reactions, or a successful workflow run alone are not approving reviews; Copilot reviews do not count toward required approvals.
 
-Use a normal squash merge after review and passing checks. Administrator bypass is limited to pull requests. Use it only when the maintainer explicitly requests it, or when both Codex and Copilot reviews are unavailable (for example, exhausted quotas). Before bypass, self-review the final revision, resolve actionable findings and threads, and confirm all required checks pass on the intended HEAD. Record the reason, evidence, and bypass in the PR or tracking Issue. Never bypass failing CI, unresolved findings, or release authorization; do not push directly to `main` as a fallback. Verify GitHub's live Ruleset and Actions approval settings rather than inferring enforcement from source files alone.
+Use only a normal squash merge after obtaining a valid approving review, resolving actionable findings and threads, and passing all required checks on the final HEAD. Do not configure or use Ruleset bypass actors, including administrators. If Codex and Copilot are unavailable, leave the PR unmerged until an eligible reviewer can approve it. Never bypass CI, approval, signatures, resolved-thread requirements, or release authorization; do not push directly to `main`. Verify the live GitHub Ruleset and Actions review permissions before claiming protection is enforced.
 
 ## GitHub Actions
 
