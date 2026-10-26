@@ -10,10 +10,10 @@ OTHER_SHA=1123456789abcdef0123456789abcdef01234567
 
 build_matrix="$(bash "$TOOL" build-matrix)"
 acceptance_matrix="$(bash "$TOOL" acceptance-matrix)"
-jq -e '.include == [{"target":"linux-amd64","runner":"ubuntu-slim"},{"target":"linux-arm64","runner":"ubuntu-24.04-arm"},{"target":"darwin-arm64","runner":"macos-14"},{"target":"windows-amd64","runner":"windows-latest"}]' <<< "$build_matrix" >/dev/null
-jq -e '.include == [{"target":"linux-amd64","kind":"process","runner":"ubuntu-slim"},{"target":"linux-arm64","kind":"process","runner":"ubuntu-24.04-arm"},{"target":"darwin-arm64","kind":"process","runner":"macos-14"},{"target":"windows-amd64","kind":"process","runner":"windows-latest"}]' <<< "$acceptance_matrix" >/dev/null
+jq -e '.include == [{"target":"linux-amd64","runner":"ubuntu-slim"},{"target":"darwin-arm64","runner":"macos-14"},{"target":"windows-amd64","runner":"windows-latest"}]' <<< "$build_matrix" >/dev/null
+jq -e '.include == [{"target":"linux-amd64","kind":"process","runner":"ubuntu-slim"},{"target":"darwin-arm64","kind":"process","runner":"macos-14"},{"target":"windows-amd64","kind":"process","runner":"windows-latest"}]' <<< "$acceptance_matrix" >/dev/null
 
-for target in linux-amd64 linux-arm64 darwin-arm64 windows-amd64; do
+for target in linux-amd64 darwin-arm64 windows-amd64; do
   directory="$TEMP/$target"
   mkdir -p "$directory"
   description="$(bash "$TOOL" target "$target")"
@@ -62,9 +62,11 @@ for invalid_sha in short 0123456789abcdef0123456789abcdef0123456g; do
   fi
 done
 
-if bash "$TOOL" target darwin-amd64 >/dev/null 2>&1; then
-  echo "FAIL unsupported CI target was accepted" >&2
-  exit 1
-fi
+for unsupported_target in darwin-amd64 linux-arm64; do
+  if bash "$TOOL" target "$unsupported_target" >/dev/null 2>&1; then
+    echo "FAIL unsupported CI target was accepted: $unsupported_target" >&2
+    exit 1
+  fi
+done
 
 echo "All CI artifact contract tests passed."
