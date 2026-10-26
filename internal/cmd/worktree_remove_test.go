@@ -641,7 +641,7 @@ func TestNewRemoveCommandWorktreeRealGitLifecycle(t *testing.T) {
 		Stdout: &stdout,
 		Stderr: &stderr,
 	})
-	command.SetArgs([]string{"--worktree", "-R", "acme/widget", branch})
+	command.SetArgs([]string{"--worktree", "-R", "acme/widget", "github-com-acme-widget-feature-real"})
 
 	if err := command.Execute(); err != nil {
 		t.Fatalf("Execute() error = %v; stderr = %q", err, stderr.String())

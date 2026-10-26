@@ -116,7 +116,7 @@ func TestEnumerateWorktreesRealGitAndCurrentDirectory(t *testing.T) {
 			t.Fatalf("worktree parent = %#v", worktree.Repository)
 		}
 	}
-	wantSlots := []string{"external-topic", "github-com-acme-widget-feature-x", "review-123", "github-com-acme-widget-stale-slot"}
+	wantSlots := []string{"external-topic", "github-com-acme-widget-feature-x", "github-com-acme-widget-stale-slot", "review-123"}
 	if !reflect.DeepEqual(gotSlots, wantSlots) {
 		t.Fatalf("slots = %#v, want %#v", gotSlots, wantSlots)
 	}
