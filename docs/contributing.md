@@ -18,7 +18,7 @@ gofmt -w <changed-go-files>
 go test ./...
 go test -race ./...
 go vet ./...
-bash .github/scripts/prepare-release.test.sh
+python3 -m unittest discover -s .github/scripts -p "test_release_version.py" -q
 bash .github/scripts/ci-artifacts.test.sh
 bash .github/scripts/release-source.test.sh
 bash .github/scripts/release-notes.test.sh
@@ -93,7 +93,7 @@ supported; a maintainer must handle them manually without a privileged fallback.
 
 Together the staged workflows preserve Go builds and tests on Linux amd64,
 macOS arm64, and Windows amd64, plus race, format/vet, settings validation, and
-release-preparation tests. Dependabot auto-merge uses `pull_request_target`
+release-version tests. Dependabot auto-merge uses `pull_request_target`
 without checking out PR code. Required checks and resolved threads still apply.
 
 ## Releases
@@ -124,7 +124,9 @@ metadata/build/acceptance/publication check creates no new release.
 | `feat`, `perf`, or `DEPRECATED` footer | Minor. |
 | `fix`, `revert`, or another substantive commit | Patch. |
 
-The highest tier wins once for the range. Empty preparation commits do not
+The highest tier wins once for the range. The shared Python calculator runs
+inside release metadata resolution; no version file or preparation PR is needed.
+Empty commits do not
 change the selected source and are ignored; a preparation-named commit with a
 tree change remains substantive. No substantive changes, an invalid baseline,
 a changed published baseline, or a conflicting tag stops publication. There is
