@@ -35,7 +35,7 @@ root = ["~/repositories", "~/archive"]
 		t.Fatalf("Load() error = %v", err)
 	}
 	wantRaw := config.Config{
-		Roots:        []string{"~/repositories", "~/archive"},
+		Roots: []string{"~/repositories", "~/archive"},
 	}
 	if !reflect.DeepEqual(raw, wantRaw) {
 		t.Fatalf("Load() = %#v, want raw values %#v", raw, wantRaw)

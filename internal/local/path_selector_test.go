@@ -130,28 +130,40 @@ func TestSlotsMustBeSingleComponents(t *testing.T) {
 		}
 	}
 }
+
 func TestValidateWorktreeDestinationReservesGlobalSlot(t *testing.T) {
 	base := physicalTempDir(t)
 	repositoryRoot := filepath.Join(base, "repositories")
 	worktreeRoot := filepath.Join(base, "worktrees")
 	for _, path := range []string{repositoryRoot, worktreeRoot} {
-		if err := os.MkdirAll(path, 0o755); err != nil { t.Fatal(err) }
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			t.Fatal(err)
+		}
 	}
 	repository := testRepository(t, repositoryRoot, "github.com/acme/widget", 0)
 
 	// An existing slot is taken even if the checkout belongs to another repo.
-	if err := os.MkdirAll(filepath.Join(worktreeRoot, "occupied", "other-repo"), 0o755); err != nil { t.Fatal(err) }
-	if _, err := ValidateWorktreeDestination(context.Background(), worktreeRoot, repository, "occupied", nil); !errors.Is(err, ErrSlotCollision) {
+	if err := os.MkdirAll(filepath.Join(worktreeRoot, "occupied", "other-repo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ValidateWorktreeDestination(
+		context.Background(), worktreeRoot, repository, "occupied", nil,
+	); !errors.Is(err, ErrSlotCollision) {
 		t.Fatalf("globally occupied slot = %v, want collision", err)
 	}
 	got, err := ValidateWorktreeDestination(context.Background(), worktreeRoot, repository, "free", nil)
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	want := filepath.Join(worktreeRoot, "free", "widget")
-	if got != want { t.Fatalf("destination = %q, want %q", got, want) }
+	if got != want {
+		t.Fatalf("destination = %q, want %q", got, want)
+	}
 	if _, err := os.Lstat(filepath.Join(worktreeRoot, "free")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("validate unexpectedly created a directory: %v", err)
 	}
 }
+
 func TestExactSelectorResolutionAndDuplicateBehavior(t *testing.T) {
 	repositories := []Repository{
 		{
