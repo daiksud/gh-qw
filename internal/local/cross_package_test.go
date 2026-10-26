@@ -119,12 +119,12 @@ func TestResolvedWorktreeRootRejectsRuntimeSymlinkEscape(t *testing.T) {
 		"github.com",
 		"acme",
 		"widget",
-		"feature-login",
+		"github-com-acme-widget-feature-login",
 	)
 	if err != nil {
 		t.Fatalf("WorktreePath() error = %v", err)
 	}
-	wantPath := filepath.Join(worktreeRoot, "feature-login", "widget")
+	wantPath := filepath.Join(worktreeRoot, "github-com-acme-widget-feature-login", "widget")
 	if path != wantPath {
 		t.Fatalf("WorktreePath() = %q, want %q", path, wantPath)
 	}
@@ -133,12 +133,12 @@ func TestResolvedWorktreeRootRejectsRuntimeSymlinkEscape(t *testing.T) {
 	if err := os.MkdirAll(outside, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(outside, filepath.Join(worktreeRoot, "feature-login")); err != nil {
+	if err := os.Symlink(outside, filepath.Join(worktreeRoot, "github-com-acme-widget-feature-login")); err != nil {
 		t.Skipf("symbolic links are unavailable: %v", err)
 	}
 	_, err = local.WorktreePath(
 		context.Background(), resolved.WorktreeRoot,
-		"github.com", "acme", "widget", "feature-login",
+		"github.com", "acme", "widget", "github-com-acme-widget-feature-login",
 	)
 	if !errors.Is(err, root.ErrUnsafeTarget) {
 		t.Fatalf("WorktreePath() symlink escape = %v, want root.ErrUnsafeTarget", err)

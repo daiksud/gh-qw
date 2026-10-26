@@ -414,77 +414,103 @@ func TestAddWorktreeHandlesDuplicateRepositoryIdentity(t *testing.T) {
 	}
 }
 
-func TestAddWorktreePathSafety(t *testing.T) {
-	t.Run("registered parent slot", func(t *testing.T) {
-		fixture := worktreeAddNewFixture(t, "feat-x")
+func TestAddWorktreeAllocatesUniqueSlotNames(t *testing.T) {
+	for _, occupiedCount := range []int{1, 2} {
+		t.Run(fmt.Sprintf("%d occupied names", occupiedCount), func(t *testing.T) {
+			fixture := worktreeAddNewFixture(t, "feature/login")
+			fixture.git.localBranches[fixture.branch] = true
+			base := filepath.Dir(fixture.destination)
+			for number := 0; number < occupiedCount; number++ {
+				path := base
+				if number > 0 {
+					path = fmt.Sprintf("%s-%d", base, number)
+				}
+				if err := os.MkdirAll(filepath.Join(path, "unrelated-repo"), 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			fixture.destination = filepath.Join(fmt.Sprintf("%s-%d", base, occupiedCount), fixture.repository.Repo)
+			if err := fixture.worktreeAddExecute("-f", fixture.branch); err != nil {
+				t.Fatalf("Execute() = %v, want a free suffix", err)
+			}
+			if len(fixture.git.adds) != 1 || fixture.git.adds[0].options.Path != fixture.destination {
+				t.Fatalf("Git additions = %#v, want %q", fixture.git.adds, fixture.destination)
+			}
+			for number := 0; number < occupiedCount; number++ {
+				path := base
+				if number > 0 {
+					path = fmt.Sprintf("%s-%d", base, number)
+				}
+				if _, err := os.Stat(filepath.Join(path, "unrelated-repo")); err != nil {
+					t.Fatalf("occupied slot was changed: %v", err)
+				}
+			}
+		})
+	}
+
+	t.Run("registered slot without a directory", func(t *testing.T) {
+		fixture := worktreeAddNewFixture(t, "feature-login")
+		fixture.git.localBranches[fixture.branch] = true
+		name := filepath.Base(filepath.Dir(fixture.destination))
 		fixture.initialWorktrees = append(fixture.initialWorktrees, local.Worktree{
 			Repository: fixture.repository,
-			Identity:   fixture.repository.Identity + "@feat-x",
-			Slot:       "feat-x",
-			Path:       filepath.Join(fixture.worktreeRoot, "existing"),
-			Branch:     "feat",
+			Identity:   fixture.repository.Identity + "@" + name,
+			Slot:       name,
+			Path:       filepath.Join(fixture.base, "missing"),
 		})
-		fixture.git.localBranches["feat-x"] = true
-
-		err := fixture.worktreeAddExecute("-f", "feat-x")
-		if !errors.Is(err, local.ErrSlotCollision) {
-			t.Fatalf("Execute() error = %v, want ErrSlotCollision", err)
-		}
-		if len(fixture.git.adds) != 0 {
-			t.Fatalf("force bypassed registered collision")
+		fixture.destination = filepath.Join(fixture.worktreeRoot, name+"-1", fixture.repository.Repo)
+		if err := fixture.worktreeAddExecute(fixture.branch); err != nil {
+			t.Fatalf("Execute() = %v, want allocation after registered slot", err)
 		}
 	})
 
-	t.Run("existing exact destination", func(t *testing.T) {
-		fixture := worktreeAddNewFixture(t, "feature-existing-path")
-		if err := os.MkdirAll(fixture.destination, 0o755); err != nil {
-			t.Fatalf("MkdirAll(destination) error = %v", err)
-		}
+	t.Run("concurrent directory reservation", func(t *testing.T) {
+		fixture := worktreeAddNewFixture(t, "topic")
 		fixture.git.localBranches[fixture.branch] = true
-
-		err := fixture.worktreeAddExecute("-f", fixture.branch)
-		if !errors.Is(err, local.ErrSlotCollision) {
-			t.Fatalf("Execute() error = %v, want ErrSlotCollision", err)
+		slotDirectory := filepath.Dir(fixture.destination)
+		raced := false
+		fixture.mkdir = func(path string, mode fs.FileMode) error {
+			if path == slotDirectory && !raced {
+				raced = true
+				if err := os.Mkdir(path, mode); err != nil {
+					return err
+				}
+				return fs.ErrExist
+			}
+			return os.Mkdir(path, mode)
+		}
+		fixture.destination = filepath.Join(fixture.worktreeRoot, filepath.Base(slotDirectory)+"-1", fixture.repository.Repo)
+		if err := fixture.worktreeAddExecute(fixture.branch); err != nil {
+			t.Fatalf("Execute() = %v after competing mkdir", err)
+		}
+		if !raced {
+			t.Fatal("the concurrent claim was not exercised")
+		}
+		if _, err := os.Stat(slotDirectory); err != nil {
+			t.Fatalf("competing slot changed: %v", err)
 		}
 	})
 
-	t.Run("filesystem Git marker prefix", func(t *testing.T) {
-		fixture := worktreeAddNewFixture(t, "feature-child")
-		prefix := filepath.Dir(fixture.destination)
-		if err := os.MkdirAll(prefix, 0o755); err != nil {
-			t.Fatalf("MkdirAll(prefix) error = %v", err)
-		}
-		if err := os.WriteFile(filepath.Join(prefix, ".git"), []byte("gitdir: elsewhere\n"), 0o644); err != nil {
-			t.Fatalf("WriteFile(.git) error = %v", err)
-		}
-		fixture.git.localBranches[fixture.branch] = true
-
-		err := fixture.worktreeAddExecute(fixture.branch)
-		if !errors.Is(err, local.ErrSlotCollision) {
-			t.Fatalf("Execute() error = %v, want ErrSlotCollision", err)
-		}
-	})
-
-	t.Run("symlink escape", func(t *testing.T) {
+	t.Run("existing symlink remains untouched", func(t *testing.T) {
 		if runtime.GOOS == "windows" {
 			t.Skip("symlink creation requires platform privileges")
 		}
 		fixture := worktreeAddNewFixture(t, "feature-symlink")
+		fixture.git.localBranches[fixture.branch] = true
 		outside := filepath.Join(fixture.base, "outside")
 		if err := os.MkdirAll(outside, 0o755); err != nil {
-			t.Fatalf("MkdirAll(outside) error = %v", err)
+			t.Fatal(err)
 		}
-		if err := os.Symlink(outside, filepath.Join(fixture.worktreeRoot, fixture.branch)); err != nil {
-			t.Fatalf("Symlink() error = %v", err)
+		slotDirectory := filepath.Dir(fixture.destination)
+		if err := os.Symlink(outside, slotDirectory); err != nil {
+			t.Fatal(err)
 		}
-		fixture.git.localBranches[fixture.branch] = true
-
-		err := fixture.worktreeAddExecute(fixture.branch)
-		if !errors.Is(err, rootpkg.ErrUnsafeTarget) {
-			t.Fatalf("Execute() error = %v, want root.ErrUnsafeTarget", err)
+		fixture.destination = filepath.Join(fixture.worktreeRoot, filepath.Base(slotDirectory)+"-1", fixture.repository.Repo)
+		if err := fixture.worktreeAddExecute(fixture.branch); err != nil {
+			t.Fatalf("Execute() = %v, want a fresh slot", err)
 		}
-		if len(fixture.git.adds) != 0 {
-			t.Fatalf("WorktreeAdd() calls = %d, want 0", len(fixture.git.adds))
+		if _, err := os.Lstat(filepath.Join(outside, fixture.repository.Repo)); !errors.Is(err, fs.ErrNotExist) {
+			t.Fatalf("symlink target changed: %v", err)
 		}
 	})
 }
@@ -680,7 +706,7 @@ func TestAddWorktreeRealGitLifecycle(t *testing.T) {
 	}
 	worktreeAddRunGit(t, repository.Path, "add", "README")
 	worktreeAddRunGit(t, repository.Path, "commit", "-m", "initial")
-	branch := "feature-lifecycle"
+	branch := "feature/lifecycle"
 	worktreeAddRunGit(t, repository.Path, "branch", branch)
 
 	var stdout bytes.Buffer
@@ -880,8 +906,8 @@ func (fixture *worktreeAddFixture) worktreeAddExecute(args ...string) error {
 			}
 			result = append(result, local.Worktree{
 				Repository: repository,
-				Identity:   repository.Identity + "@" + fixture.branch,
-				Slot:       fixture.branch,
+				Identity:   repository.Identity + "@" + filepath.Base(filepath.Dir(fixture.destination)),
+				Slot:       filepath.Base(filepath.Dir(fixture.destination)),
 				Path:       path,
 				HEAD:       strings.Repeat("2", 40),
 				Branch:     branch,
@@ -1065,7 +1091,7 @@ func worktreeAddDestination(
 	repository local.Repository,
 	branch string,
 ) string {
-	return filepath.Join(worktreeRoot, branch, repository.Repo)
+	return filepath.Join(worktreeRoot, local.WorktreeSlotDirectoryName(repository.Identity+"-"+branch), repository.Repo)
 }
 
 func worktreeAddRunGit(t *testing.T, dir string, args ...string) {

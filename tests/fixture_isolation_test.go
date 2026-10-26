@@ -91,7 +91,7 @@ func TestCLIUsesNativeCustomFetchMappingWithoutGitHubLookup(t *testing.T) {
 	env := append(fixture.env, "GH_PATH="+filepath.Join(fixture.base, "missing-gh"))
 	result := fixture.runCLIWithEnv(t, env, "add", "--worktree", "-R", testIdentity, branch)
 	assertStatus(t, result, 0)
-	want := filepath.Join(fixture.worktreeRoot, branch, "widget")
+	want := filepath.Join(fixture.worktreeRoot, "github-com-acme-widget-"+branch, "widget")
 	assertStdout(t, result, filepath.ToSlash(want)+"\n")
 	gotBranch := strings.TrimSpace(fixture.runGit(t, want, "branch", "--show-current"))
 	if gotBranch != branch {

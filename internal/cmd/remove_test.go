@@ -510,7 +510,7 @@ func TestNewRemoveCommandWholeRepositoryStableOrderExactBoundaryAndCleanup(t *te
 	if _, err := os.Lstat(filepath.Join(fixture.repositoryRoot, "github.com")); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("empty repository host parent remains: %v", err)
 	}
-	if _, err := os.Lstat(filepath.Join(fixture.worktreeRoot, "feature-alpha")); !errors.Is(err, fs.ErrNotExist) {
+	if _, err := os.Lstat(filepath.Join(fixture.worktreeRoot, "github-com-acme-widget-feature-alpha")); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("empty worktree host parent remains: %v", err)
 	}
 	fixture.assertStdoutEmpty(t)
@@ -917,7 +917,7 @@ func TestNewRemoveCommandRealGitWholeLifecycle(t *testing.T) {
 	for _, slot := range []string{"zeta", "feature-alpha"} {
 		path := filepath.Join(
 			worktreeRoot,
-			slot,
+			local.WorktreeSlotDirectoryName("github.com/acme/widget-"+slot),
 			"widget",
 		)
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -951,8 +951,8 @@ func TestNewRemoveCommandRealGitWholeLifecycle(t *testing.T) {
 		paths["feature-alpha"],
 		paths["zeta"],
 		repositoryPath,
-		filepath.Join(worktreeRoot, "feature-alpha"),
-		filepath.Join(worktreeRoot, "zeta"),
+		filepath.Join(worktreeRoot, "github-com-acme-widget-feature-alpha"),
+		filepath.Join(worktreeRoot, "github-com-acme-widget-zeta"),
 	} {
 		if _, err := os.Lstat(path); !errors.Is(err, fs.ErrNotExist) {
 			t.Fatalf("%q remains after lifecycle: %v", path, err)
@@ -1159,10 +1159,11 @@ func (fixture *removeTestFixture) addLinked(t *testing.T, slot string) {
 	if err := os.WriteFile(filepath.Join(path, ".git"), []byte("gitdir"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	canonicalSlot := local.WorktreeSlotDirectoryName(fixture.repository.Identity + "-" + slot)
 	record := &local.Worktree{
 		Repository: fixture.repository,
-		Identity:   fixture.repository.Identity + "@" + slot,
-		Slot:       slot,
+		Identity:   fixture.repository.Identity + "@" + canonicalSlot,
+		Slot:       canonicalSlot,
 		Path:       path,
 		HEAD:       "head-" + slot,
 		Branch:     slot,
@@ -1176,12 +1177,12 @@ func (fixture *removeTestFixture) addLinked(t *testing.T, slot string) {
 }
 
 func (fixture *removeTestFixture) linkedPath(slot string) string {
-	return filepath.Join(fixture.worktreeBase, slot, fixture.repository.Repo)
+	return filepath.Join(fixture.worktreeBase, local.WorktreeSlotDirectoryName(fixture.repository.Identity+"-"+slot), fixture.repository.Repo)
 }
 
 func (fixture *removeTestFixture) linkedRecord(slot string) *local.Worktree {
 	for _, worktree := range fixture.worktrees {
-		if worktree.Slot == slot {
+		if worktree.Slot == local.WorktreeSlotDirectoryName(fixture.repository.Identity+"-"+slot) {
 			return worktree
 		}
 	}

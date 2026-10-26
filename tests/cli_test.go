@@ -135,7 +135,7 @@ func TestCLIRepositoryAndWorktreeLifecycle(t *testing.T) {
 	featureBranch := "feature/e2e"
 	featurePath := filepath.Join(
 		fixture.worktreeRoot,
-		"feature%2Fe2e",
+		"github-com-acme-widget-feature-e2e",
 		"widget",
 	)
 	featureOutput := filepath.ToSlash(featurePath)
@@ -154,9 +154,22 @@ func TestCLIRepositoryAndWorktreeLifecycle(t *testing.T) {
 	assertContains(t, result.stderr, "Preparing worktree")
 	assertPathExists(t, featurePath)
 
+	if got := strings.TrimSpace(fixture.runGit(t, featurePath, "branch", "--show-current")); got != featureBranch {
+		t.Fatalf("Git branch = %q, want %q", got, featureBranch)
+	}
+
+	collision := fixture.runCLI(t, "add", "--worktree", "-R", testIdentity, "-b", "feature-e2e", "main")
+	assertStatus(t, collision, 0)
+	collisionPath := filepath.Join(fixture.worktreeRoot, "github-com-acme-widget-feature-e2e-1", "widget")
+	assertStdout(t, collision, filepath.ToSlash(collisionPath)+"\n")
+	assertPathExists(t, featurePath)
+	assertPathExists(t, collisionPath)
+
 	result = fixture.runCLI(t, "list", "--worktree")
 	assertStatus(t, result, 0)
-	assertStdout(t, result, testIdentity+"@"+featureBranch+"\n")
+	assertStdout(t, result,
+		testIdentity+"@github-com-acme-widget-feature-e2e\n"+
+			testIdentity+"@github-com-acme-widget-feature-e2e-1\n")
 	assertStderr(t, result, "")
 
 	result = fixture.runCLI(
@@ -165,17 +178,21 @@ func TestCLIRepositoryAndWorktreeLifecycle(t *testing.T) {
 		"--worktree",
 		"-R",
 		testIdentity,
-		featureBranch,
+		"github-com-acme-widget-feature-e2e",
 	)
 	assertStatus(t, result, 0)
 	assertStdout(t, result, "")
 	assertContains(t, result.stderr, "removed worktree "+featureOutput)
 	assertPathMissing(t, featurePath)
 
+	result = fixture.runCLI(t, "remove", "--worktree", "-R", testIdentity, "github-com-acme-widget-feature-e2e-1")
+	assertStatus(t, result, 0)
+	assertPathMissing(t, collisionPath)
+
 	goneBranch := "gone-e2e"
 	gonePath := filepath.Join(
 		fixture.worktreeRoot,
-		goneBranch,
+		"github-com-acme-widget-gone-e2e",
 		"widget",
 	)
 	result = fixture.runCLI(
@@ -196,7 +213,7 @@ func TestCLIRepositoryAndWorktreeLifecycle(t *testing.T) {
 	fixture.runGit(t, mainPath, "update-ref", "-d", goneUpstream)
 	result = fixture.runCLI(t, "list", "--worktree", "--gone")
 	assertStatus(t, result, 0)
-	assertStdout(t, result, testIdentity+"@"+goneBranch+"\n")
+	assertStdout(t, result, testIdentity+"@github-com-acme-widget-gone-e2e\n")
 	assertStderr(t, result, "")
 	result = fixture.runCLI(t, "list", "--worktree", "--gone", "--full-path")
 	assertStatus(t, result, 0)
@@ -214,7 +231,7 @@ func TestCLIRepositoryAndWorktreeLifecycle(t *testing.T) {
 	)
 	assertStatus(t, result, 0)
 	assertStdout(t, result, "")
-	assertContains(t, result.stderr, "remove slot=\""+goneBranch+"\"")
+	assertContains(t, result.stderr, "remove slot=\"github-com-acme-widget-gone-e2e\"")
 	assertContains(t, result.stderr, "removed worktree "+filepath.ToSlash(gonePath))
 	assertPathMissing(t, gonePath)
 	if output := fixture.runGit(t, mainPath, "show-ref", "--verify", "refs/heads/"+goneBranch); strings.TrimSpace(output) == "" {
@@ -224,7 +241,7 @@ func TestCLIRepositoryAndWorktreeLifecycle(t *testing.T) {
 	staleBranch := "stale-e2e"
 	stalePath := filepath.Join(
 		fixture.worktreeRoot,
-		staleBranch,
+		"github-com-acme-widget-stale-e2e",
 		"widget",
 	)
 	result = fixture.runCLI(
@@ -254,7 +271,7 @@ func TestCLIRepositoryAndWorktreeLifecycle(t *testing.T) {
 	removeBranch := "topic-remove@v2"
 	removePath := filepath.Join(
 		fixture.worktreeRoot,
-		removeBranch,
+		"github-com-acme-widget-topic-remove-v2",
 		"widget",
 	)
 	result = fixture.runCLI(
@@ -270,7 +287,7 @@ func TestCLIRepositoryAndWorktreeLifecycle(t *testing.T) {
 	assertStatus(t, result, 0)
 	assertStdout(t, result, filepath.ToSlash(removePath)+"\n")
 
-	result = fixture.runCLI(t, "remove", "--worktree", "-R", testIdentity, removeBranch)
+	result = fixture.runCLI(t, "remove", "--worktree", "-R", testIdentity, "github-com-acme-widget-topic-remove-v2")
 	assertStatus(t, result, 0)
 	assertStdout(t, result, "")
 	assertContains(t, result.stderr, "removed worktree "+filepath.ToSlash(removePath))
@@ -280,7 +297,7 @@ func TestCLIRepositoryAndWorktreeLifecycle(t *testing.T) {
 	wholeBranch := "whole-linked"
 	wholePath := filepath.Join(
 		fixture.worktreeRoot,
-		wholeBranch,
+		"github-com-acme-widget-whole-linked",
 		"widget",
 	)
 	result = fixture.runCLI(
@@ -416,7 +433,7 @@ func TestCLIAPILookupsUseGHPathAndKeepStdoutPure(t *testing.T) {
 	env = append(env, "GH_HOST=unrelated.example.com", "GHQW_TEST_API_OUTPUT=main")
 	result = fixture.runCLIWithEnv(t, env, "add", "--worktree", "-R", "ghe.example.com/octocat/widget", "-b", "feature-from-api")
 	assertStatus(t, result, 0)
-	worktreePath := filepath.Join(fixture.worktreeRoot, "feature-from-api", "widget")
+	worktreePath := filepath.Join(fixture.worktreeRoot, "ghe-example-com-octocat-widget-feature-from-api", "widget")
 	assertStdout(t, result, filepath.ToSlash(worktreePath)+"\n")
 	assertContains(t, result.stderr, "fake gh: api ghe.example.com/repos/octocat/widget")
 
@@ -424,7 +441,7 @@ func TestCLIAPILookupsUseGHPathAndKeepStdoutPure(t *testing.T) {
 	assertStatus(t, result, 1)
 	assertStdout(t, result, "")
 	assertContains(t, result.stderr, "API response did not include default_branch")
-	assertPathMissing(t, filepath.Join(fixture.worktreeRoot, "feature-missing-default", "widget"))
+	assertPathMissing(t, filepath.Join(fixture.worktreeRoot, "ghe-example-com-octocat-widget-feature-missing-default", "widget"))
 
 	// An unusable GH_PATH must not affect help, local inputs, or attaching an
 	// existing branch: none requires resolving or starting gh.
