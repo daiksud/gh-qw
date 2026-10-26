@@ -109,8 +109,10 @@ supported; a maintainer must handle them manually without a privileged fallback.
 
 Together the staged workflows preserve Go builds and tests on Linux amd64,
 macOS arm64, and Windows amd64, plus race, format/vet, settings validation, and
-release-version tests. Dependabot auto-merge uses `pull_request_target`
-without checking out PR code. Required checks and resolved threads still apply.
+release-version tests. Dependabot checks Go modules and GitHub Actions weekly.
+Its PRs require a manual merge decision after review and required checks; no
+workflow automatically enables auto-merge. The repository-level auto-merge
+option remains available.
 
 ## Releases
 
