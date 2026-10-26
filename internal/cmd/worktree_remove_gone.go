@@ -236,43 +236,9 @@ func worktreeRemoveGoneBuildPlan(
 			err,
 		)
 	}
-	attachedBranches := make(map[string]struct{}, len(worktrees))
-	for _, worktree := range worktrees {
-		if worktree.Main || worktree.Detached || worktree.Branch == "" {
-			continue
-		}
-		attachedBranches[worktree.Branch] = struct{}{}
-	}
-
-	upstreams, err := commandRuntime.git.BranchUpstreams(ctx, repository.Path)
+	candidates, err := goneWorktreeCandidates(ctx, repository, worktrees, commandRuntime.git)
 	if err != nil {
-		return worktreeRemoveGonePlan{}, fmt.Errorf(
-			"inspect branch upstreams for %q: %w",
-			repository.Identity,
-			err,
-		)
-	}
-	upstreamByBranch := make(map[string]string, len(upstreams))
-	for _, upstream := range upstreams {
-		if _, attached := attachedBranches[upstream.Branch]; !attached {
-			continue
-		}
-		if err := local.ValidateBranch(ctx, upstream.Branch); err != nil {
-			return worktreeRemoveGonePlan{}, fmt.Errorf(
-				"inspect branch upstreams for %q: invalid branch %q: %w",
-				repository.Identity,
-				upstream.Branch,
-				err,
-			)
-		}
-		if _, exists := upstreamByBranch[upstream.Branch]; exists {
-			return worktreeRemoveGonePlan{}, fmt.Errorf(
-				"inspect branch upstreams for %q: duplicate branch %q",
-				repository.Identity,
-				upstream.Branch,
-			)
-		}
-		upstreamByBranch[upstream.Branch] = upstream.Upstream
+		return worktreeRemoveGonePlan{}, err
 	}
 
 	plan := worktreeRemoveGonePlan{
@@ -280,38 +246,6 @@ func worktreeRemoveGoneBuildPlan(
 		repositories: append([]local.Repository(nil), repositories...),
 		repository:   repository,
 		common:       common,
-	}
-	type goneCandidate struct {
-		worktree local.Worktree
-		upstream string
-	}
-	var candidates []goneCandidate
-	refExists := make(map[string]bool)
-	for _, worktree := range worktrees {
-		if worktree.Main || worktree.Detached || worktree.Branch == "" {
-			continue
-		}
-		upstream := upstreamByBranch[worktree.Branch]
-		if upstream == "" {
-			continue
-		}
-		exists, inspected := refExists[upstream]
-		if !inspected {
-			exists, err = commandRuntime.git.RefExists(ctx, repository.Path, upstream)
-			if err != nil {
-				return worktreeRemoveGonePlan{}, fmt.Errorf(
-					"verify upstream ref %q for branch %q: %w",
-					upstream,
-					worktree.Branch,
-					err,
-				)
-			}
-			refExists[upstream] = exists
-		}
-		if exists {
-			continue
-		}
-		candidates = append(candidates, goneCandidate{worktree: worktree, upstream: upstream})
 	}
 	if len(candidates) == 0 {
 		return plan, nil

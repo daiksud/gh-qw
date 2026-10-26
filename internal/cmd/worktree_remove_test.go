@@ -736,6 +736,25 @@ func TestNewRemoveCommandWorktreeGoneRealGitLifecycle(t *testing.T) {
 	worktreeRemoveRunGit(t, repositoryPath, "update-ref", "-d", worktrees[1].ref)
 	worktreeRemoveRunGit(t, repositoryPath, "update-ref", "refs/heads/HEAD", "HEAD")
 
+	// Reuse the real Git fixture to check that discovery and cleanup agree,
+	// including a non-default remote fetch refspec.
+	var listed bytes.Buffer
+	list := NewListCommand(ListDependencies{
+		Resolver: worktreeRemoveStaticResolver{result: rootpkg.Result{
+			RepositoryRoots: []string{repositoryRoot},
+			WorktreeRoot:    worktreeRoot,
+		}},
+		Stdout: &listed,
+		Stderr: io.Discard,
+	})
+	list.SetArgs([]string{"--worktree", "--gone", "--full-path"})
+	if err := list.Execute(); err != nil {
+		t.Fatalf("list gone worktrees: %v", err)
+	}
+	if want := local.NormalizePathForOutput(worktrees[1].path) + "\n"; listed.String() != want {
+		t.Fatalf("listed gone paths = %q, want %q", listed.String(), want)
+	}
+
 	var stdout, stderr bytes.Buffer
 	prompts := 0
 	command := newWorktreeRemoveTestCommand(WorktreeRemoveDependencies{
