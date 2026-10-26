@@ -119,21 +119,21 @@ func TestAddWorktreeModesAndForce(t *testing.T) {
 	}{
 		{
 			name:   "new branch",
-			branch: "experiment/new",
-			args:   []string{"-b", "-f", "experiment/new", "base"},
+			branch: "experiment-new",
+			args:   []string{"-b", "-f", "experiment-new", "base"},
 			wantOptions: gitcmd.WorktreeAddOptions{
 				Commitish: "base",
-				NewBranch: "experiment/new",
+				NewBranch: "experiment-new",
 				Force:     true,
 			},
 		},
 		{
 			name:   "reset branch",
-			branch: "experiment/reset",
-			args:   []string{"-B", "-f", "experiment/reset", "base"},
+			branch: "experiment-reset",
+			args:   []string{"-B", "-f", "experiment-reset", "base"},
 			wantOptions: gitcmd.WorktreeAddOptions{
 				Commitish:   "base",
-				ResetBranch: "experiment/reset",
+				ResetBranch: "experiment-reset",
 				Force:       true,
 			},
 		},
@@ -159,10 +159,10 @@ func TestAddWorktreeModesAndForce(t *testing.T) {
 		},
 		{
 			name:   "orphan branch",
-			branch: "scratch/orphan",
-			args:   []string{"--orphan", "-f", "scratch/orphan"},
+			branch: "scratch-orphan",
+			args:   []string{"--orphan", "-f", "scratch-orphan"},
 			wantOptions: gitcmd.WorktreeAddOptions{
-				NewBranch: "scratch/orphan",
+				NewBranch: "scratch-orphan",
 				Orphan:    true,
 				Force:     true,
 			},
@@ -518,7 +518,7 @@ func TestAddWorktreeCleansOnlyNewEmptyParents(t *testing.T) {
 }
 
 func TestAddWorktreeCleansAfterMkdirFailure(t *testing.T) {
-	fixture := worktreeAddNewFixture(t, "feature-deep/cleanup")
+	fixture := worktreeAddNewFixture(t, "feature-deep-cleanup")
 	fixture.git.localBranches[fixture.branch] = true
 	mkdirCalls := 0
 	realMkdir := os.Mkdir
