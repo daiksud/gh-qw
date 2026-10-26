@@ -84,8 +84,6 @@ runs:
           --title "$VERSION" \
           --generate-notes \
           --notes-start-tag "$PREVIOUS_TAG" \
-          "$ARTIFACT_DIR/gh-qw-darwin-amd64" \
           "$ARTIFACT_DIR/gh-qw-darwin-arm64" \
           "$ARTIFACT_DIR/gh-qw-linux-amd64" \
-          "$ARTIFACT_DIR/gh-qw-linux-arm64" \
           "$ARTIFACT_DIR/gh-qw-windows-amd64.exe"
