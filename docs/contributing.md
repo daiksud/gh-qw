@@ -85,8 +85,8 @@ and body; the inactive merge-commit defaults retain the same values.
 
 The declared main Ruleset requires one approving review, dismisses approvals
 after new commits, resolves review threads, uses strict up-to-date checks, and
-requires signed commits and linear history. CODEOWNER approval is not required;
-the PR author cannot approve their own changes. Administrator bypass is
+requires signed commits and linear history. CODEOWNER approval is required; another eligible reviewer (including the
+configured GitHub Actions bot) may approve when the sole owner is the author. Administrator bypass is
 restricted to pull requests, under [the common exceptional policy](../AGENTS.md#review-approvals-and-bypass).
 
 The [Codex approval workflow](../.github/workflows/approve-codex-review.yml)
