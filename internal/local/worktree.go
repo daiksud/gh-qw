@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -297,7 +296,7 @@ func ValidateRepository(repository Repository) error {
 	return nil
 }
 
-// ValidateSlotAvailable rejects exact and component-prefix collisions.
+// ValidateSlotAvailable rejects slots that share a flattened directory name.
 func ValidateSlotAvailable(ctx context.Context, worktrees []Worktree, slot string) error {
 	if err := ValidateSlot(ctx, slot); err != nil {
 		return err
@@ -316,15 +315,15 @@ func ValidateSlotAvailable(ctx context.Context, worktrees []Worktree, slot strin
 	return nil
 }
 
-// FindLinkedWorktree returns the one registered linked worktree with an exact
-// slot.
+// FindLinkedWorktree resolves either a canonical directory slot or its
+// slash-separated spelling without guessing the checked-out branch.
 func FindLinkedWorktree(ctx context.Context, worktrees []Worktree, slot string) (Worktree, error) {
 	if err := ValidateSlot(ctx, slot); err != nil {
 		return Worktree{}, err
 	}
 	matches := make([]Worktree, 0, 1)
 	for _, worktree := range worktrees {
-		if !worktree.Main && worktree.Slot == slot {
+		if !worktree.Main && slotsCollide(slot, worktree.Slot) {
 			matches = append(matches, worktree)
 		}
 	}
@@ -378,10 +377,7 @@ func deriveWorktreeSlot(
 		if len(parts) != 2 || parts[1] != repo {
 			return "", fmt.Errorf("registered linked worktree is outside <slot>/<repo> layout: %q", relative)
 		}
-		slot, err = url.PathUnescape(parts[0])
-		if err != nil || WorktreeSlotDirectoryName(slot) != parts[0] {
-			return "", fmt.Errorf("registered linked worktree has a noncanonical encoded slot directory %q: %w", parts[0], err)
-		}
+		slot = parts[0]
 	} else if item.Detached {
 		slot = filepath.Base(physicalPath)
 	} else {
@@ -394,6 +390,8 @@ func deriveWorktreeSlot(
 }
 
 func slotsCollide(first, second string) bool {
+	first = WorktreeSlotDirectoryName(first)
+	second = WorktreeSlotDirectoryName(second)
 	if runtime.GOOS == "windows" {
 		first = strings.ToLower(first)
 		second = strings.ToLower(second)

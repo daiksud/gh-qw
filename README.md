@@ -47,7 +47,7 @@ gh qw list --all
 Main repositories live at `<root>/<host>/<owner>/<repo>`. Linked worktrees live
 at `<root>/worktrees/<unique-slot>/<repo>`. The default root is `~/ghqw`.
 Slot directories are single components unique across repositories; branch slashes
-are escaped (for example, `feature/docs` becomes `feature%2Fdocs`).
+become hyphens (for example, `feature/docs` becomes `feature-docs`).
 
 Optional configuration in `~/.config/ghqw/config.toml`:
 

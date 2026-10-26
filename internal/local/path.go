@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/url"
 	"path/filepath"
 	"strings"
 	"unicode"
@@ -77,10 +76,10 @@ func ValidateSlotLayout(_ context.Context, slot string) error {
 	return nil
 }
 
-// WorktreeSlotDirectoryName encodes a Git ref as one reversible directory name.
-// Escaping also distinguishes a slash from a literal percent escape.
+// WorktreeSlotDirectoryName flattens a slash-separated slot into one readable
+// directory name. Different refs can share a name, so slot collisions are rejected.
 func WorktreeSlotDirectoryName(slot string) string {
-	return url.PathEscape(slot)
+	return strings.ReplaceAll(slot, "/", "-")
 }
 
 // ValidateSlot applies branch validation and gh-qw's portable directory layout
@@ -119,7 +118,7 @@ func WorktreeBasePath(worktreeRoot, host, owner, repo string) (string, error) {
 	return root.PhysicalizeTarget(worktreeRoot, worktreeRoot, root.AllowEqual)
 }
 
-// WorktreePath returns <worktree-root>/<escaped-slot>/<repo>.
+// WorktreePath returns <worktree-root>/<flattened-slot>/<repo>.
 func WorktreePath(ctx context.Context, worktreeRoot, host, owner, repo, branch string) (string, error) {
 	if err := ValidateSlot(ctx, branch); err != nil {
 		return "", err

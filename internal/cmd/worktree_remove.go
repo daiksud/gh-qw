@@ -456,9 +456,9 @@ func worktreeRemoveValidateResolved(
 		}
 	case worktree.Repository.Identity != repository.Identity:
 		return unsafe("managed lookup returned a worktree for a different repository")
-	case worktree.Slot != slot:
+	case worktree.Slot != local.WorktreeSlotDirectoryName(slot):
 		return unsafe("managed lookup returned a different worktree slot")
-	case worktree.Identity != repository.Identity+"@"+slot:
+	case worktree.Identity != repository.Identity+"@"+local.WorktreeSlotDirectoryName(slot):
 		return unsafe("managed lookup returned an inconsistent worktree identity")
 	case !filepath.IsAbs(worktree.Path):
 		return unsafe("managed lookup returned a non-absolute worktree path")
