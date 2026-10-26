@@ -1,0 +1,64 @@
+name: approve-codex-review
+
+on:
+  issue_comment: {types: [created, edited]}
+
+permissions: {}
+defaults:
+  run:
+    shell: bash
+concurrency:
+  group: codex-approval-${{ github.repository }}-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  approve:
+    if: >-
+      github.event.issue.pull_request &&
+      github.event.comment.user.login == 'chatgpt-codex-connector[bot]' &&
+      startsWith(github.event.comment.body, '<!-- codex-pull-request-review-summary -->')
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    permissions: {pull-requests: write}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR_NUMBER: ${{ github.event.issue.number }}
+      COMMENT_ID: ${{ github.event.comment.id }}
+    steps:
+      - name: Approve the currently reviewed commit
+        run: |
+          set -euo pipefail
+
+          for attempt in {0..6}; do
+            pr=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER")
+            jq -e '.state == "open" and .draft == false' <<<"$pr" >/dev/null || exit 0
+            head=$(jq -r '.head.sha' <<<"$pr")
+
+            summary=$(gh api "repos/$GITHUB_REPOSITORY/issues/comments/$COMMENT_ID" --jq .body)
+            state=$(sed -n 's/^<!-- codex-review-state:v1 \(.*\) -->$/\1/p' <<<"$summary")
+            jq -e --arg head "$head" '
+              .code_review.status == "completed" and
+              .security_review.status == "completed" and
+              .code_review.commit_sha == $head and
+              .security_review.commit_sha == $head and
+              .code_review.has_unresolved_findings == false and
+              .security_review.has_unresolved_findings == false
+            ' <<<"$state" >/dev/null || exit 0
+
+            reactions=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/reactions?per_page=100" --paginate --slurp)
+            if jq -e 'any(.[][]; .user.login == "chatgpt-codex-connector[bot]" and .content == "+1")' <<<"$reactions" >/dev/null; then
+              # Pin the review to the verified commit; never approve a newer push.
+              current=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER")
+              jq -e --arg head "$head" '.state == "open" and .draft == false and .head.sha == $head' <<<"$current" >/dev/null || exit 0
+
+              # A replayed summary edit must not produce a second approval.
+              reviews=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/reviews?per_page=100" --paginate --slurp)
+              if jq -e --arg head "$head" 'any(.[][]; .user.login == "github-actions[bot]" and .state == "APPROVED" and .commit_id == $head)' <<<"$reviews" >/dev/null; then
+                exit 0
+              fi
+              gh api --method POST "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/reviews" \
+                -f event=APPROVE -f commit_id="$head" >/dev/null
+              exit 0
+            fi
+            [[ "$attempt" == 6 ]] || sleep 30
+          done
