@@ -1022,7 +1022,7 @@ func TestNewRemoveCommandWorktreeGoneKeepsParentOfRegisteredWorktree(t *testing.
 	if got := ExitCode(err); got != 1 {
 		t.Fatalf("ExitCode(error=%v) = %d, want 1; stderr=%q", err, got, stderr.String())
 	}
-	if err == nil || !strings.Contains(err.Error(), "outside <slot>/<repo> layout") {
+	if err == nil || !strings.Contains(err.Error(), "cannot derive a safe worktree slot") {
 		t.Fatalf("nested worktree layout was not rejected: %v", err)
 	}
 	if stdout.Len() != 0 || stderr.Len() != 0 {
