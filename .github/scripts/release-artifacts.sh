@@ -17,13 +17,6 @@ require_version() {
 
 describe_target() {
   case "$1" in
-    darwin-amd64)
-      TARGET_GOOS=darwin
-      TARGET_GOARCH=amd64
-      TARGET_ASSET=gh-qw-darwin-amd64
-      TARGET_RUNNER_OS=macOS
-      TARGET_RUNNER_ARCH=X64
-      ;;
     darwin-arm64)
       TARGET_GOOS=darwin
       TARGET_GOARCH=arm64
@@ -37,13 +30,6 @@ describe_target() {
       TARGET_ASSET=gh-qw-linux-amd64
       TARGET_RUNNER_OS=Linux
       TARGET_RUNNER_ARCH=X64
-      ;;
-    linux-arm64)
-      TARGET_GOOS=linux
-      TARGET_GOARCH=arm64
-      TARGET_ASSET=gh-qw-linux-arm64
-      TARGET_RUNNER_OS=Linux
-      TARGET_RUNNER_ARCH=ARM64
       ;;
     windows-amd64)
       TARGET_GOOS=windows
@@ -96,7 +82,7 @@ verify_single_inventory() {
 verify_all_inventory() {
   local directory="$1" expected actual target
   expected="$(
-    for target in darwin-amd64 darwin-arm64 linux-amd64 linux-arm64 windows-amd64; do
+    for target in darwin-arm64 linux-amd64 windows-amd64; do
       describe_target "$target"
       printf '%s\n%s\n' "$TARGET_ASSET" "$TARGET_ASSET.manifest"
     done | LC_ALL=C sort
@@ -108,7 +94,7 @@ verify_all_inventory() {
 verify_published_inventory() {
   local directory="$1" expected actual target
   expected="$(
-    for target in darwin-amd64 darwin-arm64 linux-amd64 linux-arm64 windows-amd64; do
+    for target in darwin-arm64 linux-amd64 windows-amd64; do
       describe_target "$target"
       printf '%s\n' "$TARGET_ASSET"
     done | LC_ALL=C sort
@@ -128,11 +114,11 @@ case "$command" in
     ;;
   build-matrix)
     [ "$#" -eq 1 ] || fail "usage: release-artifacts.sh build-matrix"
-    printf '%s\n' '{"include":[{"target":"darwin-amd64","runner":"ubuntu-slim"},{"target":"darwin-arm64","runner":"ubuntu-slim"},{"target":"linux-amd64","runner":"ubuntu-slim"},{"target":"linux-arm64","runner":"ubuntu-slim"},{"target":"windows-amd64","runner":"ubuntu-slim"}]}'
+    printf '%s\n' '{"include":[{"target":"darwin-arm64","runner":"ubuntu-slim"},{"target":"linux-amd64","runner":"ubuntu-slim"},{"target":"windows-amd64","runner":"ubuntu-slim"}]}'
     ;;
   acceptance-matrix)
     [ "$#" -eq 1 ] || fail "usage: release-artifacts.sh acceptance-matrix"
-    printf '%s\n' '{"include":[{"target":"linux-amd64","runner":"ubuntu-slim"},{"target":"linux-arm64","runner":"ubuntu-24.04-arm"},{"target":"darwin-arm64","runner":"macos-14"},{"target":"windows-amd64","runner":"windows-latest"}]}'
+    printf '%s\n' '{"include":[{"target":"linux-amd64","runner":"ubuntu-slim"},{"target":"darwin-arm64","runner":"macos-14"},{"target":"windows-amd64","runner":"windows-latest"}]}'
     ;;
   manifest)
     [ "$#" -eq 5 ] || fail "usage: release-artifacts.sh manifest TARGET VERSION SOURCE_SHA DIRECTORY"
@@ -157,7 +143,7 @@ case "$command" in
     require_version "$2"
     require_source_sha "$3"
     verify_all_inventory "$4"
-    for target in darwin-amd64 darwin-arm64 linux-amd64 linux-arm64 windows-amd64; do
+    for target in darwin-arm64 linux-amd64 windows-amd64; do
       verify_one "$target" "$2" "$3" "$4"
     done
     ;;
@@ -183,7 +169,7 @@ case "$command" in
     require_source_sha "$3"
     verify_all_inventory "$4"
     verify_published_inventory "$5"
-    for target in darwin-amd64 darwin-arm64 linux-amd64 linux-arm64 windows-amd64; do
+    for target in darwin-arm64 linux-amd64 windows-amd64; do
       verify_one "$target" "$2" "$3" "$4"
       describe_target "$target"
       [ "$(sha256_file "$4/$TARGET_ASSET")" = "$(sha256_file "$5/$TARGET_ASSET")" ] ||

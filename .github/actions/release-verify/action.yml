@@ -46,10 +46,8 @@ runs:
         ' "$release_json" >/dev/null
 
         expected_assets="$(printf '%s\n' \
-          gh-qw-darwin-amd64 \
           gh-qw-darwin-arm64 \
           gh-qw-linux-amd64 \
-          gh-qw-linux-arm64 \
           gh-qw-windows-amd64.exe | LC_ALL=C sort)"
         actual_assets="$(jq -r '.assets[].name' "$release_json" | LC_ALL=C sort)"
         [[ "$actual_assets" == "$expected_assets" ]]
