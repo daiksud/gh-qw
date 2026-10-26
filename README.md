@@ -44,10 +44,11 @@ gh qw add --worktree -R cli/cli -b feature/docs
 gh qw list --all
 ```
 
-Main repositories live at `<root>/<host>/<owner>/<repo>`. Linked worktrees live
-at `<root>/worktrees/<unique-slot>/<repo>`. The default root is `~/ghqw`.
-Slot directories are single components unique across repositories; branch slashes
-become hyphens (for example, `feature/docs` becomes `feature-docs`).
+Main repositories live at `<root>/<host>/<owner>/<repo>`. Linked worktrees
+live at `<root>/worktrees/<unique-name>/<repo>`, with the default root `~/ghqw`.
+The name combines `host-owner-repo-branch`, replacing punctuation (including
+dots and slashes) with hyphens. If occupied, `-1`, `-2`, and so on are tried
+automatically. The original Git branch name is unchanged.
 
 Optional configuration in `~/.config/ghqw/config.toml`:
 

@@ -65,13 +65,20 @@ managed. Configured roots determine default destinations for `clone` and
 `add --move`; a checkout under a configured root is not registered implicitly.
 Reading configuration or listing roots does not create missing directories.
 
-Slots accept Git-valid slash-separated refs. Their directory names flatten
-`/` to `-`: `feature/login` becomes `feature-login`, while the Git branch
-remains `feature/login`. The flattened name is the canonical worktree slot
-used for listing and cleanup. Because `feature/login` and `feature-login`
-share a directory name, neither can claim a slot already in use, including
-by another repository. Empty, dot-ended, and invalid Git ref names are rejected.
-A slot is a storage name, not a promise about the checked-out branch.
+Worktree names are derived from `<host>-<owner>-<repo>-<branch>` and all
+punctuation and separators are replaced with `-` (for example,
+`github.com/acme/widget` on `feature/login` becomes
+`github-com-acme-widget-feature-login`). Git branches remain unchanged.
+A name already taken by any file, directory, or worktree is skipped: the first
+available `-1`, `-2`, and subsequent suffix is reserved atomically. The
+actual directory name, including any numeric suffix, identifies the worktree
+when listing or removing it, independently of later branch switches. Names
+are resolved from Git's registered worktree paths; no additional registry
+is maintained.
+
+The unique name is a single directory component, even if the Git branch
+contains slashes. Existing paths are not adopted, overwritten, or renamed
+automatically. An existing symlink is also considered occupied.
 
 Targets are checked again before mutation against the established boundary.
 A replaced root or symlink cannot authorize a new destination. Cleanup never

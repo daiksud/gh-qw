@@ -38,8 +38,10 @@ separate from host/login and filesystem-based input resolution.
 
 Repository identity is `<host>/<owner>/<repo>` and excludes transport details.
 Linked worktrees live at `<primary-root>/worktrees/<unique-slot>/<repo>`,
-independent of their current branch. Slot directories are exclusively reserved
-across repositories and never reused during creation.
+independent of their current branch. Build slot names from the canonical
+repository identity and branch, normalize punctuation to hyphens, and select
+the first unoccupied numeric suffix. Atomically reserve the directory; Git
+remains authoritative for the registration and current branch.
 The explicit XDG location registry owns gh-qw's managed main-repository set.
 Git remains the source of truth for actual worktree registrations, and the
 filesystem for existing files. Configured roots determine default placement;
