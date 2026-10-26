@@ -22,247 +22,35 @@ func (f loaderFunc) Load() (config.Config, error) {
 }
 
 func TestResolverPrecedence(t *testing.T) {
-	t.Run("defaults", func(t *testing.T) {
-		base, home := newLayout(t)
-		resolver, _ := newTestResolver(home, config.Config{}, nil)
-
-		got, err := resolver.Resolve()
-		if err != nil {
-			t.Fatalf("Resolve() error = %v", err)
-		}
-		want := Result{
-			RepositoryRoots: []string{physicalJoin(t, home, "ghqw")},
-			WorktreeRoot:    physicalJoin(t, home, ".local", "share", "ghqw", "worktrees"),
-		}
-		if !reflect.DeepEqual(got, want) {
-			t.Fatalf("Resolve() = %#v, want %#v", got, want)
-		}
-		if got.Primary() != want.RepositoryRoots[0] {
-			t.Fatalf("Primary() = %q, want %q", got.Primary(), want.RepositoryRoots[0])
-		}
-
-		assertDoesNotExist(t, filepath.Join(home, "ghqw"))
-		assertDoesNotExist(t, filepath.Join(home, ".local"))
-		assertDirectory(t, base)
-	})
-
-	t.Run("file configuration", func(t *testing.T) {
-		base, home := newLayout(t)
-		repositoryOne := filepath.Join(base, "configured-one")
-		repositoryTwo := filepath.Join(base, "configured-two")
-		worktrees := filepath.Join(base, "configured-worktrees")
-		resolver, _ := newTestResolver(home, config.Config{
-			Roots:        []string{repositoryOne, repositoryTwo},
-			WorktreeRoot: worktrees,
-		}, nil)
-
-		got, err := resolver.Resolve()
-		if err != nil {
-			t.Fatalf("Resolve() error = %v", err)
-		}
-		want := Result{
-			RepositoryRoots: []string{
-				physicalJoin(t, base, "configured-one"),
-				physicalJoin(t, base, "configured-two"),
-			},
-			WorktreeRoot: physicalJoin(t, base, "configured-worktrees"),
-		}
-		if !reflect.DeepEqual(got, want) {
-			t.Fatalf("Resolve() = %#v, want %#v", got, want)
-		}
-	})
-
-	t.Run("repository environment replaces file roots", func(t *testing.T) {
-		base, home := newLayout(t)
-		environmentOne := filepath.Join(base, "environment-one")
-		environmentTwo := filepath.Join(base, "environment-two")
-		configuredWorktrees := filepath.Join(base, "configured-worktrees")
-		resolver, _ := newTestResolver(home, config.Config{
-			Roots:        []string{filepath.Join(base, "configured-one"), filepath.Join(base, "configured-two")},
-			WorktreeRoot: configuredWorktrees,
-		}, map[string]string{
-			repositoryRootEnvironment: strings.Join(
-				[]string{environmentOne, environmentTwo},
-				string(os.PathListSeparator),
-			),
+	base, home := newLayout(t)
+	first := filepath.Join(base, "first")
+	second := filepath.Join(base, "second")
+	for _, test := range []struct { name string; config config.Config; env map[string]string; root string }{
+		{"default", config.Config{}, nil, filepath.Join(home, "ghqw")},
+		{"file", config.Config{Roots: []string{first, second}}, nil, first},
+		{"environment", config.Config{Roots: []string{first}}, map[string]string{repositoryRootEnvironment: second}, second},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			resolver, _ := newTestResolver(home, test.config, test.env)
+			got, err := resolver.Resolve()
+			if err != nil { t.Fatal(err) }
+			root := physicalJoin(t, filepath.Dir(test.root), filepath.Base(test.root))
+			if got.Primary() != root { t.Fatalf("Primary = %q, want %q", got.Primary(), root) }
+			if got.WorktreeRoot != filepath.Join(root, "worktrees") { t.Fatalf("WorktreeRoot = %q", got.WorktreeRoot) }
 		})
-
-		got, err := resolver.Resolve()
-		if err != nil {
-			t.Fatalf("Resolve() error = %v", err)
-		}
-		want := Result{
-			RepositoryRoots: []string{
-				physicalJoin(t, base, "environment-one"),
-				physicalJoin(t, base, "environment-two"),
-			},
-			WorktreeRoot: physicalJoin(t, base, "configured-worktrees"),
-		}
-		if !reflect.DeepEqual(got, want) {
-			t.Fatalf("Resolve() = %#v, want %#v", got, want)
-		}
-	})
-
-	t.Run("worktree environment overrides only worktree setting", func(t *testing.T) {
-		base, home := newLayout(t)
-		configuredRepository := filepath.Join(base, "configured-repository")
-		environmentWorktrees := filepath.Join(base, "environment-worktrees")
-		resolver, _ := newTestResolver(home, config.Config{
-			Roots:        []string{configuredRepository},
-			WorktreeRoot: filepath.Join(base, "configured-worktrees"),
-		}, map[string]string{
-			worktreeRootEnvironment: environmentWorktrees,
-		})
-
-		got, err := resolver.Resolve()
-		if err != nil {
-			t.Fatalf("Resolve() error = %v", err)
-		}
-		want := Result{
-			RepositoryRoots: []string{physicalJoin(t, base, "configured-repository")},
-			WorktreeRoot:    physicalJoin(t, base, "environment-worktrees"),
-		}
-		if !reflect.DeepEqual(got, want) {
-			t.Fatalf("Resolve() = %#v, want %#v", got, want)
-		}
-	})
-
-	t.Run("empty environment values are ignored", func(t *testing.T) {
-		base, home := newLayout(t)
-		resolver, _ := newTestResolver(home, config.Config{
-			Roots:        []string{filepath.Join(base, "configured-repository")},
-			WorktreeRoot: filepath.Join(base, "configured-worktrees"),
-		}, map[string]string{
-			repositoryRootEnvironment: "",
-			worktreeRootEnvironment:   "",
-		})
-
-		got, err := resolver.Resolve()
-		if err != nil {
-			t.Fatalf("Resolve() error = %v", err)
-		}
-		want := Result{
-			RepositoryRoots: []string{physicalJoin(t, base, "configured-repository")},
-			WorktreeRoot:    physicalJoin(t, base, "configured-worktrees"),
-		}
-		if !reflect.DeepEqual(got, want) {
-			t.Fatalf("Resolve() = %#v, want %#v", got, want)
-		}
-	})
-
-	t.Run("worktree environment remains one path", func(t *testing.T) {
-		base, home := newLayout(t)
-		rawWorktreeRoot := filepath.Join(
-			base,
-			"worktrees"+string(os.PathListSeparator)+"archive",
-		)
-		resolver, _ := newTestResolver(home, config.Config{
-			Roots: []string{filepath.Join(base, "repositories")},
-		}, map[string]string{
-			worktreeRootEnvironment: rawWorktreeRoot,
-		})
-
-		got, err := resolver.Resolve()
-		if err != nil {
-			t.Fatalf("Resolve() error = %v", err)
-		}
-		want := physicalJoin(
-			t,
-			base,
-			"worktrees"+string(os.PathListSeparator)+"archive",
-		)
-		if got.WorktreeRoot != want {
-			t.Fatalf("WorktreeRoot = %q, want unsplit path %q", got.WorktreeRoot, want)
-		}
-	})
+	}
 }
 
-func TestResolverDefaultWorktreeRootHonorsXDGDataHome(t *testing.T) {
-	t.Run("absolute XDG_DATA_HOME is adopted", func(t *testing.T) {
-		base, home := newLayout(t)
-		xdgDataHome := filepath.Join(base, "custom-data")
-		resolver, _ := newTestResolver(home, config.Config{}, map[string]string{
-			"XDG_DATA_HOME": xdgDataHome,
-		})
-
-		got, err := resolver.Resolve()
-		if err != nil {
-			t.Fatalf("Resolve() error = %v", err)
-		}
-		want := physicalJoin(t, base, "custom-data", "ghqw", "worktrees")
-		if got.WorktreeRoot != want {
-			t.Fatalf("WorktreeRoot = %q, want %q", got.WorktreeRoot, want)
-		}
+func TestResolverWorktreeRootDoesNotDependOnXDG(t *testing.T) {
+	base, home := newLayout(t)
+	resolver, _ := newTestResolver(home, config.Config{}, map[string]string{
+		"XDG_DATA_HOME": filepath.Join(base, "data"),
+		"GHQW_WORKTREE_ROOT": filepath.Join(base, "ignored"),
 	})
-
-	t.Run("relative XDG_DATA_HOME is ignored", func(t *testing.T) {
-		_, home := newLayout(t)
-		resolver, _ := newTestResolver(home, config.Config{}, map[string]string{
-			"XDG_DATA_HOME": filepath.Join("relative", "data"),
-		})
-
-		got, err := resolver.Resolve()
-		if err != nil {
-			t.Fatalf("Resolve() error = %v", err)
-		}
-		want := physicalJoin(t, home, ".local", "share", "ghqw", "worktrees")
-		if got.WorktreeRoot != want {
-			t.Fatalf("WorktreeRoot = %q, want fallback %q for a relative XDG_DATA_HOME", got.WorktreeRoot, want)
-		}
-	})
-
-	t.Run("empty XDG_DATA_HOME is ignored", func(t *testing.T) {
-		_, home := newLayout(t)
-		resolver, _ := newTestResolver(home, config.Config{}, map[string]string{
-			"XDG_DATA_HOME": "",
-		})
-
-		got, err := resolver.Resolve()
-		if err != nil {
-			t.Fatalf("Resolve() error = %v", err)
-		}
-		want := physicalJoin(t, home, ".local", "share", "ghqw", "worktrees")
-		if got.WorktreeRoot != want {
-			t.Fatalf("WorktreeRoot = %q, want fallback %q for an empty XDG_DATA_HOME", got.WorktreeRoot, want)
-		}
-	})
-
-	t.Run("GHQW_WORKTREE_ROOT still outranks XDG_DATA_HOME", func(t *testing.T) {
-		base, home := newLayout(t)
-		environmentWorktrees := filepath.Join(base, "environment-worktrees")
-		resolver, _ := newTestResolver(home, config.Config{}, map[string]string{
-			"XDG_DATA_HOME":         filepath.Join(base, "custom-data"),
-			worktreeRootEnvironment: environmentWorktrees,
-		})
-
-		got, err := resolver.Resolve()
-		if err != nil {
-			t.Fatalf("Resolve() error = %v", err)
-		}
-		want := physicalJoin(t, base, "environment-worktrees")
-		if got.WorktreeRoot != want {
-			t.Fatalf("WorktreeRoot = %q, want GHQW_WORKTREE_ROOT %q to outrank XDG_DATA_HOME", got.WorktreeRoot, want)
-		}
-	})
-
-	t.Run("file configuration worktree_root still outranks XDG_DATA_HOME", func(t *testing.T) {
-		base, home := newLayout(t)
-		configuredWorktrees := filepath.Join(base, "configured-worktrees")
-		resolver, _ := newTestResolver(home, config.Config{
-			WorktreeRoot: configuredWorktrees,
-		}, map[string]string{
-			"XDG_DATA_HOME": filepath.Join(base, "custom-data"),
-		})
-
-		got, err := resolver.Resolve()
-		if err != nil {
-			t.Fatalf("Resolve() error = %v", err)
-		}
-		want := physicalJoin(t, base, "configured-worktrees")
-		if got.WorktreeRoot != want {
-			t.Fatalf("WorktreeRoot = %q, want configured worktree_root %q to outrank XDG_DATA_HOME", got.WorktreeRoot, want)
-		}
-	})
+	got, err := resolver.Resolve()
+	if err != nil { t.Fatal(err) }
+	want := physicalJoin(t, home, "ghqw", "worktrees")
+	if got.WorktreeRoot != want { t.Fatalf("WorktreeRoot = %q, want %q", got.WorktreeRoot, want) }
 }
 
 func TestResolverRejectsEmptyRepositoryEnvironmentEntries(t *testing.T) {
@@ -314,7 +102,6 @@ func TestResolverTildeExpansionAndAbsoluteValidation(t *testing.T) {
 		base, home := newLayout(t)
 		resolver, _ := newTestResolver(home, config.Config{
 			Roots:        []string{"~"},
-			WorktreeRoot: filepath.Join(base, "worktrees"),
 		}, nil)
 
 		got, err := resolver.Resolve()
@@ -330,7 +117,6 @@ func TestResolverTildeExpansionAndAbsoluteValidation(t *testing.T) {
 		base, home := newLayout(t)
 		resolver, _ := newTestResolver(home, config.Config{
 			Roots:        []string{"~/repositories"},
-			WorktreeRoot: "~/.ghqw/worktrees",
 		}, nil)
 
 		got, err := resolver.Resolve()
@@ -339,7 +125,7 @@ func TestResolverTildeExpansionAndAbsoluteValidation(t *testing.T) {
 		}
 		want := Result{
 			RepositoryRoots: []string{physicalJoin(t, home, "repositories")},
-			WorktreeRoot:    physicalJoin(t, home, ".ghqw", "worktrees"),
+			WorktreeRoot:    physicalJoin(t, home, "repositories", "worktrees"),
 		}
 		if !reflect.DeepEqual(got, want) {
 			t.Fatalf("Resolve() = %#v, want %#v", got, want)
@@ -352,7 +138,6 @@ func TestResolverTildeExpansionAndAbsoluteValidation(t *testing.T) {
 			base, home := newLayout(t)
 			resolver, _ := newTestResolver(home, config.Config{
 				Roots:        []string{`~\repositories`},
-				WorktreeRoot: filepath.Join(base, "worktrees"),
 			}, nil)
 
 			got, err := resolver.Resolve()
@@ -368,7 +153,6 @@ func TestResolverTildeExpansionAndAbsoluteValidation(t *testing.T) {
 			base, home := newLayout(t)
 			resolver, _ := newTestResolver(home, config.Config{
 				Roots:        []string{`~\repositories`},
-				WorktreeRoot: filepath.Join(base, "worktrees"),
 			}, nil)
 
 			_, err := resolver.Resolve()
@@ -386,7 +170,6 @@ func TestResolverTildeExpansionAndAbsoluteValidation(t *testing.T) {
 			config: func(base string) config.Config {
 				return config.Config{
 					Roots:        []string{"~someone/repositories"},
-					WorktreeRoot: filepath.Join(base, "worktrees"),
 				}
 			},
 			kind: Repository,
@@ -396,40 +179,18 @@ func TestResolverTildeExpansionAndAbsoluteValidation(t *testing.T) {
 			config: func(base string) config.Config {
 				return config.Config{
 					Roots:        []string{"relative/repositories"},
-					WorktreeRoot: filepath.Join(base, "worktrees"),
 				}
 			},
 			kind: Repository,
-		},
-		{
-			name: "relative worktree root",
-			config: func(base string) config.Config {
-				return config.Config{
-					Roots:        []string{filepath.Join(base, "repositories")},
-					WorktreeRoot: "relative/worktrees",
-				}
-			},
-			kind: Worktree,
 		},
 		{
 			name: "empty repository root",
 			config: func(base string) config.Config {
 				return config.Config{
 					Roots:        []string{""},
-					WorktreeRoot: filepath.Join(base, "worktrees"),
 				}
 			},
 			kind: Repository,
-		},
-		{
-			name: "whitespace worktree root",
-			config: func(base string) config.Config {
-				return config.Config{
-					Roots:        []string{filepath.Join(base, "repositories")},
-					WorktreeRoot: " \t ",
-				}
-			},
-			kind: Worktree,
 		},
 	}
 
@@ -449,7 +210,6 @@ func TestResolverTildeExpansionAndAbsoluteValidation(t *testing.T) {
 			ConfigLoader: loaderFunc(func() (config.Config, error) {
 				return config.Config{
 					Roots:        []string{"~/repositories"},
-					WorktreeRoot: filepath.Join(base, "worktrees"),
 				}, nil
 			}),
 			LookupEnv: emptyEnvironment,
@@ -478,7 +238,6 @@ func TestResolverPhysicalizesMissingSuffixAndSymlinks(t *testing.T) {
 			separator + "nested" + separator + ".." + separator + "repository"
 		resolver, _ := newTestResolver(home, config.Config{
 			Roots:        []string{rawRoot},
-			WorktreeRoot: filepath.Join(base, "worktrees"),
 		}, nil)
 
 		got, err := resolver.Resolve()
@@ -500,7 +259,6 @@ func TestResolverPhysicalizesMissingSuffixAndSymlinks(t *testing.T) {
 		mustSymlink(t, realRoot, aliasRoot)
 		resolver, _ := newTestResolver(home, config.Config{
 			Roots:        []string{aliasRoot},
-			WorktreeRoot: filepath.Join(base, "worktrees"),
 		}, nil)
 
 		got, err := resolver.Resolve()
@@ -520,7 +278,6 @@ func TestResolverPhysicalizesMissingSuffixAndSymlinks(t *testing.T) {
 		mustSymlink(t, realParent, aliasParent)
 		resolver, _ := newTestResolver(home, config.Config{
 			Roots:        []string{filepath.Join(aliasParent, "future", "repository")},
-			WorktreeRoot: filepath.Join(base, "worktrees"),
 		}, nil)
 
 		got, err := resolver.Resolve()
@@ -541,7 +298,6 @@ func TestResolverRejectsInvalidExistingPathShapes(t *testing.T) {
 		mustWriteFile(t, filePath)
 		resolver, _ := newTestResolver(home, config.Config{
 			Roots:        []string{filePath},
-			WorktreeRoot: filepath.Join(base, "worktrees"),
 		}, nil)
 
 		_, err := resolver.Resolve()
@@ -554,7 +310,6 @@ func TestResolverRejectsInvalidExistingPathShapes(t *testing.T) {
 		mustWriteFile(t, filePath)
 		resolver, _ := newTestResolver(home, config.Config{
 			Roots:        []string{filepath.Join(filePath, "child")},
-			WorktreeRoot: filepath.Join(base, "worktrees"),
 		}, nil)
 
 		_, err := resolver.Resolve()
@@ -569,7 +324,6 @@ func TestResolverRejectsInvalidExistingPathShapes(t *testing.T) {
 		mustSymlink(t, filePath, aliasPath)
 		resolver, _ := newTestResolver(home, config.Config{
 			Roots:        []string{aliasPath},
-			WorktreeRoot: filepath.Join(base, "worktrees"),
 		}, nil)
 
 		_, err := resolver.Resolve()
@@ -582,7 +336,6 @@ func TestResolverRejectsInvalidExistingPathShapes(t *testing.T) {
 		mustSymlink(t, filepath.Join(base, "missing-target"), aliasPath)
 		resolver, _ := newTestResolver(home, config.Config{
 			Roots:        []string{aliasPath},
-			WorktreeRoot: filepath.Join(base, "worktrees"),
 		}, nil)
 
 		_, err := resolver.Resolve()
@@ -599,7 +352,6 @@ func TestResolverRejectsInvalidExistingPathShapes(t *testing.T) {
 			ConfigLoader: loaderFunc(func() (config.Config, error) {
 				return config.Config{
 					Roots:        []string{deniedPath},
-					WorktreeRoot: filepath.Join(base, "worktrees"),
 				}, nil
 			}),
 			LookupEnv: emptyEnvironment,
@@ -633,7 +385,6 @@ func TestResolverDeduplicatesEquivalentRootsInOrder(t *testing.T) {
 		second := filepath.Join(base, "archive")
 		resolver, _ := newTestResolver(home, config.Config{
 			Roots:        []string{first, duplicate, second},
-			WorktreeRoot: filepath.Join(base, "worktrees"),
 		}, nil)
 
 		got, err := resolver.Resolve()
@@ -658,7 +409,6 @@ func TestResolverDeduplicatesEquivalentRootsInOrder(t *testing.T) {
 		mustSymlink(t, realRoot, aliasRoot)
 		resolver, _ := newTestResolver(home, config.Config{
 			Roots:        []string{aliasRoot, realRoot, otherRoot},
-			WorktreeRoot: filepath.Join(base, "worktrees"),
 		}, nil)
 
 		got, err := resolver.Resolve()
@@ -685,7 +435,6 @@ func TestResolverDeduplicatesEquivalentRootsInOrder(t *testing.T) {
 				filepath.Join(aliasParent, "future"),
 				filepath.Join(realParent, "future"),
 			},
-			WorktreeRoot: filepath.Join(base, "worktrees"),
 		}, nil)
 
 		got, err := resolver.Resolve()
@@ -709,7 +458,6 @@ func TestResolverDeduplicatesEquivalentRootsInOrder(t *testing.T) {
 			ConfigLoader: loaderFunc(func() (config.Config, error) {
 				return config.Config{
 					Roots:        []string{first, second},
-					WorktreeRoot: filepath.Join(base, "worktrees"),
 				}, nil
 			}),
 			LookupEnv: emptyEnvironment,
@@ -751,7 +499,6 @@ func TestResolverDeduplicatesEquivalentRootsInOrder(t *testing.T) {
 						filepath.Join(first, "future"),
 						filepath.Join(second, "future"),
 					},
-					WorktreeRoot: filepath.Join(base, "worktrees"),
 				}, nil
 			}),
 			LookupEnv: emptyEnvironment,
@@ -771,122 +518,22 @@ func TestResolverDeduplicatesEquivalentRootsInOrder(t *testing.T) {
 	})
 }
 
-func TestResolverRootContainmentValidation(t *testing.T) {
-	tests := []struct {
-		name       string
-		repository func(string) string
-		worktree   func(string) string
-	}{
-		{
-			name: "equal",
-			repository: func(base string) string {
-				return filepath.Join(base, "shared")
-			},
-			worktree: func(base string) string {
-				return filepath.Join(base, "shared")
-			},
-		},
-		{
-			name: "worktree inside repository",
-			repository: func(base string) string {
-				return filepath.Join(base, "repositories")
-			},
-			worktree: func(base string) string {
-				return filepath.Join(base, "repositories", "worktrees")
-			},
-		},
-		{
-			name: "repository inside worktree",
-			repository: func(base string) string {
-				return filepath.Join(base, "worktrees", "repositories")
-			},
-			worktree: func(base string) string {
-				return filepath.Join(base, "worktrees")
-			},
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			base, home := newLayout(t)
-			resolver, _ := newTestResolver(home, config.Config{
-				Roots:        []string{test.repository(base)},
-				WorktreeRoot: test.worktree(base),
-			}, nil)
-
-			_, err := resolver.Resolve()
-			assertInvalidRoot(t, err, Worktree)
-			if !strings.Contains(err.Error(), "must be disjoint") {
-				t.Fatalf("Resolve() error = %v, want disjointness reason", err)
-			}
-		})
-	}
-
-	t.Run("overlap with any repository root", func(t *testing.T) {
+func TestResolverWorktreeRootBoundary(t *testing.T) {
+	t.Run("redirected worktrees symlink", func(t *testing.T) {
 		base, home := newLayout(t)
-		resolver, _ := newTestResolver(home, config.Config{
-			Roots: []string{
-				filepath.Join(base, "primary"),
-				filepath.Join(base, "secondary"),
-			},
-			WorktreeRoot: filepath.Join(base, "secondary", "worktrees"),
-		}, nil)
-
+		primary := filepath.Join(base, "primary")
+		outside := filepath.Join(base, "outside")
+		mustMkdirAll(t, primary)
+		mustMkdirAll(t, outside)
+		mustSymlink(t, outside, filepath.Join(primary, "worktrees"))
+		resolver, _ := newTestResolver(home, config.Config{Roots: []string{primary}}, nil)
 		_, err := resolver.Resolve()
 		assertInvalidRoot(t, err, Worktree)
 	})
-
-	t.Run("physical symlink overlap", func(t *testing.T) {
+	t.Run("secondary root overlaps worktree root", func(t *testing.T) {
 		base, home := newLayout(t)
-		repositoryRoot := filepath.Join(base, "repositories")
-		repositoryAlias := filepath.Join(base, "repository-alias")
-		mustMkdirAll(t, repositoryRoot)
-		mustSymlink(t, repositoryRoot, repositoryAlias)
-		resolver, _ := newTestResolver(home, config.Config{
-			Roots:        []string{repositoryRoot},
-			WorktreeRoot: filepath.Join(repositoryAlias, "worktrees"),
-		}, nil)
-
-		_, err := resolver.Resolve()
-		assertInvalidRoot(t, err, Worktree)
-	})
-
-	t.Run("component prefix is not containment", func(t *testing.T) {
-		base, home := newLayout(t)
-		resolver, _ := newTestResolver(home, config.Config{
-			Roots:        []string{filepath.Join(base, "repos")},
-			WorktreeRoot: filepath.Join(base, "repos-other"),
-		}, nil)
-
-		got, err := resolver.Resolve()
-		if err != nil {
-			t.Fatalf("Resolve() error = %v for component-prefix siblings", err)
-		}
-		if got.Primary() == got.WorktreeRoot {
-			t.Fatalf("resolved sibling roots unexpectedly equal: %#v", got)
-		}
-	})
-
-	t.Run("SameFile aliases detect overlap through missing suffixes", func(t *testing.T) {
-		base, home := newLayout(t)
-		first := filepath.Join(base, "first")
-		second := filepath.Join(base, "second")
-		mustMkdirAll(t, first)
-		mustMkdirAll(t, second)
-		resolver := NewResolverWithOptions(Options{
-			ConfigLoader: loaderFunc(func() (config.Config, error) {
-				return config.Config{
-					Roots:        []string{filepath.Join(first, "future")},
-					WorktreeRoot: filepath.Join(second, "future", "worktrees"),
-				}, nil
-			}),
-			LookupEnv: emptyEnvironment,
-			HomeDir: func() (string, error) {
-				return home, nil
-			},
-			SameFile: sameNamedDirectories("first", "second"),
-		})
-
+		primary := filepath.Join(base, "primary")
+		resolver, _ := newTestResolver(home, config.Config{Roots: []string{primary, filepath.Join(primary, "worktrees", "nested")}}, nil)
 		_, err := resolver.Resolve()
 		assertInvalidRoot(t, err, Worktree)
 	})
@@ -907,7 +554,6 @@ func TestResolverPlatformCaseBehavior(t *testing.T) {
 
 	resolver, _ := newTestResolver(home, config.Config{
 		Roots:        []string{canonical, alternate},
-		WorktreeRoot: filepath.Join(base, "worktrees"),
 	}, nil)
 	got, err := resolver.Resolve()
 	if err != nil {
@@ -944,7 +590,6 @@ func TestResolverCachesConcurrentResolutionAndReturnsDefensiveCopies(t *testing.
 			loadCalls.Add(1)
 			return config.Config{
 				Roots:        []string{"~/repositories"},
-				WorktreeRoot: "~/.ghqw/worktrees",
 			}, nil
 		}),
 		LookupEnv: func(string) (string, bool) {
@@ -984,7 +629,7 @@ func TestResolverCachesConcurrentResolutionAndReturnsDefensiveCopies(t *testing.
 	}
 	want := Result{
 		RepositoryRoots: []string{physicalJoin(t, home, "repositories")},
-		WorktreeRoot:    physicalJoin(t, home, ".ghqw", "worktrees"),
+		WorktreeRoot:    physicalJoin(t, home, "repositories", "worktrees"),
 	}
 	for result := range results {
 		if !reflect.DeepEqual(result, want) {
@@ -994,8 +639,8 @@ func TestResolverCachesConcurrentResolutionAndReturnsDefensiveCopies(t *testing.
 	if loadCalls.Load() != 1 {
 		t.Fatalf("loader calls = %d, want 1", loadCalls.Load())
 	}
-	if lookupCalls.Load() != 2 {
-		t.Fatalf("environment lookups = %d, want 2", lookupCalls.Load())
+	if lookupCalls.Load() != 1 {
+		t.Fatalf("environment lookups = %d, want 1", lookupCalls.Load())
 	}
 	if homeCalls.Load() != 1 {
 		t.Fatalf("home lookups = %d, want 1", homeCalls.Load())
