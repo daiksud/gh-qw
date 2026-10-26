@@ -1,7 +1,6 @@
 package movement
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -11,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/daiksud/gh-qw/internal/fsidentity"
+	"github.com/daiksud/gh-qw/internal/gitcmd"
 	"github.com/daiksud/gh-qw/internal/local"
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
 )
@@ -318,7 +318,7 @@ func ValidateDisjoint(source, destination string) error {
 }
 
 func parseGitBoolean(output []byte, description string) (bool, error) {
-	value, err := parseGitLine(output, description)
+	value, err := gitcmd.ParseLine(output, description)
 	if err != nil {
 		return false, err
 	}
@@ -333,7 +333,7 @@ func parseGitBoolean(output []byte, description string) (bool, error) {
 }
 
 func parseGitPath(output []byte, relativeTo, description string) (string, error) {
-	value, err := parseGitLine(output, description)
+	value, err := gitcmd.ParseLine(output, description)
 	if err != nil {
 		return "", err
 	}
@@ -342,20 +342,6 @@ func parseGitPath(output []byte, relativeTo, description string) (string, error)
 		path = filepath.Join(relativeTo, path)
 	}
 	return filepath.Clean(path), nil
-}
-
-func parseGitLine(output []byte, description string) (string, error) {
-	output = bytes.TrimSuffix(output, []byte{'\n'})
-	output = bytes.TrimSuffix(output, []byte{'\r'})
-	if len(output) == 0 {
-		return "", fmt.Errorf("Git returned an empty %s", description)
-	}
-	if bytes.IndexByte(output, 0) >= 0 ||
-		bytes.IndexByte(output, '\n') >= 0 ||
-		bytes.IndexByte(output, '\r') >= 0 {
-		return "", fmt.Errorf("Git returned a non-single-line %s", description)
-	}
-	return string(output), nil
 }
 
 func normalizePath(path string) string {
