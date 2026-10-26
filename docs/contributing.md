@@ -25,11 +25,9 @@ bash .github/scripts/release-notes.test.sh
 bash .github/scripts/release-artifacts.test.sh
 ```
 
-Install the pinned PR message validation tools with `mise install`, then run:
-
-```sh
-bash tests/github-actions/commitlint.sh
-```
+PRLint only passes the PR title, a blank line, and the PR body to commitlint
+using the unmodified `@commitlint/config-conventional` preset. It has no
+additional rules or policy self-tests.
 
 Keep changes focused and test observable behavior. Preserve safety boundaries,
 error causes, stdout/stderr ownership, and partial results. Delegate Git/gh
@@ -58,10 +56,9 @@ Keep the merge title and body consistent with the reviewed change.
 The independent [PRLint workflow](../.github/workflows/prlint.yml) validates the
 PR title and optional body together as the proposed merge commit message. The
 message follows Conventional Commits: use one of the types listed above, an
-optional lowercase scope, and a nonempty description without surrounding
-whitespace or a final period. Breaking headers, `BREAKING CHANGE` and the
-historical `BREAKING-CHANGE` footer, and `DEPRECATED` footers remain valid inputs
-to the release-version policy. PRLint imposes no title or body line-length limit.
+optional scope, and a nonempty description under the preset's default rules.
+A `!` header or `BREAKING CHANGE:` footer signals incompatibility. The preset's
+default ignores, style rules, and line-length checks apply unchanged.
 Passing syntax validation does not establish that the selected type or scope
 matches the change.
 
