@@ -94,7 +94,7 @@ The `ci-push` workflow runs the same Commit and Acceptance stages for `main`.
 Fork and Dependabot pull requests that cannot change Draft/Ready state are not
 supported; a maintainer must handle them manually without a privileged fallback.
 
-Together the staged workflows preserve Go builds and tests on Linux amd64/arm64,
+Together the staged workflows preserve Go builds and tests on Linux amd64,
 macOS arm64, and Windows amd64, plus race, format/vet, settings validation, and
 release-preparation tests. Dependabot auto-merge uses `pull_request_target`
 without checking out PR code. Required checks and resolved threads still apply.
@@ -111,14 +111,13 @@ gh workflow run release.yml --ref main
 when it is dispatched and fails if main moves before resolution. An optional
 reviewed source pin is only an additional equality check; it cannot select a
 different commit. The workflow then
-runs three product stages: commit-stage cross-builds five binaries from that
+runs three product stages: commit-stage cross-builds three binaries from that
 source, acceptance-stage tests the transferred binaries on native Linux amd64,
-Linux arm64, macOS arm64, and Windows amd64 runners, and release publishes only
-those accepted bytes. Darwin amd64 is cross-built but has no native acceptance
-runner. Each internal artifact carries a source, version, asset-name, and SHA-256
+macOS arm64, and Windows amd64 runners, and release publishes only those
+accepted bytes. Each internal artifact carries a source, version, asset-name, and SHA-256
 manifest; publication revalidates the complete inventory without rebuilding.
 The final verification has no write token; its public API and asset downloads
-are unauthenticated after read-only artifact retrieval. It compares all five
+are unauthenticated after read-only artifact retrieval. It compares all three
 published assets with the accepted manifests. A
 failed metadata/build/acceptance/publication check creates no new release.
 
