@@ -99,13 +99,12 @@ class HistoryFixture(unittest.TestCase):
                  "prerelease": False, "published_at": "2026-10-02T00:00:00Z"}
         self.assertEqual(self.calculate([newer])[:2], ("v0.2.10", "v0.2.9"))
 
-    def test_legacy_version_preparation_is_ignored(self):
+    def test_changed_version_file_counts_as_substantive(self):
         (self.root / "action").mkdir()
         (self.root / "action/cli-version").write_text("v0.4.0\n")
         self.git("add", ".")
         self.git("commit", "--quiet", "-m", "build(release): prepare next version")
-        with self.assertRaisesRegex(versioning.ReleaseError, "no substantive changes"):
-            self.calculate()
+        self.assertEqual(self.calculate()[0], "v0.3.1")
         self.commit("fix: actual change")
         self.assertEqual(self.calculate()[0], "v0.3.1")
 

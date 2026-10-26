@@ -193,16 +193,11 @@ def calculate(source, releases, allow_retry=False):
         if not SHA.fullmatch(sha):
             raise ReleaseError("invalid commit in Git log")
         message = fields[i + 1].decode("utf-8")
-        kind, scope, breaking, minor = classify(message)
-        # Ignore empty commits and legacy version-only preparation commits.
-        # Any other tree change, including a preparation-named commit, counts.
+        _, _, breaking, minor = classify(message)
+        # Empty commits do not change the source; every tree change counts.
         parents = git("rev-list", "--parents", "-n", "1", sha).split()
         if len(parents) == 2 and subprocess.run(["git", "diff-tree", "--quiet", parents[1], sha], check=False).returncode == 0:
             continue
-        if kind in ("build", "chore") and scope == "release" and not breaking and not minor:
-            paths = command("git", "diff-tree", "--root", "--no-commit-id", "--name-only", "-r", "-z", sha, "--")
-            if paths == b"action/cli-version\x00":
-                continue
         tier = max(tier, 2 if breaking else 1 if minor else 0)
     if tier < 0:
         raise ReleaseError("no substantive changes since previous release")

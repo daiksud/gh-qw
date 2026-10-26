@@ -41,9 +41,10 @@ runs:
         bash .github/scripts/release-artifacts.sh verify-all \
           "$VERSION" "$SOURCE_SHA" "$ARTIFACT_DIR"
 
-        latest_tag="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)"
-        [[ "$latest_tag" == "$PREVIOUS_TAG" ]] || {
-          echo "The published baseline changed. Start a new release workflow." >&2
+        resolved="$(python3 .github/scripts/release-version.py)"
+        expected="$(printf 'version=%s\nprevious-tag=%s\nprevious-sha=%s' "$VERSION" "$PREVIOUS_TAG" "$PREVIOUS_SHA")"
+        [[ "$resolved" == "$expected" ]] || {
+          echo "The published baseline or computed version changed. Start a new release workflow." >&2
           exit 1
         }
         [[ "$(git rev-parse "refs/tags/${PREVIOUS_TAG}^{commit}")" == "$PREVIOUS_SHA" ]] || {

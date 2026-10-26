@@ -124,7 +124,7 @@ metadata/build/acceptance/publication check creates no new release.
 | `feat`, `perf`, or `DEPRECATED` footer | Minor. |
 | `fix`, `revert`, or another substantive commit | Patch. |
 
-The highest tier wins once for the range. The shared Python calculator runs\ninside release metadata resolution; no version file or preparation PR is needed.\nEmpty preparation commits do not
+The highest tier wins once for the range. The shared Python calculator runs\ninside release metadata resolution; no version file or preparation PR is needed.\nEmpty commits do not
 change the selected source and are ignored; a preparation-named commit with a
 tree change remains substantive. No substantive changes, an invalid baseline,
 a changed published baseline, or a conflicting tag stops publication. There is
