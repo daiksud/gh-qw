@@ -33,23 +33,20 @@ func TestDeterministicPathsAreContainedAndDoNotCreateDirectories(t *testing.T) {
 		"github.com",
 		"Acme",
 		"Widget",
-		"feature/login",
+		"feature-login",
 	)
 	if err != nil {
 		t.Fatalf("WorktreePath() error = %v", err)
 	}
 	wantWorktree := filepath.Join(
 		worktreeRoot,
-		"github.com",
-		"Acme",
+		"feature-login",
 		"Widget",
-		"feature",
-		"login",
 	)
 	if worktreePath != wantWorktree {
 		t.Fatalf("WorktreePath() = %q, want %q", worktreePath, wantWorktree)
 	}
-	if _, err := os.Lstat(filepath.Join(worktreeRoot, "github.com")); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Lstat(filepath.Join(worktreeRoot, "feature-login")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("WorktreePath() created a directory or returned unexpected Lstat error: %v", err)
 	}
 }
@@ -115,103 +112,46 @@ func TestDeterministicPathsRejectInvalidValuesAndSymlinkEscapes(t *testing.T) {
 	}
 }
 
-func TestSlotPrefixCollisionsUseComponentBoundaries(t *testing.T) {
-	worktrees := []Worktree{
-		{Slot: "feat/x"},
-		{Slot: "release"},
-	}
-
-	for _, slot := range []string{"feat", "feat/x", "feat/x/y", "release/next"} {
+func TestSlotsMustBeSingleComponents(t *testing.T) {
+	worktrees := []Worktree{{Slot: "feat"}, {Slot: "release"}}
+	for _, slot := range []string{"feat", "release"} {
 		if err := ValidateSlotAvailable(context.Background(), worktrees, slot); !errors.Is(err, ErrSlotCollision) {
-			t.Fatalf("ValidateSlotAvailable(%q) error = %v, want collision", slot, err)
+			t.Fatalf("ValidateSlotAvailable(%q) = %v, want collision", slot, err)
+		}
+	}
+	for _, slot := range []string{"feat/x", "release/next", "feat\\\\x"} {
+		if err := ValidateSlotAvailable(context.Background(), worktrees, slot); !errors.Is(err, ErrInvalidBranch) {
+			t.Fatalf("ValidateSlotAvailable(%q) = %v, want invalid slot", slot, err)
 		}
 	}
 	for _, slot := range []string{"feature", "feat-x", "releases"} {
 		if err := ValidateSlotAvailable(context.Background(), worktrees, slot); err != nil {
-			t.Fatalf("ValidateSlotAvailable(%q) error = %v", slot, err)
+			t.Fatalf("ValidateSlotAvailable(%q) = %v", slot, err)
 		}
 	}
 }
-
-func TestValidateWorktreeDestinationChecksFilesystemPrefixes(t *testing.T) {
+func TestValidateWorktreeDestinationReservesGlobalSlot(t *testing.T) {
 	base := physicalTempDir(t)
 	repositoryRoot := filepath.Join(base, "repositories")
 	worktreeRoot := filepath.Join(base, "worktrees")
 	for _, path := range []string{repositoryRoot, worktreeRoot} {
-		if err := os.MkdirAll(path, 0o755); err != nil {
-			t.Fatalf("MkdirAll(%q) error = %v", path, err)
-		}
+		if err := os.MkdirAll(path, 0o755); err != nil { t.Fatal(err) }
 	}
 	repository := testRepository(t, repositoryRoot, "github.com/acme/widget", 0)
 
-	worktreeBase, err := WorktreeBasePath(
-		worktreeRoot,
-		repository.Host,
-		repository.Owner,
-		repository.Repo,
-	)
-	if err != nil {
-		t.Fatalf("WorktreeBasePath() error = %v", err)
+	// An existing slot is taken even if the checkout belongs to another repo.
+	if err := os.MkdirAll(filepath.Join(worktreeRoot, "occupied", "other-repo"), 0o755); err != nil { t.Fatal(err) }
+	if _, err := ValidateWorktreeDestination(context.Background(), worktreeRoot, repository, "occupied", nil); !errors.Is(err, ErrSlotCollision) {
+		t.Fatalf("globally occupied slot = %v, want collision", err)
 	}
-
-	descendant := filepath.Join(worktreeBase, "feat", "x")
-	if err := os.MkdirAll(descendant, 0o755); err != nil {
-		t.Fatalf("MkdirAll(descendant) error = %v", err)
-	}
-	if _, err := ValidateWorktreeDestination(
-		context.Background(),
-		worktreeRoot,
-		repository,
-		"feat",
-		nil,
-	); !errors.Is(err, ErrSlotCollision) {
-		t.Fatalf("ValidateWorktreeDestination(parent) error = %v, want collision", err)
-	}
-
-	if err := os.RemoveAll(filepath.Join(worktreeBase, "feat")); err != nil {
-		t.Fatalf("RemoveAll(feat) error = %v", err)
-	}
-	if err := os.MkdirAll(filepath.Join(worktreeBase, "feat"), 0o755); err != nil {
-		t.Fatalf("MkdirAll(feat) error = %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(worktreeBase, "feat", ".git"), []byte("gitdir: elsewhere\n"), 0o644); err != nil {
-		t.Fatalf("WriteFile(prefix .git) error = %v", err)
-	}
-	if _, err := ValidateWorktreeDestination(
-		context.Background(),
-		worktreeRoot,
-		repository,
-		"feat/x",
-		nil,
-	); !errors.Is(err, ErrSlotCollision) {
-		t.Fatalf("ValidateWorktreeDestination(child) error = %v, want collision", err)
-	}
-
-	if err := os.RemoveAll(filepath.Join(worktreeBase, "feat")); err != nil {
-		t.Fatalf("RemoveAll(feat) error = %v", err)
-	}
-	if err := os.MkdirAll(filepath.Join(worktreeBase, "feature"), 0o755); err != nil {
-		t.Fatalf("MkdirAll(feature) error = %v", err)
-	}
-	got, err := ValidateWorktreeDestination(
-		context.Background(),
-		worktreeRoot,
-		repository,
-		"feature/x",
-		nil,
-	)
-	if err != nil {
-		t.Fatalf("ValidateWorktreeDestination(sibling group) error = %v", err)
-	}
-	want := filepath.Join(worktreeBase, "feature", "x")
-	if got != want {
-		t.Fatalf("ValidateWorktreeDestination() = %q, want %q", got, want)
-	}
-	if _, err := os.Lstat(got); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("ValidateWorktreeDestination() created destination or Lstat error = %v", err)
+	got, err := ValidateWorktreeDestination(context.Background(), worktreeRoot, repository, "free", nil)
+	if err != nil { t.Fatal(err) }
+	want := filepath.Join(worktreeRoot, "free", "widget")
+	if got != want { t.Fatalf("destination = %q, want %q", got, want) }
+	if _, err := os.Lstat(filepath.Join(worktreeRoot, "free")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("validate unexpectedly created a directory: %v", err)
 	}
 }
-
 func TestExactSelectorResolutionAndDuplicateBehavior(t *testing.T) {
 	repositories := []Repository{
 		{
@@ -326,7 +266,7 @@ func TestBranchAndSlotValidationKeepSeparateContracts(t *testing.T) {
 			t.Fatalf("ValidateSlot(%q) error = %v", value, err)
 		}
 	}
-	for _, slot := range []string{"feature/next", "topic\u00a0name"} {
+	for _, slot := range []string{"feature-next", "topic\u00a0name"} {
 		if err := ValidateSlot(context.Background(), slot); err != nil {
 			t.Fatalf("ValidateSlot(%q) error = %v", slot, err)
 		}
