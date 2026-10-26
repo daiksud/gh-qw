@@ -40,13 +40,14 @@ Configure authentication with `gh auth login` for network operations.
 gh qw clone cli/cli
 gh qw add ~/projects/my-api
 gh qw list --full-path
-gh qw add --worktree -R cli/cli -b feature-docs
+gh qw add --worktree -R cli/cli -b feature/docs
 gh qw list --all
 ```
 
 Main repositories live at `<root>/<host>/<owner>/<repo>`. Linked worktrees live
 at `<root>/worktrees/<unique-slot>/<repo>`. The default root is `~/ghqw`.
-Each slot name is a single directory component unique across repositories.
+Slot directories are single components unique across repositories; branch slashes
+are escaped (for example, `feature/docs` becomes `feature%2Fdocs`).
 
 Optional configuration in `~/.config/ghqw/config.toml`:
 

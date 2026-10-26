@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"unicode"
@@ -65,16 +66,21 @@ func ValidateBranch(ctx context.Context, branch string) error {
 	return nil
 }
 
-// ValidateSlotLayout applies gh-qw's portable directory layout restriction
-// without starting Git. It is safe to use during argument parsing.
+// ValidateSlotLayout rejects path component endings that are unsuitable on
+// portable filesystems without constraining Git's slash-separated ref names.
 func ValidateSlotLayout(_ context.Context, slot string) error {
-	if strings.ContainsAny(slot, `/\\`) {
-		return &ValidationError{Kind: ErrInvalidBranch, Value: slot, Reason: "slot name must be a single path component"}
-	}
-	if strings.HasSuffix(slot, ".") {
-		return &ValidationError{Kind: ErrInvalidBranch, Value: slot, Reason: "slot name must not end with a dot"}
+	for _, component := range strings.Split(slot, "/") {
+		if strings.HasSuffix(component, ".") {
+			return &ValidationError{Kind: ErrInvalidBranch, Value: slot, Reason: "slot components must not end with a dot"}
+		}
 	}
 	return nil
+}
+
+// WorktreeSlotDirectoryName encodes a Git ref as one reversible directory name.
+// Escaping also distinguishes a slash from a literal percent escape.
+func WorktreeSlotDirectoryName(slot string) string {
+	return url.PathEscape(slot)
 }
 
 // ValidateSlot applies branch validation and gh-qw's portable directory layout
@@ -113,7 +119,7 @@ func WorktreeBasePath(worktreeRoot, host, owner, repo string) (string, error) {
 	return root.PhysicalizeTarget(worktreeRoot, worktreeRoot, root.AllowEqual)
 }
 
-// WorktreePath returns <worktree-root>/<slot>/<repo> for a single-component slot.
+// WorktreePath returns <worktree-root>/<escaped-slot>/<repo>.
 func WorktreePath(ctx context.Context, worktreeRoot, host, owner, repo, branch string) (string, error) {
 	if err := ValidateSlot(ctx, branch); err != nil {
 		return "", err
@@ -123,7 +129,7 @@ func WorktreePath(ctx context.Context, worktreeRoot, host, owner, repo, branch s
 	if err != nil {
 		return "", err
 	}
-	target := filepath.Join(base, branch, repo)
+	target := filepath.Join(base, WorktreeSlotDirectoryName(branch), repo)
 	physical, err := root.PhysicalizeTarget(base, target, root.StrictlyUnder)
 	if err != nil {
 		return "", fmt.Errorf("derive linked worktree path: %w", err)

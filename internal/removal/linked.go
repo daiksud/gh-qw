@@ -65,7 +65,7 @@ func (observer Observer) ObserveResolvedLinked(ctx context.Context, plan Reposit
 	}
 	expectedLexical := filepath.Join(
 		plan.WorktreeBase,
-		worktree.Slot,
+		local.WorktreeSlotDirectoryName(worktree.Slot),
 		plan.Repository.Repo,
 	)
 	if !physicalpath.SamePath(expectedPath, expectedLexical) ||

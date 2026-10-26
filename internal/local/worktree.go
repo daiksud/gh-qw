@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -377,7 +378,10 @@ func deriveWorktreeSlot(
 		if len(parts) != 2 || parts[1] != repo {
 			return "", fmt.Errorf("registered linked worktree is outside <slot>/<repo> layout: %q", relative)
 		}
-		slot = parts[0]
+		slot, err = url.PathUnescape(parts[0])
+		if err != nil || WorktreeSlotDirectoryName(slot) != parts[0] {
+			return "", fmt.Errorf("registered linked worktree has a noncanonical encoded slot directory %q: %w", parts[0], err)
+		}
 	} else if item.Detached {
 		slot = filepath.Base(physicalPath)
 	} else {
@@ -394,9 +398,7 @@ func slotsCollide(first, second string) bool {
 		first = strings.ToLower(first)
 		second = strings.ToLower(second)
 	}
-	return first == second ||
-		strings.HasPrefix(first, second+"/") ||
-		strings.HasPrefix(second, first+"/")
+	return first == second
 }
 
 func slotComparisonKey(slot string) string {

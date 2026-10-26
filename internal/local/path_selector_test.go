@@ -33,20 +33,20 @@ func TestDeterministicPathsAreContainedAndDoNotCreateDirectories(t *testing.T) {
 		"github.com",
 		"Acme",
 		"Widget",
-		"feature-login",
+		"feature/login",
 	)
 	if err != nil {
 		t.Fatalf("WorktreePath() error = %v", err)
 	}
 	wantWorktree := filepath.Join(
 		worktreeRoot,
-		"feature-login",
+		"feature%2Flogin",
 		"Widget",
 	)
 	if worktreePath != wantWorktree {
 		t.Fatalf("WorktreePath() = %q, want %q", worktreePath, wantWorktree)
 	}
-	if _, err := os.Lstat(filepath.Join(worktreeRoot, "feature-login")); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Lstat(filepath.Join(worktreeRoot, "feature%2Flogin")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("WorktreePath() created a directory or returned unexpected Lstat error: %v", err)
 	}
 }
@@ -112,21 +112,25 @@ func TestDeterministicPathsRejectInvalidValuesAndSymlinkEscapes(t *testing.T) {
 	}
 }
 
-func TestSlotsMustBeSingleComponents(t *testing.T) {
+func TestWorktreeSlotsEncodeSlashAndLiteralPercentWithoutColliding(t *testing.T) {
 	worktrees := []Worktree{{Slot: "feat"}, {Slot: "release"}}
 	for _, slot := range []string{"feat", "release"} {
 		if err := ValidateSlotAvailable(context.Background(), worktrees, slot); !errors.Is(err, ErrSlotCollision) {
 			t.Fatalf("ValidateSlotAvailable(%q) = %v, want collision", slot, err)
 		}
 	}
-	for _, slot := range []string{"feat/x", "release/next", "feat\\\\x"} {
-		if err := ValidateSlotAvailable(context.Background(), worktrees, slot); !errors.Is(err, ErrInvalidBranch) {
-			t.Fatalf("ValidateSlotAvailable(%q) = %v, want invalid slot", slot, err)
+	for _, slot := range []string{"feat/x", "release/next"} {
+		if err := ValidateSlotAvailable(context.Background(), worktrees, slot); err != nil {
+			t.Fatalf("ValidateSlotAvailable(%q) = %v, want valid Git branch", slot, err)
 		}
 	}
-	for _, slot := range []string{"feature", "feat-x", "releases"} {
-		if err := ValidateSlotAvailable(context.Background(), worktrees, slot); err != nil {
-			t.Fatalf("ValidateSlotAvailable(%q) = %v", slot, err)
+	for _, pair := range [][2]string{
+		{"feature/login", "feature%2Flogin"},
+		{"feature%2Flogin", "feature%252Flogin"},
+		{"feat", "feat"},
+	} {
+		if got := WorktreeSlotDirectoryName(pair[0]); got != pair[1] {
+			t.Fatalf("WorktreeSlotDirectoryName(%q) = %q, want %q", pair[0], got, pair[1])
 		}
 	}
 }

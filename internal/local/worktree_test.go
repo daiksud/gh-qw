@@ -62,12 +62,12 @@ func TestEnumerateWorktreesRealGitAndCurrentDirectory(t *testing.T) {
 		repository.Host,
 		repository.Owner,
 		repository.Repo,
-		"feature-x",
+		"feature/x",
 	)
 	if err != nil {
-		t.Fatalf("WorktreePath(feature-x) error = %v", err)
+		t.Fatalf("WorktreePath(feature/x) error = %v", err)
 	}
-	addTestWorktree(t, repository.Path, managedPath, "-b", "feature-x")
+	addTestWorktree(t, repository.Path, managedPath, "-b", "feature/x")
 	runGit(
 		t,
 		repository.Path,
@@ -116,13 +116,13 @@ func TestEnumerateWorktreesRealGitAndCurrentDirectory(t *testing.T) {
 			t.Fatalf("worktree parent = %#v", worktree.Repository)
 		}
 	}
-	wantSlots := []string{"external-topic", "feature-x", "review-123", "stale-slot"}
+	wantSlots := []string{"external-topic", "feature/x", "review-123", "stale-slot"}
 	if !reflect.DeepEqual(gotSlots, wantSlots) {
 		t.Fatalf("slots = %#v, want %#v", gotSlots, wantSlots)
 	}
-	if !bySlot["feature-x"].Locked ||
-		bySlot["feature-x"].LockedReason != "deployment check" {
-		t.Fatalf("managed locked record = %#v", bySlot["feature-x"])
+	if !bySlot["feature/x"].Locked ||
+		bySlot["feature/x"].LockedReason != "deployment check" {
+		t.Fatalf("managed locked record = %#v", bySlot["feature/x"])
 	}
 	if bySlot["review-123"].Branch != "" || !bySlot["review-123"].Detached {
 		t.Fatalf("detached external record = %#v", bySlot["review-123"])
@@ -132,7 +132,7 @@ func TestEnumerateWorktreesRealGitAndCurrentDirectory(t *testing.T) {
 		t.Fatalf("prunable record = %#v", bySlot["stale-slot"])
 	}
 
-	managed, err := FindRegisteredLinkedWorktree(context.Background(), worktrees, "feature-x")
+	managed, err := FindRegisteredLinkedWorktree(context.Background(), worktrees, "feature/x")
 	if err != nil {
 		t.Fatalf("FindRegisteredLinkedWorktree() error = %v", err)
 	}
@@ -148,7 +148,7 @@ func TestEnumerateWorktreesRealGitAndCurrentDirectory(t *testing.T) {
 		context.Background(),
 		repository,
 		worktreeRoot,
-		"feature-x",
+		"feature/x",
 	)
 	if err != nil {
 		t.Fatalf("ResolveManagedWorktree() error = %v", err)
@@ -197,7 +197,7 @@ func TestEnumerateWorktreesRealGitAndCurrentDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DiscoverCurrent(linked) error = %v", err)
 	}
-	if currentLinked.Worktree.Slot != "feature-x" {
+	if currentLinked.Worktree.Slot != "feature/x" {
 		t.Fatalf("DiscoverCurrent(linked) = %#v", currentLinked)
 	}
 

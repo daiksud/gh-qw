@@ -64,13 +64,13 @@ The XDG registry, not the directory layout, determines which repositories are
 managed. Configured roots determine default destinations for `clone` and
 `add --move`; a checkout under a configured root is not registered implicitly.
 Reading configuration or listing roots does not create missing directories.
-Existing linked worktrees in an older layout are not moved or imported
-automatically; manage any manual relocation with native Git worktree repair.
 
-Slot names are single path components (no `/` or `\\`) and must be unique
-across all repositories. A slot already present under `worktrees` is not reused,
-even for another repository. Empty, dot-ended, and invalid Git ref names are
-rejected. A slot is a storage name, not a promise about the checked-out branch.
+Slots use Git-valid ref names, including slash-separated branches. Directory
+names are single components encoded as URL path segments: `feature/login`
+becomes `feature%2Flogin` and a literal `%` is escaped as `%25`. Encoded slot
+names must be unique across all repositories; existing slot directories are
+never reused. Empty, dot-ended, and invalid Git ref names are rejected. A slot
+is a storage name, not a promise about the checked-out branch.
 
 Targets are checked again before mutation against the established boundary.
 A replaced root or symlink cannot authorize a new destination. Cleanup never

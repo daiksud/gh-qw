@@ -194,8 +194,9 @@ The XDG registry is the sole source of managed-repository membership.
 Missing registrations are never imported from configured roots. Sort emitted
 strings bytewise. No matches succeeds with empty stdout.
 
-Managed linked slots are the single directory name between `worktrees` and
-`<repo>`. External attached worktrees use their short branch; external
+Managed linked slots are decoded from the single directory name between
+`worktrees` and `<repo>` (e.g. `feature%2Flogin` maps to `feature/login`).
+External attached worktrees use their short branch; external
 detached worktrees use their final path component. Unsafe or ambiguous slots
 are rejected rather than treated as a managed target.
 
@@ -274,8 +275,9 @@ argument combinations return `2`.
 ### Linked-worktree creation
 
 The path is always `<primary-root>/worktrees/<slot>/<repo>`, without host or
-owner components. A slot is a single directory name globally unique across
-repositories; a pre-existing slot directory is a collision. Validate the
+owner components. Git-valid slash-separated slot names are URL path-segment
+escaped into a single directory component. Encoded slot directories are unique
+across repositories; a pre-existing slot directory is a collision. Validate the
 physical boundary and reserve the slot before mutation. `-f` never bypasses
 these conditions.
 

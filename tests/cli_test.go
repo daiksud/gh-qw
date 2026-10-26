@@ -132,10 +132,10 @@ func TestCLIRepositoryAndWorktreeLifecycle(t *testing.T) {
 	assertStdout(t, result, testIdentity+"\n")
 	assertStderr(t, result, "")
 
-	featureBranch := "feature-e2e"
+	featureBranch := "feature/e2e"
 	featurePath := filepath.Join(
 		fixture.worktreeRoot,
-		featureBranch,
+		"feature%2Fe2e",
 		"widget",
 	)
 	featureOutput := filepath.ToSlash(featurePath)
