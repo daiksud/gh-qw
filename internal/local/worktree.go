@@ -215,7 +215,7 @@ func EnumerateWorktrees(
 			continue
 		}
 
-		slot, err := deriveWorktreeSlot(ctx, base, item, physicalPath)
+		slot, err := deriveWorktreeSlot(ctx, base, repository.Repo, item, physicalPath)
 		if err != nil {
 			return nil, &WorktreeError{
 				Kind:       ErrUnsafeWorktree,
@@ -353,7 +353,7 @@ func FindRegisteredLinkedWorktree(ctx context.Context, worktrees []Worktree, slo
 
 func deriveWorktreeSlot(
 	ctx context.Context,
-	base string,
+	base, repo string,
 	item gitcmd.Worktree,
 	physicalPath string,
 ) (string, error) {
@@ -373,7 +373,11 @@ func deriveWorktreeSlot(
 		if err != nil {
 			return "", fmt.Errorf("make deterministic path relative: %w", err)
 		}
-		slot = filepath.ToSlash(relative)
+		parts := strings.Split(filepath.ToSlash(relative), "/")
+		if len(parts) != 2 || parts[1] != repo {
+			return "", fmt.Errorf("registered linked worktree is outside <slot>/<repo> layout: %q", relative)
+		}
+		slot = parts[0]
 	} else if item.Detached {
 		slot = filepath.Base(physicalPath)
 	} else {

@@ -10,12 +10,10 @@ import (
 	"sync"
 
 	"github.com/daiksud/gh-qw/internal/config"
-	"github.com/daiksud/gh-qw/internal/xdg"
 )
 
 const (
 	repositoryRootEnvironment = "GHQW_ROOT"
-	worktreeRootEnvironment   = "GHQW_WORKTREE_ROOT"
 	defaultRepositoryRoot     = "~/ghqw"
 )
 
@@ -212,11 +210,6 @@ func (r *Resolver) resolve() (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	rawWorktreeRoot, err := r.selectWorktreeRoot(fileConfig)
-	if err != nil {
-		return Result{}, err
-	}
-
 	repositoryRoots := make([]string, 0, len(rawRepositoryRoots))
 	for _, rawRoot := range rawRepositoryRoots {
 		physicalRoot, err := r.physicalizeConfiguredPath(Repository, rawRoot)
@@ -233,12 +226,17 @@ func (r *Resolver) resolve() (Result, error) {
 		}
 	}
 
-	worktreeRoot, err := r.physicalizeConfiguredPath(Worktree, rawWorktreeRoot)
+	worktreeRoot, err := r.physicalizeConfiguredPath(Worktree, filepath.Join(repositoryRoots[0], "worktrees"))
 	if err != nil {
 		return Result{}, err
 	}
 
-	for _, repositoryRoot := range repositoryRoots {
+	// The worktree root is a reserved direct child of the primary root.
+	// Refuse a symlink that redirects this boundary, even within that root.
+	if !sameLexicalRoot(worktreeRoot, filepath.Join(repositoryRoots[0], "worktrees")) {
+		return Result{}, newInvalidError(Worktree, worktreeRoot, "worktrees directory redirects outside its reserved path")
+	}
+	for _, repositoryRoot := range repositoryRoots[1:] {
 		relation, err := r.relationship(repositoryRoot, worktreeRoot)
 		if err != nil {
 			return Result{}, fmt.Errorf("validate root separation: %w", err)
@@ -289,30 +287,6 @@ func (r *Resolver) selectRepositoryRoots(fileConfig config.Config) ([]string, er
 		return append([]string(nil), fileConfig.Roots...), nil
 	}
 	return []string{defaultRepositoryRoot}, nil
-}
-
-func (r *Resolver) selectWorktreeRoot(fileConfig config.Config) (string, error) {
-	lookupEnv := r.lookupEnv
-	if lookupEnv == nil {
-		lookupEnv = os.LookupEnv
-	}
-
-	if value, ok := lookupEnv(worktreeRootEnvironment); ok && value != "" {
-		return value, nil
-	}
-	if fileConfig.WorktreeRoot != "" {
-		return fileConfig.WorktreeRoot, nil
-	}
-
-	homeDir := r.homeDir
-	if homeDir == nil {
-		homeDir = os.UserHomeDir
-	}
-	base, err := xdg.BaseDir(lookupEnv, homeDir, xdg.DataHome, ".local", "share")
-	if err != nil {
-		return "", fmt.Errorf("resolve default worktree root: %w", err)
-	}
-	return filepath.Join(base, "ghqw", "worktrees"), nil
 }
 
 func (r *Resolver) physicalizeConfiguredPath(kind Kind, rawPath string) (string, error) {
@@ -392,6 +366,10 @@ func (r *Resolver) expandHome(rawPath string) (string, error) {
 		return filepath.Clean(home), nil
 	}
 	return filepath.Join(home, filepath.FromSlash(suffix)), nil
+}
+
+func sameLexicalRoot(first, second string) bool {
+	return filepath.Clean(first) == filepath.Clean(second)
 }
 
 func (r *Resolver) containsEquivalent(paths []string, candidate string) (bool, error) {

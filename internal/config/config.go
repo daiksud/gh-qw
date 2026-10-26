@@ -22,8 +22,7 @@ var ErrInvalid = errors.New("invalid configuration")
 
 // Config is the unexpanded configuration read from config.toml.
 type Config struct {
-	Roots        []string
-	WorktreeRoot string
+	Roots []string
 }
 
 // InvalidError describes invalid TOML syntax or a schema violation.
@@ -198,7 +197,7 @@ func decode(path string, data []byte) (Config, error) {
 			continue
 		}
 		switch key[0] {
-		case "root", "worktree_root":
+		case "root":
 		default:
 			return Config{}, newInvalidError(
 				path,
@@ -215,17 +214,6 @@ func decode(path string, data []byte) (Config, error) {
 			return Config{}, newInvalidError(path, reason, nil)
 		}
 		result.Roots = roots
-	}
-
-	if value, ok := document["worktree_root"]; ok {
-		worktreeRoot, ok := value.(string)
-		if !ok {
-			return Config{}, newInvalidError(path, "worktree_root must be a string", nil)
-		}
-		if reason := nonBlankReason("worktree_root", worktreeRoot); reason != "" {
-			return Config{}, newInvalidError(path, reason, nil)
-		}
-		result.WorktreeRoot = worktreeRoot
 	}
 
 	return result, nil
