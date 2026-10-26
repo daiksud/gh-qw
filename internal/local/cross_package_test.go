@@ -133,7 +133,7 @@ func TestResolvedWorktreeRootRejectsRuntimeSymlinkEscape(t *testing.T) {
 	if err := os.MkdirAll(outside, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(outside, filepath.Join(worktreeRoot, "feature-login")); err != nil {
+	if err := os.Symlink(outside, filepath.Join(worktreeRoot, "github-com-acme-widget-feature-login")); err != nil {
 		t.Skipf("symbolic links are unavailable: %v", err)
 	}
 	_, err = local.WorktreePath(

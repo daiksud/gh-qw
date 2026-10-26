@@ -146,11 +146,11 @@ func TestValidateWorktreeDestinationReservesGlobalSlot(t *testing.T) {
 	); !errors.Is(err, ErrSlotCollision) {
 		t.Fatalf("globally occupied slot = %v, want collision", err)
 	}
-	if err := os.MkdirAll(filepath.Join(worktreeRoot, "feature-login", "other-repo"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(worktreeRoot, "github-com-acme-widget-feature-login", "other-repo"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := ValidateWorktreeDestination(
-		context.Background(), worktreeRoot, repository, "feature/login", nil,
+		context.Background(), worktreeRoot, repository, "github-com-acme-widget-feature-login", nil,
 	); !errors.Is(err, ErrSlotCollision) {
 		t.Fatalf("flattened slot from another repository = %v, want collision", err)
 	}

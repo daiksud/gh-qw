@@ -1259,7 +1259,7 @@ func TestNewRemoveCommandWorktreeGoneKeepsNewNestedWorktreeBeforeRemoval(t *test
 			if prompts != 1 || discoveryCalls != 3 || injections != 1 || len(git.removals) != 0 {
 				t.Fatalf("prompts=%d discovery=%d injections=%d removals=%#v", prompts, discoveryCalls, injections, git.removals)
 			}
-			if stdout.Len() != 0 || !strings.Contains(stderr.String(), "kept worktree \"gone\"") ||
+			if stdout.Len() != 0 || !strings.Contains(stderr.String(), "kept worktree \"github-com-acme-widget-gone\"") ||
 				!strings.Contains(stderr.String(), "contains registered worktree from \""+childIdentity+"\"") {
 				t.Fatalf("output stdout=%q stderr=%q", stdout.String(), stderr.String())
 			}
@@ -1433,7 +1433,7 @@ func TestNewRemoveCommandWorktreeGoneContinuesAfterGitFailure(t *testing.T) {
 	if _, err := os.Lstat(paths[1]); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("independent candidate Lstat error = %v, want not exist", err)
 	}
-	if !strings.Contains(stderr.String(), "failed worktree \"feature-a-fails\"") ||
+	if !strings.Contains(stderr.String(), "failed worktree \"github-com-acme-widget-feature-a-fails\"") ||
 		!strings.Contains(stderr.String(), "removed worktree "+local.NormalizePathForOutput(paths[1])) {
 		t.Fatalf("stderr = %q, want failure and continued success", stderr.String())
 	}
