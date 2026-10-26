@@ -699,14 +699,14 @@ func TestNewRemoveCommandWorktreeGoneRealGitLifecycle(t *testing.T) {
 		{
 			branch: "feature-alive",
 			path: filepath.Join(
-				worktreeRoot, "github.com", "acme", "widget", "feature", "alive",
+				worktreeRoot, "feature-alive", "widget",
 			),
 			ref: "refs/remotes/custom/review/alive",
 		},
 		{
 			branch: "feature-gone",
 			path: filepath.Join(
-				worktreeRoot, "github.com", "acme", "widget", "slot", "gone",
+				worktreeRoot, "slot-gone", "widget",
 			),
 			ref: "refs/remotes/custom/review/gone",
 		},
@@ -777,7 +777,7 @@ func TestNewRemoveCommandWorktreeGoneRealGitLifecycle(t *testing.T) {
 	}
 
 	invalidAttachedPath := filepath.Join(
-		worktreeRoot, "github.com", "acme", "widget", "slot", "invalid-attached",
+		worktreeRoot, "slot-invalid-attached", "widget",
 	)
 	if err := os.MkdirAll(filepath.Dir(invalidAttachedPath), 0o755); err != nil {
 		t.Fatal(err)
