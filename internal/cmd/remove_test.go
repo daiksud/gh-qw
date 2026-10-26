@@ -1159,10 +1159,11 @@ func (fixture *removeTestFixture) addLinked(t *testing.T, slot string) {
 	if err := os.WriteFile(filepath.Join(path, ".git"), []byte("gitdir"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	canonicalSlot := local.WorktreeSlotDirectoryName(fixture.repository.Identity + "-" + slot)
 	record := &local.Worktree{
 		Repository: fixture.repository,
-		Identity:   fixture.repository.Identity + "@" + slot,
-		Slot:       slot,
+		Identity:   fixture.repository.Identity + "@" + canonicalSlot,
+		Slot:       canonicalSlot,
 		Path:       path,
 		HEAD:       "head-" + slot,
 		Branch:     slot,
@@ -1176,12 +1177,12 @@ func (fixture *removeTestFixture) addLinked(t *testing.T, slot string) {
 }
 
 func (fixture *removeTestFixture) linkedPath(slot string) string {
-	return filepath.Join(fixture.worktreeBase, slot, fixture.repository.Repo)
+	return filepath.Join(fixture.worktreeBase, local.WorktreeSlotDirectoryName(fixture.repository.Identity+"-"+slot), fixture.repository.Repo)
 }
 
 func (fixture *removeTestFixture) linkedRecord(slot string) *local.Worktree {
 	for _, worktree := range fixture.worktrees {
-		if worktree.Slot == slot {
+		if worktree.Slot == local.WorktreeSlotDirectoryName(fixture.repository.Identity+"-"+slot) {
 			return worktree
 		}
 	}

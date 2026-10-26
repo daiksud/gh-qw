@@ -203,7 +203,7 @@ func removalExecutionRepositories(t *testing.T) (string, rootpkg.Result, string,
 	worktreeRemoveRunGit(t, repository, "config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*")
 	var paths []string
 	for _, branch := range []string{"a-first", "b-second"} {
-		path := filepath.Join(roots.WorktreeRoot, branch, "widget")
+		path := filepath.Join(roots.WorktreeRoot, local.WorktreeSlotDirectoryName("github.com/acme/widget-"+branch), "widget")
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 			t.Fatal(err)
 		}

@@ -17,7 +17,7 @@ func TestManagedSlotSurvivesBranchSwitchAndDetachedCheckout(t *testing.T) {
 	repository := testRepository(t, filepath.Join(base, "repositories"), "github.com/acme/widget", 0)
 	initTestRepository(t, repository.Path)
 	worktreeRoot := filepath.Join(base, "worktrees")
-	const slot = "review/123"
+	const slot = "github-com-acme-widget-review-123"
 	path, err := WorktreePath(context.Background(), worktreeRoot, repository.Host, repository.Owner, repository.Repo, slot)
 	if err != nil {
 		t.Fatal(err)
@@ -29,7 +29,7 @@ func TestManagedSlotSurvivesBranchSwitchAndDetachedCheckout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if worktree.Slot != WorktreeSlotDirectoryName(slot) || worktree.Branch != "switched/branch" || worktree.Path != path {
+	if worktree.Slot != slot || worktree.Branch != "switched/branch" || worktree.Path != path {
 		t.Fatalf("switched worktree conflates branch and slot: %#v", worktree)
 	}
 	runGit(t, path, "checkout", "-q", "--detach")
@@ -37,7 +37,7 @@ func TestManagedSlotSurvivesBranchSwitchAndDetachedCheckout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if worktree.Slot != WorktreeSlotDirectoryName(slot) || worktree.Branch != "" || !worktree.Detached || worktree.Path != path {
+	if worktree.Slot != slot || worktree.Branch != "" || !worktree.Detached || worktree.Path != path {
 		t.Fatalf("detached worktree lost its slot: %#v", worktree)
 	}
 }
@@ -62,7 +62,7 @@ func TestEnumerateWorktreesRealGitAndCurrentDirectory(t *testing.T) {
 		repository.Host,
 		repository.Owner,
 		repository.Repo,
-		"feature/x",
+		"github-com-acme-widget-feature-x",
 	)
 	if err != nil {
 		t.Fatalf("WorktreePath(feature/x) error = %v", err)
@@ -86,7 +86,7 @@ func TestEnumerateWorktreesRealGitAndCurrentDirectory(t *testing.T) {
 		repository.Host,
 		repository.Owner,
 		repository.Repo,
-		"stale-slot",
+		"github-com-acme-widget-stale-slot",
 	)
 	if err != nil {
 		t.Fatalf("WorktreePath(stale-slot) error = %v", err)
@@ -116,26 +116,26 @@ func TestEnumerateWorktreesRealGitAndCurrentDirectory(t *testing.T) {
 			t.Fatalf("worktree parent = %#v", worktree.Repository)
 		}
 	}
-	wantSlots := []string{"external-topic", "feature-x", "review-123", "stale-slot"}
+	wantSlots := []string{"external-topic", "github-com-acme-widget-feature-x", "review-123", "github-com-acme-widget-stale-slot"}
 	if !reflect.DeepEqual(gotSlots, wantSlots) {
 		t.Fatalf("slots = %#v, want %#v", gotSlots, wantSlots)
 	}
-	if !bySlot["feature-x"].Locked ||
-		bySlot["feature-x"].LockedReason != "deployment check" {
-		t.Fatalf("managed locked record = %#v", bySlot["feature-x"])
+	if !bySlot["github-com-acme-widget-feature-x"].Locked ||
+		bySlot["github-com-acme-widget-feature-x"].LockedReason != "deployment check" {
+		t.Fatalf("managed locked record = %#v", bySlot["github-com-acme-widget-feature-x"])
 	}
-	if bySlot["feature-x"].Branch != "feature/x" {
-		t.Fatalf("flattened slot changed the Git branch: %#v", bySlot["feature-x"])
+	if bySlot["github-com-acme-widget-feature-x"].Branch != "feature/x" {
+		t.Fatalf("flattened slot changed the Git branch: %#v", bySlot["github-com-acme-widget-feature-x"])
 	}
 	if bySlot["review-123"].Branch != "" || !bySlot["review-123"].Detached {
 		t.Fatalf("detached external record = %#v", bySlot["review-123"])
 	}
-	if !bySlot["stale-slot"].Prunable ||
-		bySlot["stale-slot"].PrunableReason == "" {
-		t.Fatalf("prunable record = %#v", bySlot["stale-slot"])
+	if !bySlot["github-com-acme-widget-stale-slot"].Prunable ||
+		bySlot["github-com-acme-widget-stale-slot"].PrunableReason == "" {
+		t.Fatalf("prunable record = %#v", bySlot["github-com-acme-widget-stale-slot"])
 	}
 
-	managed, err := FindRegisteredLinkedWorktree(context.Background(), worktrees, "feature/x")
+	managed, err := FindRegisteredLinkedWorktree(context.Background(), worktrees, "github-com-acme-widget-feature-x")
 	if err != nil {
 		t.Fatalf("FindRegisteredLinkedWorktree() error = %v", err)
 	}
@@ -151,7 +151,7 @@ func TestEnumerateWorktreesRealGitAndCurrentDirectory(t *testing.T) {
 		context.Background(),
 		repository,
 		worktreeRoot,
-		"feature/x",
+		"github-com-acme-widget-feature-x",
 	)
 	if err != nil {
 		t.Fatalf("ResolveManagedWorktree() error = %v", err)
@@ -200,7 +200,7 @@ func TestEnumerateWorktreesRealGitAndCurrentDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DiscoverCurrent(linked) error = %v", err)
 	}
-	if currentLinked.Worktree.Slot != "feature-x" {
+	if currentLinked.Worktree.Slot != "github-com-acme-widget-feature-x" {
 		t.Fatalf("DiscoverCurrent(linked) = %#v", currentLinked)
 	}
 
@@ -392,7 +392,7 @@ func TestValidateWorktreeAssociationRejectsForeignCommonDirectory(t *testing.T) 
 		repository.Host,
 		repository.Owner,
 		repository.Repo,
-		"foreign",
+		"github-com-acme-widget-foreign",
 	)
 	if err != nil {
 		t.Fatalf("WorktreePath(foreign) error = %v", err)
@@ -404,8 +404,8 @@ func TestValidateWorktreeAssociationRejectsForeignCommonDirectory(t *testing.T) 
 		repository,
 		Worktree{
 			Repository: repository,
-			Identity:   repository.Identity + "@foreign",
-			Slot:       "foreign",
+			Identity:   repository.Identity + "@github-com-acme-widget-foreign",
+			Slot:       "github-com-acme-widget-foreign",
 			Path:       foreignPath,
 			HEAD:       "unused",
 			Branch:     "foreign",

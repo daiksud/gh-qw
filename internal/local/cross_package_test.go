@@ -119,12 +119,12 @@ func TestResolvedWorktreeRootRejectsRuntimeSymlinkEscape(t *testing.T) {
 		"github.com",
 		"acme",
 		"widget",
-		"feature-login",
+		"github-com-acme-widget-feature-login",
 	)
 	if err != nil {
 		t.Fatalf("WorktreePath() error = %v", err)
 	}
-	wantPath := filepath.Join(worktreeRoot, "feature-login", "widget")
+	wantPath := filepath.Join(worktreeRoot, "github-com-acme-widget-feature-login", "widget")
 	if path != wantPath {
 		t.Fatalf("WorktreePath() = %q, want %q", path, wantPath)
 	}
@@ -138,7 +138,7 @@ func TestResolvedWorktreeRootRejectsRuntimeSymlinkEscape(t *testing.T) {
 	}
 	_, err = local.WorktreePath(
 		context.Background(), resolved.WorktreeRoot,
-		"github.com", "acme", "widget", "feature-login",
+		"github.com", "acme", "widget", "github-com-acme-widget-feature-login",
 	)
 	if !errors.Is(err, root.ErrUnsafeTarget) {
 		t.Fatalf("WorktreePath() symlink escape = %v, want root.ErrUnsafeTarget", err)

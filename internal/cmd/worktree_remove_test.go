@@ -1578,7 +1578,8 @@ func worktreeRemoveNewFixture(t *testing.T, branch string) *worktreeRemoveFixtur
 	worktreeRoot := filepath.Join(repositoryRoot, "worktrees")
 	repositoryPath := filepath.Join(repositoryRoot, "github.com", "acme", "widget")
 	base := worktreeRoot
-	target := filepath.Join(base, branch, "widget")
+	slot := local.WorktreeSlotDirectoryName("github.com/acme/widget-" + branch)
+	target := filepath.Join(base, slot, "widget")
 	for _, path := range []string{repositoryPath, target} {
 		if err := os.MkdirAll(path, 0o755); err != nil {
 			t.Fatal(err)
@@ -1596,8 +1597,8 @@ func worktreeRemoveNewFixture(t *testing.T, branch string) *worktreeRemoveFixtur
 	}
 	managed := local.Worktree{
 		Repository: repository,
-		Identity:   repository.Identity + "@" + branch,
-		Slot:       branch,
+		Identity:   repository.Identity + "@" + slot,
+		Slot:       slot,
 		Path:       target,
 		Branch:     branch,
 	}
@@ -1607,7 +1608,7 @@ func worktreeRemoveNewFixture(t *testing.T, branch string) *worktreeRemoveFixtur
 		worktreeRoot:    worktreeRoot,
 		base:            base,
 		target:          target,
-		branch:          branch,
+		branch:          slot,
 		repository:      repository,
 		repositories:    []local.Repository{repository},
 		currentWorktree: local.Worktree{Repository: repository, Main: true},

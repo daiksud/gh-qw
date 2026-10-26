@@ -880,8 +880,8 @@ func (fixture *worktreeAddFixture) worktreeAddExecute(args ...string) error {
 			}
 			result = append(result, local.Worktree{
 				Repository: repository,
-				Identity:   repository.Identity + "@" + fixture.branch,
-				Slot:       fixture.branch,
+				Identity:   repository.Identity + "@" + filepath.Base(filepath.Dir(fixture.destination)),
+				Slot:       filepath.Base(filepath.Dir(fixture.destination)),
 				Path:       path,
 				HEAD:       strings.Repeat("2", 40),
 				Branch:     branch,
@@ -1065,7 +1065,7 @@ func worktreeAddDestination(
 	repository local.Repository,
 	branch string,
 ) string {
-	return filepath.Join(worktreeRoot, local.WorktreeSlotDirectoryName(branch), repository.Repo)
+	return filepath.Join(worktreeRoot, local.WorktreeSlotDirectoryName(repository.Identity+"-"+branch), repository.Repo)
 }
 
 func worktreeAddRunGit(t *testing.T, dir string, args ...string) {

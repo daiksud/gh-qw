@@ -33,20 +33,20 @@ func TestDeterministicPathsAreContainedAndDoNotCreateDirectories(t *testing.T) {
 		"github.com",
 		"Acme",
 		"Widget",
-		"feature/login",
+		"github-com-Acme-Widget-feature-login",
 	)
 	if err != nil {
 		t.Fatalf("WorktreePath() error = %v", err)
 	}
 	wantWorktree := filepath.Join(
 		worktreeRoot,
-		"feature-login",
+		"github-com-Acme-Widget-feature-login",
 		"Widget",
 	)
 	if worktreePath != wantWorktree {
 		t.Fatalf("WorktreePath() = %q, want %q", worktreePath, wantWorktree)
 	}
-	if _, err := os.Lstat(filepath.Join(worktreeRoot, "feature-login")); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Lstat(filepath.Join(worktreeRoot, "github-com-Acme-Widget-feature-login")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("WorktreePath() created a directory or returned unexpected Lstat error: %v", err)
 	}
 }
@@ -112,35 +112,16 @@ func TestDeterministicPathsRejectInvalidValuesAndSymlinkEscapes(t *testing.T) {
 	}
 }
 
-func TestWorktreeSlotsFlattenSlashAndRejectNameCollisions(t *testing.T) {
-	worktrees := []Worktree{{Slot: "feat"}, {Slot: "release"}}
-	for _, slot := range []string{"feat", "release"} {
-		if err := ValidateSlotAvailable(context.Background(), worktrees, slot); !errors.Is(err, ErrSlotCollision) {
-			t.Fatalf("ValidateSlotAvailable(%q) = %v, want collision", slot, err)
-		}
+func TestWorktreeSlotNamesReplaceAllSymbols(t *testing.T) {
+	tests := [][2]string{
+		{"github.com/acme/widget-feature/login", "github-com-acme-widget-feature-login"},
+		{"github.com/acme/widget-feature-login", "github-com-acme-widget-feature-login"},
+		{"ghe.example.com/team_name/widget-feature.v2/fix", "ghe-example-com-team-name-widget-feature-v2-fix"},
+		{"github.com/acme/widget-fix@123", "github-com-acme-widget-fix-123"},
 	}
-	for _, slot := range []string{"feat/x", "release/next"} {
-		if err := ValidateSlotAvailable(context.Background(), worktrees, slot); err != nil {
-			t.Fatalf("ValidateSlotAvailable(%q) = %v, want valid Git branch", slot, err)
-		}
-	}
-	for _, pair := range [][2]string{
-		{"feature/login", "feature-login"},
-		{"feature-login", "feature-login"},
-		{"feature%2Flogin", "feature%2Flogin"},
-		{"feat", "feat"},
-	} {
-		if got := WorktreeSlotDirectoryName(pair[0]); got != pair[1] {
-			t.Fatalf("WorktreeSlotDirectoryName(%q) = %q, want %q", pair[0], got, pair[1])
-		}
-	}
-	for _, existing := range []string{"feature/login", "feature-login"} {
-		for _, requested := range []string{"feature/login", "feature-login"} {
-			if err := ValidateSlotAvailable(
-				context.Background(), []Worktree{{Slot: existing}}, requested,
-			); !errors.Is(err, ErrSlotCollision) {
-				t.Fatalf("existing %q requested %q = %v, want collision", existing, requested, err)
-			}
+	for _, test := range tests {
+		if got := WorktreeSlotDirectoryName(test[0]); got != test[1] {
+			t.Fatalf("WorktreeSlotDirectoryName(%q) = %q, want %q", test[0], got, test[1])
 		}
 	}
 }
