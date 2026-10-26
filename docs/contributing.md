@@ -36,8 +36,8 @@ semantics to the external tools. Do not add fake-only production paths.
 Review security, correctness, data-loss risks, concurrency, and current-contract
 coverage. Resolve actionable findings, pass required CI on the final HEAD, merge
 normally, and verify CI on the actual merged commit. Record any unavailable
-review or validation honestly. Use only the exceptional administrator
-bypass permitted by [AGENTS.md](../AGENTS.md#review-approvals-and-bypass).
+review or validation honestly. Administrative bypass is disabled. Follow the review and approval policy
+in [AGENTS.md](../AGENTS.md#review-approvals) even when reviewers are unavailable.
 
 Documentation is plain Markdown. Use relative links, check paths and anchors,
 and keep each rule in one owning document. No documentation build is required.
@@ -86,7 +86,7 @@ and body; the inactive merge-commit defaults retain the same values.
 The declared main Ruleset requires one approving review, dismisses approvals
 after new commits, resolves review threads, uses strict up-to-date checks, and
 requires signed commits and linear history. CODEOWNER approval is required; another eligible reviewer (including the
-configured GitHub Actions bot) may approve when the sole owner is the author. Administrator bypass is limited to pull requests under [the common exceptional policy](../AGENTS.md#review-approvals-and-bypass).
+configured GitHub Actions bot) may approve when the sole owner is the author. No administrator bypass actors are configured; every merge must satisfy the [normal review policy](../AGENTS.md#review-approvals).
 
 The [Codex approval workflow](../.github/workflows/approve-codex-review.yml)
 accepts only the Codex bot's review-summary comment. It checks that code and
