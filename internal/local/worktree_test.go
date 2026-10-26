@@ -17,7 +17,7 @@ func TestManagedSlotSurvivesBranchSwitchAndDetachedCheckout(t *testing.T) {
 	repository := testRepository(t, filepath.Join(base, "repositories"), "github.com/acme/widget", 0)
 	initTestRepository(t, repository.Path)
 	worktreeRoot := filepath.Join(base, "worktrees")
-	const slot = "github-com-acme-widget-review-123"
+	const slot = "github-com-acme-widget-review-123-2"
 	path, err := WorktreePath(context.Background(), worktreeRoot, repository.Host, repository.Owner, repository.Repo, slot)
 	if err != nil {
 		t.Fatal(err)

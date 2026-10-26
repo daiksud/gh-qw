@@ -379,7 +379,8 @@ func deriveWorktreeSlot(
 			return "", fmt.Errorf("registered linked worktree is outside <slot>/<repo> layout: %q", relative)
 		}
 		prefix := WorktreeSlotDirectoryName(repository.Identity + "-")
-		if !strings.HasPrefix(parts[0], prefix) || len(parts[0]) == len(prefix) {
+		if WorktreeSlotDirectoryName(parts[0]) != parts[0] ||
+			!strings.HasPrefix(parts[0], prefix) || len(parts[0]) == len(prefix) {
 			return "", fmt.Errorf("registered linked worktree has an unexpected slot directory %q", parts[0])
 		}
 		slot = parts[0]
