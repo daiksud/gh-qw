@@ -17,7 +17,7 @@ concurrency:
 jobs:
   approve:
     if: >-
-(github.event_name == 'issue_comment' &&
+      (github.event_name == 'issue_comment' &&
        github.event.issue.pull_request &&
        github.event.comment.user.login == 'chatgpt-codex-connector[bot]' &&
        startsWith(github.event.comment.body, '<!-- codex-pull-request-review-summary -->')) ||
