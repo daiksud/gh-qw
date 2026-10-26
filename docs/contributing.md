@@ -89,8 +89,8 @@ requires signed commits and linear history. CODEOWNER approval is required; anot
 configured GitHub Actions bot) may approve when the sole owner is the author. No administrator bypass actors are configured; every merge must satisfy the [normal review policy](../AGENTS.md#review-approvals).
 
 The [Codex approval workflow](../.github/workflows/approve-codex-review.yml)
-accepts only the Codex bot's review-summary comment. It checks that code and
-security reviews completed for the exact current HEAD without unresolved
+handles the Codex bot's review-summary updates and reruns the approval
+check after successful PR CI. It verifies that code and security reviews completed for the exact current HEAD without unresolved
 findings and that Codex reacted with 👍. It then creates a GitHub Actions
 approval for that commit when the repository permits Actions approvals.
 Copilot's reviews and Codex comments alone do not satisfy the approval rule.
