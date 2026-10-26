@@ -114,12 +114,12 @@ different commit. The workflow then
 runs three product stages: commit-stage cross-builds three binaries from that
 source, acceptance-stage tests the transferred binaries on native Linux amd64,
 macOS arm64, and Windows amd64 runners, and release publishes only those
-accepted bytes. Each internal artifact carries a source, version, asset-name, and SHA-256
-manifest; publication revalidates the complete inventory without rebuilding.
-The final verification has no write token; its public API and asset downloads
-are unauthenticated after read-only artifact retrieval. It compares all three
-published assets with the accepted manifests. A
-failed metadata/build/acceptance/publication check creates no new release.
+accepted bytes. Each internal artifact carries a source, version, asset-name,
+and SHA-256 manifest; publication revalidates the complete inventory without
+rebuilding. The final verification has no write token; its public API and asset
+downloads are unauthenticated after read-only artifact retrieval. It compares
+all three published assets with the accepted manifests. A failed
+metadata/build/acceptance/publication check creates no new release.
 
 | Commit signal | Version increment |
 | --- | --- |
