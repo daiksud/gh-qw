@@ -20,14 +20,6 @@ describe_target() {
       TARGET_RUNNER_OS=Linux
       TARGET_RUNNER_ARCH=X64
       ;;
-    linux-arm64)
-      TARGET_GOOS=linux
-      TARGET_GOARCH=arm64
-      TARGET_ASSET=gh-qw-linux-arm64
-      TARGET_RUNNER=ubuntu-24.04-arm
-      TARGET_RUNNER_OS=Linux
-      TARGET_RUNNER_ARCH=ARM64
-      ;;
     darwin-arm64)
       TARGET_GOOS=darwin
       TARGET_GOARCH=arm64
@@ -73,11 +65,11 @@ case "$command" in
     ;;
   build-matrix)
     [ "$#" -eq 1 ] || fail "usage: ci-artifacts.sh build-matrix"
-    printf '%s\n' '{"include":[{"target":"linux-amd64","runner":"ubuntu-slim"},{"target":"linux-arm64","runner":"ubuntu-24.04-arm"},{"target":"darwin-arm64","runner":"macos-14"},{"target":"windows-amd64","runner":"windows-latest"}]}'
+    printf '%s\n' '{"include":[{"target":"linux-amd64","runner":"ubuntu-slim"},{"target":"darwin-arm64","runner":"macos-14"},{"target":"windows-amd64","runner":"windows-latest"}]}'
     ;;
   acceptance-matrix)
     [ "$#" -eq 1 ] || fail "usage: ci-artifacts.sh acceptance-matrix"
-    printf '%s\n' '{"include":[{"target":"linux-amd64","kind":"process","runner":"ubuntu-slim"},{"target":"linux-arm64","kind":"process","runner":"ubuntu-24.04-arm"},{"target":"darwin-arm64","kind":"process","runner":"macos-14"},{"target":"windows-amd64","kind":"process","runner":"windows-latest"}]}'
+    printf '%s\n' '{"include":[{"target":"linux-amd64","kind":"process","runner":"ubuntu-slim"},{"target":"darwin-arm64","kind":"process","runner":"macos-14"},{"target":"windows-amd64","kind":"process","runner":"windows-latest"}]}'
     ;;
   manifest)
     [ "$#" -eq 4 ] || fail "usage: ci-artifacts.sh manifest TARGET SOURCE_SHA DIRECTORY"
