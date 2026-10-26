@@ -30,6 +30,9 @@ criteria for deciding what belongs in gh-qw.
 gh extension install daiksud/gh-qw
 ```
 
+Prebuilt binaries are provided for macOS arm64 (Apple Silicon), Linux amd64,
+and Windows amd64.
+
 The complete command set requires Git 2.42.0 or newer and GitHub CLI 2.88.0 or
 newer. Git must be on `PATH`; gh is resolved through `GH_PATH`, then `PATH`.
 Configure authentication with `gh auth login` for network operations.
