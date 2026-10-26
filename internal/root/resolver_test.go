@@ -115,7 +115,7 @@ func TestResolverRejectsEmptyRepositoryEnvironmentEntries(t *testing.T) {
 
 func TestResolverTildeExpansionAndAbsoluteValidation(t *testing.T) {
 	t.Run("exact home repository root", func(t *testing.T) {
-		base, home := newLayout(t)
+		_, home := newLayout(t)
 		resolver, _ := newTestResolver(home, config.Config{
 			Roots: []string{"~"},
 		}, nil)
@@ -151,7 +151,7 @@ func TestResolverTildeExpansionAndAbsoluteValidation(t *testing.T) {
 
 	if runtime.GOOS == "windows" {
 		t.Run("native backslash home prefix", func(t *testing.T) {
-			base, home := newLayout(t)
+			_, home := newLayout(t)
 			resolver, _ := newTestResolver(home, config.Config{
 				Roots: []string{`~\repositories`},
 			}, nil)
@@ -166,7 +166,7 @@ func TestResolverTildeExpansionAndAbsoluteValidation(t *testing.T) {
 		})
 	} else {
 		t.Run("non-native backslash home prefix is rejected", func(t *testing.T) {
-			base, home := newLayout(t)
+			_, home := newLayout(t)
 			resolver, _ := newTestResolver(home, config.Config{
 				Roots: []string{`~\repositories`},
 			}, nil)
@@ -220,7 +220,6 @@ func TestResolverTildeExpansionAndAbsoluteValidation(t *testing.T) {
 	}
 
 	t.Run("home lookup failure remains runtime error", func(t *testing.T) {
-		base := t.TempDir()
 		homeError := errors.New("home lookup failed")
 		resolver := NewResolverWithOptions(Options{
 			ConfigLoader: loaderFunc(func() (config.Config, error) {
