@@ -215,7 +215,7 @@ func EnumerateWorktrees(
 			continue
 		}
 
-		slot, err := deriveWorktreeSlot(ctx, base, repository.Repo, item, physicalPath)
+		slot, err := deriveWorktreeSlot(ctx, base, repository, item, physicalPath)
 		if err != nil {
 			return nil, &WorktreeError{
 				Kind:       ErrUnsafeWorktree,
@@ -296,7 +296,7 @@ func ValidateRepository(repository Repository) error {
 	return nil
 }
 
-// ValidateSlotAvailable rejects slots that share a flattened directory name.
+// ValidateSlotAvailable rejects an exact slot collision in the repository inventory.
 func ValidateSlotAvailable(ctx context.Context, worktrees []Worktree, slot string) error {
 	if err := ValidateSlot(ctx, slot); err != nil {
 		return err
@@ -315,8 +315,8 @@ func ValidateSlotAvailable(ctx context.Context, worktrees []Worktree, slot strin
 	return nil
 }
 
-// FindLinkedWorktree resolves either a canonical directory slot or its
-// slash-separated spelling without guessing the checked-out branch.
+// FindLinkedWorktree resolves a registered directory slot independently of
+// the checked-out branch, including any auto-assigned numeric suffix.
 func FindLinkedWorktree(ctx context.Context, worktrees []Worktree, slot string) (Worktree, error) {
 	if err := ValidateSlot(ctx, slot); err != nil {
 		return Worktree{}, err
@@ -353,7 +353,8 @@ func FindRegisteredLinkedWorktree(ctx context.Context, worktrees []Worktree, slo
 
 func deriveWorktreeSlot(
 	ctx context.Context,
-	base, repo string,
+	base string,
+	repository Repository,
 	item gitcmd.Worktree,
 	physicalPath string,
 ) (string, error) {
@@ -374,8 +375,12 @@ func deriveWorktreeSlot(
 			return "", fmt.Errorf("make deterministic path relative: %w", err)
 		}
 		parts := strings.Split(filepath.ToSlash(relative), "/")
-		if len(parts) != 2 || parts[1] != repo {
+		if len(parts) != 2 || parts[1] != repository.Repo {
 			return "", fmt.Errorf("registered linked worktree is outside <slot>/<repo> layout: %q", relative)
+		}
+		prefix := WorktreeSlotDirectoryName(repository.Identity + "-")
+		if !strings.HasPrefix(parts[0], prefix) || len(parts[0]) == len(prefix) {
+			return "", fmt.Errorf("registered linked worktree has an unexpected slot directory %q", parts[0])
 		}
 		slot = parts[0]
 	} else if item.Detached {
@@ -390,13 +395,7 @@ func deriveWorktreeSlot(
 }
 
 func slotsCollide(first, second string) bool {
-	first = WorktreeSlotDirectoryName(first)
-	second = WorktreeSlotDirectoryName(second)
-	if runtime.GOOS == "windows" {
-		first = strings.ToLower(first)
-		second = strings.ToLower(second)
-	}
-	return first == second
+	return slotComparisonKey(first) == slotComparisonKey(second)
 }
 
 func slotComparisonKey(slot string) string {

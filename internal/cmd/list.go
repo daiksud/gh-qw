@@ -470,7 +470,7 @@ func listMatchesExact(entry listEntry, query string, includeWorktrees bool) bool
 	if !hasSlot {
 		return true
 	}
-	return includeWorktrees && slotQuery != "" && (entry.slot == slotQuery || entry.slot == local.WorktreeSlotDirectoryName(slotQuery))
+	return includeWorktrees && slotQuery != "" && entry.slot == slotQuery
 }
 
 func listMatchesRepositorySuffix(entry listEntry, query string) bool {

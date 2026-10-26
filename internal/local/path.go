@@ -76,10 +76,15 @@ func ValidateSlotLayout(_ context.Context, slot string) error {
 	return nil
 }
 
-// WorktreeSlotDirectoryName flattens a slash-separated slot into one readable
-// directory name. Different refs can share a name, so slot collisions are rejected.
-func WorktreeSlotDirectoryName(slot string) string {
-	return strings.ReplaceAll(slot, "/", "-")
+// WorktreeSlotDirectoryName replaces punctuation and separators with hyphens.
+// The caller supplies the canonical repository identity and requested branch.
+func WorktreeSlotDirectoryName(value string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			return r
+		}
+		return '-'
+	}, value)
 }
 
 // ValidateSlot applies branch validation and gh-qw's portable directory layout
@@ -118,7 +123,7 @@ func WorktreeBasePath(worktreeRoot, host, owner, repo string) (string, error) {
 	return root.PhysicalizeTarget(worktreeRoot, worktreeRoot, root.AllowEqual)
 }
 
-// WorktreePath returns <worktree-root>/<flattened-slot>/<repo>.
+// WorktreePath returns <worktree-root>/<unique-slot>/<repo>.
 func WorktreePath(ctx context.Context, worktreeRoot, host, owner, repo, branch string) (string, error) {
 	if err := ValidateSlot(ctx, branch); err != nil {
 		return "", err
@@ -128,7 +133,7 @@ func WorktreePath(ctx context.Context, worktreeRoot, host, owner, repo, branch s
 	if err != nil {
 		return "", err
 	}
-	target := filepath.Join(base, WorktreeSlotDirectoryName(branch), repo)
+	target := filepath.Join(base, branch, repo)
 	physical, err := root.PhysicalizeTarget(base, target, root.StrictlyUnder)
 	if err != nil {
 		return "", fmt.Errorf("derive linked worktree path: %w", err)

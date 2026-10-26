@@ -209,60 +209,9 @@ func worktreeAddRun(
 		return fmt.Errorf("enumerate worktrees for %q: %w", repository.Identity, err)
 	}
 
-	expectedDestination, err := local.WorktreePath(
-		ctx,
-		roots.WorktreeRoot,
-		repository.Host,
-		repository.Owner,
-		repository.Repo,
-		request.branch,
+	slot, destination, createdParents, err := worktreeAddReserveSlot(
+		ctx, runtime, roots.WorktreeRoot, repository, request.branch, worktrees,
 	)
-	if err != nil {
-		return fmt.Errorf("derive worktree destination: %w", err)
-	}
-	destination, err := runtime.ValidateDestination(
-		ctx,
-		roots.WorktreeRoot,
-		repository,
-		request.branch,
-		worktrees,
-		local.DestinationOptions{Filesystem: runtime.Filesystem},
-	)
-	if err != nil {
-		return fmt.Errorf("validate worktree destination: %w", err)
-	}
-	destination = filepath.Clean(destination)
-	if !filepath.IsAbs(destination) {
-		return fmt.Errorf("validate worktree destination: path %q is not absolute", destination)
-	}
-	if destination != filepath.Clean(expectedDestination) {
-		return fmt.Errorf(
-			"validate worktree destination: derived path %q does not match deterministic path %q",
-			destination,
-			expectedDestination,
-		)
-	}
-	if !worktreeAddPathWithin(roots.WorktreeRoot, destination) {
-		return fmt.Errorf(
-			"validate worktree destination: %w: path %q is outside worktree root %q",
-			rootpkg.ErrUnsafeTarget,
-			destination,
-			roots.WorktreeRoot,
-		)
-	}
-
-	planner := &worktreeAddPlanner{
-		ctx:        ctx,
-		git:        runtime.Git,
-		api:        runtime.API,
-		repository: repository,
-	}
-	options, syncBranch, err := planner.worktreeAddPlan(request, destination)
-	if err != nil {
-		return err
-	}
-
-	createdParents, err := worktreeAddCreateParents(destination, runtime)
 	if err != nil {
 		return err
 	}
@@ -274,38 +223,15 @@ func worktreeAddRun(
 		return errors.Join(operationErr, cleanupErr)
 	}
 
-	lstat := runtime.Filesystem.Lstat
-	if lstat == nil {
-		lstat = os.Lstat
+	planner := &worktreeAddPlanner{
+		ctx:        ctx,
+		git:        runtime.Git,
+		api:        runtime.API,
+		repository: repository,
 	}
-	// The slot name must be unique across all repositories. Mkdir is the
-	// exclusive reservation; a concurrent creator must not be adopted.
-	slotDirectory := filepath.Join(roots.WorktreeRoot, local.WorktreeSlotDirectoryName(request.branch))
-	reserved := false
-	for _, parent := range createdParents {
-		if filepath.Clean(parent) == slotDirectory {
-			reserved = true
-			break
-		}
-	}
-	if !reserved {
-		return worktreeAddFailure(fmt.Errorf("reserve worktree slot: %w", &local.SlotCollisionError{Slot: request.branch, ExistingSlot: request.branch}))
-	}
-
-	if _, err := lstat(destination); err == nil {
-		return worktreeAddFailure(fmt.Errorf(
-			"validate worktree destination: %w",
-			&local.SlotCollisionError{
-				Slot:         request.branch,
-				ExistingSlot: request.branch,
-			},
-		))
-	} else if !errors.Is(err, fs.ErrNotExist) {
-		return worktreeAddFailure(fmt.Errorf(
-			"inspect worktree destination %q: %w",
-			destination,
-			err,
-		))
+	options, syncBranch, err := planner.worktreeAddPlan(request, destination)
+	if err != nil {
+		return worktreeAddFailure(err)
 	}
 
 	// Only explicit -b/-B requests without a start point use the GitHub
@@ -355,7 +281,7 @@ func worktreeAddRun(
 			err,
 		))
 	}
-	added, err := local.FindRegisteredLinkedWorktree(ctx, registered, request.branch)
+	added, err := local.FindRegisteredLinkedWorktree(ctx, registered, slot)
 	if err != nil {
 		return worktreeAddFailure(fmt.Errorf(
 			"worktree was added at %q but registration validation failed: %w",
@@ -401,6 +327,92 @@ func worktreeAddRun(
 	}
 
 	return nil
+}
+
+// worktreeAddReserveSlot reserves the first free physical directory. Mkdir
+// decides concurrent claims; existing slots are never adopted or overwritten.
+func worktreeAddReserveSlot(
+	ctx context.Context,
+	runtime WorktreeAddDependencies,
+	worktreeRoot string,
+	repository local.Repository,
+	branch string,
+	worktrees []local.Worktree,
+) (string, string, []string, error) {
+	lstat := runtime.Filesystem.Lstat
+	if lstat == nil {
+		lstat = os.Lstat
+	}
+	stem := local.WorktreeSlotDirectoryName(repository.Identity + "-" + branch)
+	for number := 0; ; number++ {
+		if err := ctx.Err(); err != nil {
+			return "", "", nil, err
+		}
+		slot := stem
+		if number > 0 {
+			slot = fmt.Sprintf("%s-%d", stem, number)
+		}
+		slotDirectory := filepath.Join(worktreeRoot, slot)
+		if _, err := lstat(slotDirectory); err == nil {
+			continue
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			return "", "", nil, fmt.Errorf("inspect worktree slot %q: %w", slotDirectory, err)
+		}
+
+		expected, err := local.WorktreePath(ctx, worktreeRoot, repository.Host, repository.Owner, repository.Repo, slot)
+		if err != nil {
+			return "", "", nil, fmt.Errorf("derive worktree destination: %w", err)
+		}
+		destination, err := runtime.ValidateDestination(
+			ctx, worktreeRoot, repository, slot, worktrees,
+			local.DestinationOptions{Filesystem: runtime.Filesystem},
+		)
+		if errors.Is(err, local.ErrSlotCollision) {
+			continue
+		}
+		if err != nil {
+			return "", "", nil, fmt.Errorf("validate worktree destination: %w", err)
+		}
+		destination = filepath.Clean(destination)
+		if !filepath.IsAbs(destination) ||
+			destination != filepath.Clean(expected) ||
+			!worktreeAddPathWithin(worktreeRoot, destination) {
+			return "", "", nil, fmt.Errorf(
+				"validate worktree destination: %w: path %q does not match reserved slot %q",
+				rootpkg.ErrUnsafeTarget, destination, expected,
+			)
+		}
+		created, err := worktreeAddCreateParents(destination, runtime)
+		if err != nil {
+			if _, occupied := lstat(slotDirectory); occupied == nil {
+				continue
+			}
+			return "", "", nil, err
+		}
+		reserved := false
+		for _, parent := range created {
+			if filepath.Clean(parent) == slotDirectory {
+				reserved = true
+				break
+			}
+		}
+		if !reserved {
+			if cleanupErr := worktreeAddCleanupParents(created, runtime); cleanupErr != nil {
+				return "", "", nil, cleanupErr
+			}
+			continue
+		}
+		if _, err := lstat(destination); err == nil || !errors.Is(err, fs.ErrNotExist) {
+			if cleanupErr := worktreeAddCleanupParents(created, runtime); cleanupErr != nil {
+				return "", "", nil, cleanupErr
+			}
+			if err != nil {
+				return "", "", nil, fmt.Errorf("inspect reserved worktree destination %q: %w", destination, err)
+			}
+			continue
+		}
+		return slot, destination, created, nil
+	}
 }
 
 func worktreeAddSelectRepository(
