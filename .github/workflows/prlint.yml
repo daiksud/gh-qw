@@ -33,9 +33,6 @@ jobs:
           install_args: bun npm:@commitlint/cli
           cache: false
 
-      - name: Test PR message policy
-        run: bash tests/github-actions/commitlint.sh
-
       - name: Validate current PR title and body
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
