@@ -18,31 +18,34 @@ spec:
 
   labels:
   - name: BREAKING CHANGE
-    description: Backward-incompatible public API change (MAJOR; MINOR under 0.y.z)
+    description: Backward-incompatible user-visible behavior or public interface
     color: b60205
   - name: DEPRECATED
-    description: Public API marked for future removal (MINOR)
+    description: Public feature or behavior marked for future removal
     color: fbca04
+  - name: accessibility
+    description: Accessibility issues or improvements
+    color: f143ab
   - name: build
-    description: Changes to the build system or external dependencies (no version bump)
+    description: Build, packaging, release tooling, or dependency management
     color: a8aeb4
   - name: chore
-    description: Other changes that don't modify src or test files (no version bump)
+    description: Maintenance not covered by a more specific change type
     color: ededed
   - name: ci
-    description: Changes to CI configuration files and scripts (no version bump)
+    description: CI checks and repository development automation
     color: cfd3d7
   - name: docs
-    description: Documentation only changes (no version bump)
+    description: Documentation or contributor and reviewer guidance
     color: c4b5e0
   - name: duplicate
     description: This issue or pull request already exists
     color: cfd3d7
   - name: feat
-    description: A new feature (MINOR)
+    description: New user-facing capability or behavior
     color: 0e8a16
   - name: fix
-    description: A bug fix (PATCH)
+    description: Correction to user-observable product behavior
     color: 0052cc
   - name: good first issue
     description: Good for newcomers
@@ -51,25 +54,25 @@ spec:
     description: Extra attention is needed
     color: 008672
   - name: invalid
-    description: This doesn't seem right
+    description: This does not seem right
     color: e4e669
   - name: perf
-    description: A code change that improves performance (MINOR)
+    description: Runtime performance improvement experienced by product users
     color: 7fd18a
   - name: question
     description: Further information is requested
     color: d876e3
   - name: refactor
-    description: A code change that neither fixes a bug nor adds a feature (no version bump)
+    description: Implementation restructuring without user-observable behavior changes
     color: 8ec9cc
   - name: revert
-    description: Reverts a previous commit (PATCH)
+    description: Reverts a previous change; assess resulting user impact
     color: 79b8ff
   - name: style
-    description: Changes that do not affect the meaning of the code (no version bump)
+    description: Formatting changes without behavior changes
     color: b5dcde
   - name: test
-    description: Adding missing tests or correcting existing tests (no version bump)
+    description: Test-only additions or corrections
     color: d8ecec
   - name: wontfix
     description: This will not be worked on

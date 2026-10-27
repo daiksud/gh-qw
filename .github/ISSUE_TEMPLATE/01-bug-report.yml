@@ -1,0 +1,41 @@
+name: Bug report
+description: Report unexpected behavior in the gh-qw CLI.
+labels: [fix]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Search [existing issues](https://github.com/daiksud/gh-qw/issues) before opening a report.
+        Remove tokens, private keys, and other secrets from configuration and logs.
+  - type: textarea
+    id: actual-behavior
+    attributes:
+      label: Actual behavior
+      description: Describe what happened and the problem it caused. Include a short error or output excerpt if it helps demonstrate the failure.
+    validations:
+      required: true
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: Expected behavior
+      description: What should have happened with the same input and starting state?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: |
+        Provide the smallest command or workflow, configuration, and starting state needed to reproduce the problem.
+        Include environment details only when they affect reproduction. If the exact steps are unknown, describe the conditions you observed.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or ref
+      description: |
+        Provide `gh qw --version`, or the commit SHA for a source build.
+        Write "unknown" if unavailable.
+    validations:
+      required: true

@@ -1,0 +1,22 @@
+name: Feature or improvement
+description: Propose a new capability or an improvement to existing behavior.
+labels: [feat]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Search [existing issues](https://github.com/daiksud/gh-qw/issues) for related requests.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: What are you trying to achieve, and what makes it difficult with the current behavior?
+    validations:
+      required: true
+  - type: textarea
+    id: success-criteria
+    attributes:
+      label: Success criteria
+      description: What observable result would solve the problem? Give a concrete usage example that shows when this issue is complete.
+    validations:
+      required: true
