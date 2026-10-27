@@ -9,6 +9,22 @@ behavior changes; do not add historical comparisons, transition guides,
 compatibility shims, or duplicate implementations. Remove unreachable APIs and
 tests that serve only deleted behavior. Git history records previous states.
 
+## Issues and pull requests
+
+Use the [Issue forms](../.github/ISSUE_TEMPLATE) for bug reports, user-facing
+features or improvements, and maintenance tasks. Bug reports need actual and
+expected behavior, reproduction details, and a version or ref. Feature requests
+describe the problem and observable success criteria. Tasks explain the
+maintenance problem and completion criteria. Blank issues remain available.
+
+PR titles follow Conventional Commits. The [PR template](../.github/pull_request_template.md)
+provides **Why**, **What changed**, and **Verification** so the reviewed PR body
+can become the squash commit message. State the problem, resulting behavior,
+material decisions, and observed verification results without depending on an
+Issue or CI log for essential context. Include `Closes #123` only when the PR
+completes the Issue, and remove template comments and temporary notes before
+merging.
+
 ## Development and review
 
 Use the Go version in [go.mod](../go.mod). Run:
