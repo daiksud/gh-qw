@@ -82,7 +82,7 @@ jobs:
           kind: ${{ matrix.kind }}
           source-sha: ${{ github.sha }}
           artifact-directory: ${{ runner.temp }}/product
-  pass:
+  ci-push:
     needs: [resolve, commit-stage, acceptance-stage]
     if: always() && !cancelled()
     runs-on: ubuntu-slim
