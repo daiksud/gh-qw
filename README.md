@@ -37,7 +37,7 @@ The complete command set requires Git 2.42.0 or newer and GitHub CLI 2.88.0 or
 newer. Git must be on `PATH`; gh is resolved through `GH_PATH`, then `PATH`.
 Configure authentication with `gh auth login` for network operations.
 
-## Use
+## Quick start
 
 ```sh
 gh qw clone cli/cli
@@ -80,4 +80,4 @@ own a separate pruning policy.
 See the [CLI reference](docs/cli.md) for exact arguments, output, exit statuses,
 and safety conditions. Documentation describes the current implementation.
 
-[Architecture](docs/architecture.md) · [Contributing](docs/contributing.md) · [MIT license](LICENSE)
+[Documentation index](docs/README.md) · [Contributing](docs/contributing.md) · [MIT license](LICENSE)
