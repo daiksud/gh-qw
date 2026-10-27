@@ -44,20 +44,15 @@ runs:
         go vet ./...
         go test -race ./...
 
-        validator="$RUNNER_TEMP/gh-infra-v0.13.0"
-        curl --proto '=https' --tlsv1.2 --location --fail --silent --show-error \
-          --output "$validator" \
-          https://github.com/babarot/gh-infra/releases/download/v0.13.0/gh-infra_linux-amd64
-        printf '%s  %s\n' \
-          ecf6dc47e6c51312308de3c514705990a3a8f24e47fb43da34425470c9a117e4 \
-          "$validator" | sha256sum --check --strict
-        chmod +x "$validator"
-        "$validator" validate .github/settings.yml
-
         python3 -m unittest discover -s .github/scripts -p "test_release_version.py" -q
         bash .github/scripts/release-source.test.sh
         bash .github/scripts/release-notes.test.sh
         bash .github/scripts/release-artifacts.test.sh
+    - name: Validate repository settings with pinned gh-settings
+      if: inputs.target == 'linux-amd64'
+      uses: daiksud/gh-settings@eb8795dca8bb42376ab575f646ffa11bfe7775c8 # v0.21.0
+      with:
+        command: validate
     - name: Cross-build release binary and manifest
       shell: bash
       env:
