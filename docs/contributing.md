@@ -112,12 +112,22 @@ A maintainer reviews and applies settings locally with an appropriately
 authorized GitHub CLI identity:
 
 ```sh
-gh extension install daiksud/gh-settings
-gh extension upgrade gh-settings
+gh extension install daiksud/gh-settings --pin v0.21.0
+gh settings --version # must report gh-settings v0.21.0
 gh settings validate
 gh settings plan
 gh settings apply
 ```
+
+The release pin must match the commit and binary used by CI:
+[gh-settings v0.21.0](https://github.com/daiksud/gh-settings/releases/tag/v0.21.0)
+(source commit `eb8795dca8bb42376ab575f646ffa11bfe7775c8`).
+Before using an administrative identity, verify the downloaded platform binary
+against that immutable release's `SHA256SUMS`; a version string alone does
+not authenticate the executable. If another version is already installed,
+remove it with `gh extension remove gh-settings` and reinstall with the pin
+above. Do not use `gh extension upgrade` for privileged settings operations:
+upgrades require separately reviewing and pinning a new release.
 
 Run commands from this repository's checkout. `plan` is nonmutating; review
 all reported differences before running `apply`. Apply changes directly,
