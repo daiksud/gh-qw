@@ -1,5 +1,9 @@
 # Architecture
 
+This describes the current implementation's responsibilities and boundaries.
+The [purpose](purpose.md) owns product direction; the [CLI](cli.md) and
+[configuration](configuration.md) references own user-facing contracts.
+
 ## Responsibilities
 
 | Component | Owns |
