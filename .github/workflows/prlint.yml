@@ -1,4 +1,4 @@
-name: PRLint
+name: prlint
 
 on:
   pull_request:
@@ -11,11 +11,11 @@ defaults:
     shell: bash
 
 concurrency:
-  group: pr-message-${{ github.event.pull_request.number }}
+  group: prlint-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
-  pr-message:
+  prlint:
     runs-on: ubuntu-slim
     timeout-minutes: 5
     permissions:

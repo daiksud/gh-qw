@@ -115,12 +115,17 @@ The ruleset and Actions approval setting require a separate authorized
 `gh infra apply`; the YAML and passing offline CI do not prove the live
 GitHub configuration changed.
 
-The required status is `pass`. The `ci-pr` commit stage builds one candidate on
+Required PR checks are `ci-pr` and `prlint`, provided by GitHub Actions. The
+live Ruleset requires a separate authorized context transition; changing source
+or passing offline validation does not apply it. The `ci-pr` commit stage builds one candidate on
 each native platform; its acceptance stage verifies and tests those exact
 transferred bytes without rebuilding the product. PR code and base changes move
-through Draft, Commit stage, Ready, and Acceptance stage in one run. Title/body-
-only edits remain isolated in PRLint and do not replace code-validation results.
-The `ci-push` workflow runs the same Commit and Acceptance stages for `main`.
+through Draft, Commit stage, Ready, and Acceptance stage in one run. Title/body
+edits rerun both PRLint and staged code validation, avoiding skipped-success
+required checks. The native `ci-pr` aggregate uses `always()` and requires every
+prerequisite to succeed, including after cancellation; it has no write token.
+The `ci-push` workflow runs the same Commit and Acceptance stages for `main`
+and finishes with its own `ci-push` aggregate job.
 Fork and Dependabot pull requests that cannot change Draft/Ready state are not
 supported; a maintainer must handle them manually without a privileged fallback.
 
