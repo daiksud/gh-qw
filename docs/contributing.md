@@ -148,6 +148,26 @@ checks pass. Copilot's reviews and Codex comments alone do not approve PRs.
 A successful validation job does not prove the manifest has been applied;
 verify the live Ruleset and settings separately before claiming enforcement.
 
+Required PR checks are `ci-pr` and `prlint`, provided by GitHub Actions.
+The `ci-pr` commit stage builds one candidate on each native platform; its
+acceptance stage verifies and tests those exact transferred bytes without
+rebuilding the product. PR code and base changes move through Draft, Commit
+stage, Ready, and Acceptance stage in one run. Title/body edits rerun both
+PRLint and staged code validation, avoiding skipped-success required checks.
+The native `ci-pr` aggregate uses `always()` and requires every prerequisite
+to succeed, including after cancellation; it has no write token. The
+`ci-push` workflow runs the same Commit and Acceptance stages for `main`
+and finishes with its own `ci-push` aggregate job.
+Fork and Dependabot pull requests that cannot change Draft/Ready state are not
+supported; a maintainer must handle them manually without a privileged fallback.
+
+Together the staged workflows preserve Go builds and tests on Linux amd64,
+macOS arm64, and Windows amd64, plus race, format/vet, settings validation, and
+release-version tests. Dependabot checks Go modules and GitHub Actions weekly.
+Its PRs require a manual merge decision after review and required checks; no
+workflow automatically enables auto-merge. The repository-level auto-merge
+option remains available.
+
 ## Releases
 
 Merging does not authorize releasing. Only on an explicit release request, run:
