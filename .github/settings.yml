@@ -122,7 +122,9 @@ spec:
       required_status_checks:
         strict_required_status_checks_policy: true
         contexts:
-        - context: pass
+        - context: ci-pr
+          app: github-actions
+        - context: prlint
           app: github-actions
       non_fast_forward: true
       deletion: true
