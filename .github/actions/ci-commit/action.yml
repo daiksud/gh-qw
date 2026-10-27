@@ -55,11 +55,11 @@ runs:
         bash .github/scripts/release-notes.test.sh
         bash .github/scripts/release-artifacts.test.sh
         bash .github/scripts/ci-artifacts.test.sh
+        bash .github/scripts/validate-settings.test.sh
     - name: Validate repository settings with pinned gh-settings
       if: inputs.target == 'linux-amd64'
-      uses: daiksud/gh-settings@cbc112ae1330b4ad4debe013857bd67d2e1a1e1e # v0.23.0
-      with:
-        command: validate
+      shell: bash
+      run: bash .github/scripts/validate-settings.sh
     - name: Test non-process packages
       shell: bash
       run: go list ./... | grep -v '/tests$' | xargs go test

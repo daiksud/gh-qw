@@ -12,8 +12,11 @@ repository fields, labels, branch and tag Rulesets, Environments, Actions polici
 private vulnerability reporting using
 [gh-settings](https://github.com/daiksud/gh-settings) v0.23.0.
 
-The pinned gh-settings Action validates this manifest in the Linux commit checks
-for PR CI, main CI, and release builds. Validation is offline: it neither
+The [pinned validator](../.github/scripts/validate-settings.sh) downloads the
+published Linux CLI, checks its fixed SHA-256 and exact version, and validates
+this manifest in the Linux commit checks for PR CI, main CI, and release
+builds. Direct CLI selection avoids nested composite Action ref ambiguity.
+Validation is offline after installation: it neither
 detects remote drift nor applies GitHub settings. These workflows need no
 administrative credentials and do not mutate repository settings.
 
@@ -28,7 +31,7 @@ gh settings plan
 gh settings apply
 ```
 
-The release pin must match the commit and binary used by CI:
+The release pin must match the source and binary used by CI:
 [gh-settings v0.23.0](https://github.com/daiksud/gh-settings/releases/tag/v0.23.0)
 (source commit `cbc112ae1330b4ad4debe013857bd67d2e1a1e1e`).
 Before using an administrative identity, verify the downloaded platform binary
