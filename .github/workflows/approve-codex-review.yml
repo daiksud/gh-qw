@@ -46,8 +46,8 @@ jobs:
             if [[ -n "${COMMENT_ID:-}" ]]; then
               summary=$(gh api "repos/$GITHUB_REPOSITORY/issues/comments/$COMMENT_ID" --jq .body)
             else
-              summary=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments?per_page=100" --paginate --slurp \
-                --jq '[.[][] | select(.user.login == "chatgpt-codex-connector[bot]" and (.body | startswith("<!-- codex-pull-request-review-summary -->"))) | .body] | last // ""')
+              summary=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments?per_page=100" --paginate --slurp |
+                jq -r '[.[][] | select(.user.login == "chatgpt-codex-connector[bot]" and (.body | startswith("<!-- codex-pull-request-review-summary -->"))) | .body] | last // ""')
             fi
             state=$(sed -n 's/^<!-- codex-review-state:v1 \(.*\) -->$/\1/p' <<<"$summary")
             jq -e --arg head "$head" '
@@ -70,8 +70,14 @@ jobs:
               if jq -e --arg head "$head" 'any(.[][]; .user.login == "github-actions[bot]" and .state == "APPROVED" and .commit_id == $head)' <<<"$reviews" >/dev/null; then
                 exit 0
               fi
-              gh api --method POST "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/reviews" \
-                -f event=APPROVE -f commit_id="$head" >/dev/null
+              if ! approval_response=$(gh api --method POST "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/reviews" \
+                -f event=APPROVE -f commit_id="$head"); then
+                # Keep only validation details, never raw bodies/headers/tokens.
+                if ! jq -ce 'select(type == "object") | {message, errors}' <<<"$approval_response" >&2 2>/dev/null; then
+                  printf 'GitHub approval failed without a JSON validation response.\n' >&2
+                fi
+                exit 1
+              fi
               exit 0
             fi
             [[ "$attempt" == 6 ]] || sleep 30
