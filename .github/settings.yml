@@ -154,3 +154,23 @@ settings:
     fork_pr_approval_policy: first_time_contributors
   security:
     private_vulnerability_reporting: true
+  # Retain the complete observed protections of these named Environments.
+  # Unlisted Environments remain unmanaged; pattern IDs are API-internal.
+  environments:
+    - name: copilot
+      wait_timer: 0
+      prevent_self_review: false
+      reviewers: []
+      can_admins_bypass: true
+      deployment_branch_policy: null
+    - name: github-pages
+      wait_timer: 0
+      prevent_self_review: false
+      reviewers: []
+      can_admins_bypass: true
+      deployment_branch_policy:
+        protected_branches: false
+        custom_branch_policies: true
+      deployment_branch_patterns:
+        - type: branch
+          name: main

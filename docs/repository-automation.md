@@ -8,12 +8,15 @@ review expectations, see [Contributing](contributing.md).
 ## Repository settings
 
 [.github/settings.yml](../.github/settings.yml) declares the supported
-repository fields, labels, branch and tag Rulesets, Actions policies, and
+repository fields, labels, branch and tag Rulesets, Environments, Actions policies, and
 private vulnerability reporting using
-[gh-settings](https://github.com/daiksud/gh-settings) v0.21.0.
+[gh-settings](https://github.com/daiksud/gh-settings) v0.23.0.
 
-The pinned gh-settings Action validates this manifest in the Linux commit checks
-for PR CI, main CI, and release builds. Validation is offline: it neither
+The [pinned validator](../.github/scripts/validate-settings.sh) downloads the
+published Linux CLI, checks its fixed SHA-256 and exact version, and validates
+this manifest in the Linux commit checks for PR CI, main CI, and release
+builds. Direct CLI selection avoids nested composite Action ref ambiguity.
+Validation is offline after installation: it neither
 detects remote drift nor applies GitHub settings. These workflows need no
 administrative credentials and do not mutate repository settings.
 
@@ -21,16 +24,16 @@ A maintainer reviews and applies settings locally with an appropriately
 authorized GitHub CLI identity:
 
 ```sh
-gh extension install daiksud/gh-settings --pin v0.21.0
-gh settings --version # must report gh-settings v0.21.0
+gh extension install daiksud/gh-settings --pin v0.23.0
+gh settings --version # must report gh-settings v0.23.0
 gh settings validate
 gh settings plan
 gh settings apply
 ```
 
-The release pin must match the commit and binary used by CI:
-[gh-settings v0.21.0](https://github.com/daiksud/gh-settings/releases/tag/v0.21.0)
-(source commit `eb8795dca8bb42376ab575f646ffa11bfe7775c8`).
+The release pin must match the source and binary used by CI:
+[gh-settings v0.23.0](https://github.com/daiksud/gh-settings/releases/tag/v0.23.0)
+(source commit `cbc112ae1330b4ad4debe013857bd67d2e1a1e1e`).
 Before using an administrative identity, verify the downloaded platform binary
 against that immutable release's `SHA256SUMS`; a version string alone does
 not authenticate the executable. If another version is already installed,
@@ -54,10 +57,19 @@ tag deletion and non-fast-forward changes.
 
 The legacy manifest also specified repository visibility, release
 immutability, vulnerability alerts, and automated security fixes.
-gh-settings v0.21.0 does not manage these controls. Their live settings
+gh-settings does not manage these controls. Their live settings
 are **not changed** by this declaration and must be maintained separately
 in GitHub. Inactive normal-merge commit-message defaults are also left
 unmanaged while normal merges remain disabled.
+
+Environments are selected by name, with all observed supported protections
+declared explicitly. `github-pages` permits only the `main` branch and retains
+administrator bypass; `copilot` has no branch/tag restriction and also retains
+administrator bypass. Neither declaration adds reviewers or a wait timer.
+Unlisted Environments are not deleted. The typed pattern list is authoritative
+only for the selected custom-policy Environment; API pattern IDs are not YAML
+identities. A matching complete declaration is a no-op, but verify a fresh plan
+before applying because the live settings can change after observation.
 
 Only squash merges are allowed. The squash commit uses the reviewed PR title
 and body. The Actions approval setting permits the
