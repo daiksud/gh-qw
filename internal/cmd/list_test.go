@@ -594,7 +594,7 @@ func TestNewListCommandUniqueWorktreeSuffixCollisions(t *testing.T) {
 			{
 				Slot:   "feature-x",
 				Branch: "feature/login",
-				Path:   listAbsolutePath(
+				Path: listAbsolutePath(
 					"worktrees",
 					repository.Host,
 					repository.Owner,
