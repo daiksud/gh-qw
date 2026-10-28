@@ -75,7 +75,7 @@ Only squash merges are allowed. The squash commit uses the reviewed PR title
 and body. The Actions approval setting permits the
 [Codex approval workflow](../.github/workflows/approve-codex-review.yml)
 to produce a valid GitHub Actions approving review when its current-HEAD
-checks pass. Copilot's reviews and Codex comments alone do not approve PRs.
+checks pass, whether the open PR is draft or ready. Copilot's reviews and Codex comments alone do not approve PRs.
 A successful validation job does not prove the manifest has been applied;
 verify the live Ruleset and settings separately before claiming enforcement.
 
