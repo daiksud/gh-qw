@@ -481,7 +481,7 @@ func TestNewListCommandDisambiguatesCollidingWorktreeLabels(t *testing.T) {
 			command := cmd.NewListCommand(cmd.ListDependencies{
 				Resolver: &listRootResolver{result: rootpkg.Result{
 					RepositoryRoots: []string{listAbsolutePath("roots")},
-					WorktreeRoot: listAbsolutePath("worktrees"),
+					WorktreeRoot:    listAbsolutePath("worktrees"),
 				}},
 				DiscoverRepositories: func(context.Context, []string) (local.DiscoveryResult, error) {
 					return local.DiscoveryResult{Repositories: []local.Repository{repository}}, nil
@@ -489,8 +489,8 @@ func TestNewListCommandDisambiguatesCollidingWorktreeLabels(t *testing.T) {
 				EnumerateWorktrees: (&listEnumerationRecorder{
 					byIdentity: map[string][]local.Worktree{repository.Identity: worktrees},
 				}).listEnumerate,
-				Stdout: &stdout,
-				Stderr: io.Discard,
+				Stdout:             &stdout,
+				Stderr:             io.Discard,
 			})
 			command.SetArgs(test.args)
 			if err := command.Execute(); err != nil {
