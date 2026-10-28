@@ -168,9 +168,22 @@ func TestCLIRepositoryAndWorktreeLifecycle(t *testing.T) {
 	result = fixture.runCLI(t, "list", "--worktree")
 	assertStatus(t, result, 0)
 	assertStdout(t, result,
-		testIdentity+"@github-com-acme-widget-feature-e2e\n"+
-			testIdentity+"@github-com-acme-widget-feature-e2e-1\n")
+		testIdentity+"@feature/e2e\n"+
+			testIdentity+"@feature-e2e\n")
 	assertStderr(t, result, "")
+
+	// The list follows Git's current branch, but cleanup keeps the stable slot.
+	fixture.runGit(t, featurePath, "switch", "-c", "switched/e2e")
+	result = fixture.runCLI(t, "list", "--worktree")
+	assertStatus(t, result, 0)
+	assertStdout(t, result, testIdentity+"@feature-e2e\n"+testIdentity+"@switched/e2e\n")
+
+	fixture.runGit(t, featurePath, "checkout", "--detach")
+	result = fixture.runCLI(t, "list", "--worktree")
+	assertStatus(t, result, 0)
+	assertStdout(t, result,
+		testIdentity+"@feature-e2e\n"+
+			testIdentity+"@github-com-acme-widget-feature-e2e\n")
 
 	result = fixture.runCLI(
 		t,
@@ -213,7 +226,7 @@ func TestCLIRepositoryAndWorktreeLifecycle(t *testing.T) {
 	fixture.runGit(t, mainPath, "update-ref", "-d", goneUpstream)
 	result = fixture.runCLI(t, "list", "--worktree", "--gone")
 	assertStatus(t, result, 0)
-	assertStdout(t, result, testIdentity+"@github-com-acme-widget-gone-e2e\n")
+	assertStdout(t, result, testIdentity+"@gone-e2e\n")
 	assertStderr(t, result, "")
 	result = fixture.runCLI(t, "list", "--worktree", "--gone", "--full-path")
 	assertStatus(t, result, 0)
