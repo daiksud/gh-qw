@@ -489,8 +489,8 @@ func TestNewListCommandDisambiguatesCollidingWorktreeLabels(t *testing.T) {
 				EnumerateWorktrees: (&listEnumerationRecorder{
 					byIdentity: map[string][]local.Worktree{repository.Identity: worktrees},
 				}).listEnumerate,
-				Stdout:             &stdout,
-				Stderr:             io.Discard,
+				Stdout: &stdout,
+				Stderr: io.Discard,
 			})
 			command.SetArgs(test.args)
 			if err := command.Execute(); err != nil {
