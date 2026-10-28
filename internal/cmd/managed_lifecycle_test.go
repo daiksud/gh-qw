@@ -90,12 +90,12 @@ func TestManagedRepositoryLifecycle(t *testing.T) {
 		strings.TrimSpace(output) != filepath.ToSlash(worktree) {
 		t.Fatalf("add linked worktree = %d, %q, %q", code, output, errText)
 	}
-	if code, output, errText := run("list", "--worktree"); code != 0 || strings.TrimSpace(output) != "github.com/acme/api@github-com-acme-api-review" {
+	if code, output, errText := run("list", "--worktree"); code != 0 || strings.TrimSpace(output) != "github.com/acme/api@review" {
 		t.Fatalf("linked list = %d, %q, %q", code, output, errText)
 	}
 	if code, output, errText := run("list", "--all"); code != 0 ||
 		!strings.Contains(output, "github.com/acme/api\n") ||
-		!strings.Contains(output, "github.com/acme/api@github-com-acme-api-review\n") {
+		!strings.Contains(output, "github.com/acme/api@review\n") {
 		t.Fatalf("combined list = %d, %q, %q", code, output, errText)
 	}
 	movedRepo := filepath.Join(root, "github.com", "acme", "api")

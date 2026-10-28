@@ -327,9 +327,9 @@ func TestNewListCommandWorktreesAndWorktreeQueries(t *testing.T) {
 	reviewPath := listAbsolutePath("worktrees", "github.com", "acme", "widget", "review")
 	worktrees := []local.Worktree{
 		{Identity: "not-canonical", Main: true, Path: mainPath},
-		{Identity: "ignored", Slot: "review", Path: reviewPath},
-		{Identity: "ignored", Slot: "feature-x", Path: featurePath},
-		{Identity: "ignored", Slot: "feature-x", Path: listAbsolutePath("duplicate")},
+		{Identity: "ignored", Slot: "review", Branch: "topic/review", Path: reviewPath},
+		{Identity: "ignored", Slot: "feature-x", Branch: "feature/login", Path: featurePath},
+		{Identity: "ignored", Slot: "feature-x", Branch: "feature/login", Path: listAbsolutePath("duplicate")},
 	}
 
 	tests := []struct {
@@ -341,8 +341,8 @@ func TestNewListCommandWorktreesAndWorktreeQueries(t *testing.T) {
 			name: "linked worktrees only",
 			args: []string{"--worktree"},
 			want: []string{
-				"github.com/acme/widget@feature-x",
-				"github.com/acme/widget@review",
+				"github.com/acme/widget@feature/login",
+				"github.com/acme/widget@topic/review",
 			},
 		},
 		{
@@ -350,33 +350,38 @@ func TestNewListCommandWorktreesAndWorktreeQueries(t *testing.T) {
 			args: []string{"--all"},
 			want: []string{
 				"github.com/acme/widget",
-				"github.com/acme/widget@feature-x",
-				"github.com/acme/widget@review",
+				"github.com/acme/widget@feature/login",
+				"github.com/acme/widget@topic/review",
 			},
 		},
 		{
-			name: "slot substring",
+			name: "branch substring",
 			args: []string{"--worktree", "feature"},
-			want: []string{"github.com/acme/widget@feature-x"},
+			want: []string{"github.com/acme/widget@feature/login"},
+		},
+		{
+			name: "exact branch narrows",
+			args: []string{"--worktree", "--exact", "acme/widget@feature/login"},
+			want: []string{"github.com/acme/widget@feature/login"},
 		},
 		{
 			name: "exact repository includes main and linked",
 			args: []string{"--all", "-e", "widget"},
 			want: []string{
 				"github.com/acme/widget",
-				"github.com/acme/widget@feature-x",
-				"github.com/acme/widget@review",
+				"github.com/acme/widget@feature/login",
+				"github.com/acme/widget@topic/review",
 			},
 		},
 		{
-			name: "exact slot narrows",
+			name: "exact slot still narrows",
 			args: []string{"--worktree", "--exact", "acme/widget@feature-x"},
-			want: []string{"github.com/acme/widget@feature-x"},
+			want: []string{"github.com/acme/widget@feature/login"},
 		},
 		{
 			name: "exact URL slot canonicalizes",
 			args: []string{"--worktree", "-e", "https://github.com/acme/widget.git@feature-x"},
-			want: []string{"github.com/acme/widget@feature-x"},
+			want: []string{"github.com/acme/widget@feature/login"},
 		},
 		{
 			name: "exact slot is case sensitive",
@@ -433,6 +438,71 @@ func TestNewListCommandWorktreesAndWorktreeQueries(t *testing.T) {
 	}
 }
 
+func TestNewListCommandDisambiguatesCollidingWorktreeLabels(t *testing.T) {
+	t.Parallel()
+
+	repository := listRepository(
+		"github.com/acme/widget",
+		listAbsolutePath("roots", "github.com", "acme", "widget"),
+		0,
+	)
+	worktrees := []local.Worktree{
+		{Main: true, Path: repository.Path, Branch: "main"},
+		{Slot: "managed-review", Branch: "review", Path: listAbsolutePath("worktrees", "managed-review", "widget")},
+		{Slot: "review", Detached: true, Path: listAbsolutePath("external", "review")},
+	}
+
+	for _, test := range []struct {
+		name string
+		args []string
+		want []string
+	}{
+		{
+			name: "full output",
+			args: []string{"--worktree"},
+			want: []string{"github.com/acme/widget@managed-review", "github.com/acme/widget@review"},
+		},
+		{
+			name: "shortest unique suffixes",
+			args: []string{"--worktree", "--unique"},
+			want: []string{"widget@managed-review", "widget@review"},
+		},
+		{
+			name: "filter still matches the checked-out branch",
+			args: []string{"--worktree", "--exact", "widget@review"},
+			want: []string{"github.com/acme/widget@managed-review", "github.com/acme/widget@review"},
+		},
+	} {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			var stdout bytes.Buffer
+			command := cmd.NewListCommand(cmd.ListDependencies{
+				Resolver: &listRootResolver{result: rootpkg.Result{
+					RepositoryRoots: []string{listAbsolutePath("roots")},
+					WorktreeRoot:    listAbsolutePath("worktrees"),
+				}},
+				DiscoverRepositories: func(context.Context, []string) (local.DiscoveryResult, error) {
+					return local.DiscoveryResult{Repositories: []local.Repository{repository}}, nil
+				},
+				EnumerateWorktrees: (&listEnumerationRecorder{
+					byIdentity: map[string][]local.Worktree{repository.Identity: worktrees},
+				}).listEnumerate,
+				Stdout: &stdout,
+				Stderr: io.Discard,
+			})
+			command.SetArgs(test.args)
+			if err := command.Execute(); err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			}
+			if got, want := stdout.String(), listSortedLines(test.want...); got != want {
+				t.Fatalf("stdout = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
 func TestNewListCommandGoneWorktrees(t *testing.T) {
 	t.Parallel()
 
@@ -469,7 +539,7 @@ func TestNewListCommandGoneWorktrees(t *testing.T) {
 		{
 			name: "identity",
 			args: []string{"--worktree", "--gone"},
-			want: "github.com/acme/widget@gone\n",
+			want: "github.com/acme/widget@topic/gone\n",
 		},
 		{
 			name: "path",
@@ -522,7 +592,8 @@ func TestNewListCommandUniqueWorktreeSuffixCollisions(t *testing.T) {
 		enumeration.byIdentity[repository.Identity] = []local.Worktree{
 			{Main: true, Path: repository.Path},
 			{
-				Slot: "feature-x",
+				Slot:   "feature-x",
+				Branch: "feature/login",
 				Path: listAbsolutePath(
 					"worktrees",
 					repository.Host,
@@ -554,9 +625,9 @@ func TestNewListCommandUniqueWorktreeSuffixCollisions(t *testing.T) {
 		t.Fatalf("Execute() error = %v", err)
 	}
 	if got, want := stdout.String(), listSortedLines(
-		"github.com/acme/widget@feature-x",
-		"gitlab.com/acme/widget@feature-x",
-		"other/widget@feature-x",
+		"github.com/acme/widget@feature/login",
+		"gitlab.com/acme/widget@feature/login",
+		"other/widget@feature/login",
 	); got != want {
 		t.Fatalf("stdout = %q, want %q", got, want)
 	}

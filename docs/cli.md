@@ -32,8 +32,10 @@ ordinary progress, not errors or result paths.
 
 ## Repository input
 
-A canonical identity is `<host>/<owner>/<repo>`. A linked worktree adds `@<slot>`.
-Transport details are separate from identity.
+A canonical repository identity is `<host>/<owner>/<repo>`. Managed linked
+worktrees have stable `@<slot>` selectors for directory operations, while
+`list` displays the currently checked-out branch when attached. Transport
+details are separate from identity.
 
 | Input to `clone` | Interpretation |
 | --- | --- |
@@ -184,12 +186,17 @@ first component followed by `/` restricts the host (`github.com/`, not bare
 `github.com`). URL queries are canonicalized first.
 
 `--exact` matches a case-sensitive identity suffix. With `--worktree` or
-`--all`, `@slot` narrows the match; otherwise entries of the selected types
-can match.
+`--all`, either `@branch` or `@slot` narrows the match; otherwise entries of the
+selected types can match. Substring queries also match the current branch or
+slot.
 
-Default output is canonical identities. `--full-path` prints physical paths;
-`--unique` prints the shortest unambiguous identity suffix among selected
-entries, retaining linked slots. Those two flags are mutually exclusive.
+Default output prints canonical repository identities and labels attached linked
+worktrees with `@<current-branch>` as reported by Git. Detached linked worktrees
+have no branch, so they display `@<slot>` instead. If labels would collide,
+the affected linked worktrees display their distinct slots. Branch labels follow
+checkouts and can change without renaming directories. `--full-path` prints
+physical paths; `--unique` prints the shortest unambiguous displayed suffix
+among selected entries. Those two flags are mutually exclusive.
 The XDG registry is the sole source of managed-repository membership.
 Missing registrations are never imported from configured roots. Sort emitted
 strings bytewise. No matches succeeds with empty stdout.
@@ -282,8 +289,10 @@ separators with hyphens. If the directory is occupied, append the smallest
 available numeric suffix (`-1`, `-2`, ...). Reserve directories atomically,
 never reuse an existing path, and never change the actual Git branch name.
 The resulting path and canonical slot name are stable after branch changes.
-`list --worktree` reports the full chosen slot; `remove --worktree`
-selects it exactly. `-f` never bypasses location safety.
+`list --worktree` displays the current branch when attached, not the directory
+slot. `remove --worktree` selects the slot exactly; for managed worktrees, this
+is the parent directory name of the checkout. `-f` never bypasses location
+safety.
 
 Automatic mode delegates the literal branch to `git worktree add`: Git selects
 existing local/remote candidates, honors `checkout.defaultRemote`, and rejects
