@@ -32,10 +32,10 @@ ordinary progress, not errors or result paths.
 
 ## Repository input
 
-A canonical repository identity is `<host>/<owner>/<repo>`. Linked worktrees
-have stable `@<slot>` selectors for directory operations, while `list` displays
-the currently checked-out branch when attached. Transport details are separate
-from identity.
+A canonical repository identity is `<host>/<owner>/<repo>`. Managed linked
+worktrees have stable `@<slot>` selectors for directory operations, while
+`list` displays the currently checked-out branch when attached. Transport
+details are separate from identity.
 
 | Input to `clone` | Interpretation |
 | --- | --- |
