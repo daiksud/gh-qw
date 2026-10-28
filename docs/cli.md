@@ -192,10 +192,11 @@ slot.
 
 Default output prints canonical repository identities and labels attached linked
 worktrees with `@<current-branch>` as reported by Git. Detached linked worktrees
-have no branch, so they display `@<slot>` instead. Branch labels follow checkouts
-and can change without renaming any directory. `--full-path` prints physical
-paths; `--unique` prints the shortest unambiguous displayed suffix among
-selected entries. Those two flags are mutually exclusive.
+have no branch, so they display `@<slot>` instead. If labels would collide,
+the affected linked worktrees display their distinct slots. Branch labels follow
+checkouts and can change without renaming directories. `--full-path` prints
+physical paths; `--unique` prints the shortest unambiguous displayed suffix
+among selected entries. Those two flags are mutually exclusive.
 The XDG registry is the sole source of managed-repository membership.
 Missing registrations are never imported from configured roots. Sort emitted
 strings bytewise. No matches succeeds with empty stdout.
