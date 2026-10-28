@@ -49,6 +49,7 @@ type listEntry struct {
 	identity string
 	slot     string
 	branch   string
+	label    string
 	path     string
 }
 
@@ -121,6 +122,7 @@ func NewListCommand(deps ListDependencies) *cobra.Command {
 			if err != nil {
 				return err
 			}
+			listDisambiguateLabels(entries)
 			if worktreesOnly {
 				linked := make([]listEntry, 0, len(entries))
 				for _, entry := range entries {
@@ -305,11 +307,11 @@ func listRepositoryEntry(repository local.Repository, path string) listEntry {
 	}
 }
 
-// displaySuffix shows the checked-out branch without changing the stable slot
-// used to identify and remove the worktree.
+// displaySuffix prefers Git's checked-out branch, falling back to the stable
+// directory slot for detached worktrees or ambiguous branch labels.
 func (entry listEntry) displaySuffix() string {
-	if entry.branch != "" {
-		return entry.branch
+	if entry.label != "" {
+		return entry.label
 	}
 	return entry.slot
 }
@@ -319,6 +321,31 @@ func (entry listEntry) displayIdentity() string {
 		return entry.identity
 	}
 	return entry.host + "/" + entry.owner + "/" + entry.repo + "@" + entry.displaySuffix()
+}
+
+// listDisambiguateLabels keeps all displayed identities distinct even when
+// Git reports the same branch for multiple worktrees or a branch equals a
+// detached worktree's slot. Only the label changes; branch and slot do not.
+func listDisambiguateLabels(entries []listEntry) {
+	for {
+		counts := make(map[string]int, len(entries))
+		for _, entry := range entries {
+			if entry.slot != "" {
+				counts[entry.displayIdentity()]++
+			}
+		}
+		changed := false
+		for index := range entries {
+			entry := &entries[index]
+			if entry.slot != "" && entry.label != "" && counts[entry.displayIdentity()] > 1 {
+				entry.label = ""
+				changed = true
+			}
+		}
+		if !changed {
+			return
+		}
+	}
 }
 
 func listWorktreeEntry(
@@ -365,6 +392,7 @@ func listWorktreeEntry(
 	entry := listRepositoryEntry(repository, worktree.Path)
 	entry.slot = slot
 	entry.branch = worktree.Branch
+	entry.label = worktree.Branch
 	entry.identity += "@" + slot
 	return entry, false, nil
 }
@@ -471,7 +499,9 @@ func listMatchesSubstring(entry listEntry, query string) bool {
 		return true
 	}
 	// Keep directory-slot queries useful even when the displayed branch differs.
-	return entry.branch != "" && listSmartCaseContains(entry.owner+"/"+entry.repo+"@"+entry.slot, needle)
+	return entry.branch != "" && (
+		listSmartCaseContains(entry.owner+"/"+entry.repo+"@"+entry.slot, needle) ||
+		listSmartCaseContains(entry.owner+"/"+entry.repo+"@"+entry.branch, needle))
 }
 
 func listSmartCaseContains(haystack, needle string) bool {
