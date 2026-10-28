@@ -438,6 +438,71 @@ func TestNewListCommandWorktreesAndWorktreeQueries(t *testing.T) {
 	}
 }
 
+func TestNewListCommandDisambiguatesCollidingWorktreeLabels(t *testing.T) {
+	t.Parallel()
+
+	repository := listRepository(
+		"github.com/acme/widget",
+		listAbsolutePath("roots", "github.com", "acme", "widget"),
+		0,
+	)
+	worktrees := []local.Worktree{
+		{Main: true, Path: repository.Path, Branch: "main"},
+		{Slot: "managed-review", Branch: "review", Path: listAbsolutePath("worktrees", "managed-review", "widget")},
+		{Slot: "review", Detached: true, Path: listAbsolutePath("external", "review")},
+	}
+
+	for _, test := range []struct {
+		name string
+		args []string
+		want []string
+	}{
+		{
+			name: "full output",
+			args: []string{"--worktree"},
+			want: []string{"github.com/acme/widget@managed-review", "github.com/acme/widget@review"},
+		},
+		{
+			name: "shortest unique suffixes",
+			args: []string{"--worktree", "--unique"},
+			want: []string{"widget@managed-review", "widget@review"},
+		},
+		{
+			name: "filter still matches the checked-out branch",
+			args: []string{"--worktree", "--exact", "widget@review"},
+			want: []string{"github.com/acme/widget@managed-review", "github.com/acme/widget@review"},
+		},
+	} {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			var stdout bytes.Buffer
+			command := cmd.NewListCommand(cmd.ListDependencies{
+				Resolver: &listRootResolver{result: rootpkg.Result{
+					RepositoryRoots: []string{listAbsolutePath("roots")},
+					WorktreeRoot: listAbsolutePath("worktrees"),
+				}},
+				DiscoverRepositories: func(context.Context, []string) (local.DiscoveryResult, error) {
+					return local.DiscoveryResult{Repositories: []local.Repository{repository}}, nil
+				},
+				EnumerateWorktrees: (&listEnumerationRecorder{
+					byIdentity: map[string][]local.Worktree{repository.Identity: worktrees},
+				}).listEnumerate,
+				Stdout: &stdout,
+				Stderr: io.Discard,
+			})
+			command.SetArgs(test.args)
+			if err := command.Execute(); err != nil {
+				t.Fatalf("Execute() error = %v", err)
+			}
+			if got, want := stdout.String(), listSortedLines(test.want...); got != want {
+				t.Fatalf("stdout = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
 func TestNewListCommandGoneWorktrees(t *testing.T) {
 	t.Parallel()
 
