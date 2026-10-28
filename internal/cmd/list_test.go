@@ -527,9 +527,9 @@ func TestNewListCommandUniqueWorktreeSuffixCollisions(t *testing.T) {
 		enumeration.byIdentity[repository.Identity] = []local.Worktree{
 			{Main: true, Path: repository.Path},
 			{
-				Slot: "feature-x",
+				Slot:   "feature-x",
 				Branch: "feature/login",
-				Path: listAbsolutePath(
+				Path:   listAbsolutePath(
 					"worktrees",
 					repository.Host,
 					repository.Owner,
