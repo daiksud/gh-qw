@@ -168,8 +168,8 @@ func TestCLIRepositoryAndWorktreeLifecycle(t *testing.T) {
 	result = fixture.runCLI(t, "list", "--worktree")
 	assertStatus(t, result, 0)
 	assertStdout(t, result,
-		testIdentity+"@feature/e2e\n"+
-			testIdentity+"@feature-e2e\n")
+		testIdentity+"@feature-e2e\n"+
+			testIdentity+"@feature/e2e\n")
 	assertStderr(t, result, "")
 
 	// The list follows Git's current branch, but cleanup keeps the stable slot.
