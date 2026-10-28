@@ -499,9 +499,13 @@ func listMatchesSubstring(entry listEntry, query string) bool {
 		return true
 	}
 	// Keep directory-slot queries useful even when the displayed branch differs.
-	return entry.branch != "" && (
-		listSmartCaseContains(entry.owner+"/"+entry.repo+"@"+entry.slot, needle) ||
-		listSmartCaseContains(entry.owner+"/"+entry.repo+"@"+entry.branch, needle))
+	if entry.branch == "" {
+		return false
+	}
+	if listSmartCaseContains(entry.owner+"/"+entry.repo+"@"+entry.slot, needle) {
+		return true
+	}
+	return listSmartCaseContains(entry.owner+"/"+entry.repo+"@"+entry.branch, needle)
 }
 
 func listSmartCaseContains(haystack, needle string) bool {
