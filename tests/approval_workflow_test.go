@@ -43,45 +43,57 @@ func TestCodexApprovalPagination(t *testing.T) {
 		script.WriteString(strings.TrimPrefix(line, "          ") + "\n")
 	}
 	const head = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-	summary := func(sha string, unresolved bool) string {
+	summary := func(scenario string) string {
 		state := map[string]any{}
 		for _, kind := range []string{"code_review", "security_review"} {
-			state[kind] = map[string]any{"commit_sha": sha, "status": "completed", "has_unresolved_findings": unresolved}
+			sha, status, unresolved := head, "completed", scenario == "unresolved"
+			if scenario == "stale" {
+				sha = strings.Repeat("b", 40)
+			}
+			switch scenario {
+			case strings.TrimSuffix(kind, "_review") + " incomplete":
+				status = "in_progress"
+			case strings.TrimSuffix(kind, "_review") + " stale":
+				sha = strings.Repeat("b", 40)
+			case strings.TrimSuffix(kind, "_review") + " findings":
+				unresolved = true
+			}
+			state[kind] = map[string]any{"commit_sha": sha, "status": status, "has_unresolved_findings": unresolved}
 		}
 		encoded, _ := json.Marshal(state)
 		return "<!-- codex-pull-request-review-summary -->\n<!-- codex-review-state:v1 " + string(encoded) + " -->"
 	}
-	for _, scenario := range []string{"approve", "comment event", "stale", "unresolved", "already approved", "head changed", "pagination failed", "no bot summary", "post rejected", "post non-json"} {
-		t.Run(scenario, func(t *testing.T) {
-			root := t.TempDir()
-			write := func(name, value string, mode os.FileMode) {
-				t.Helper()
-				if err := os.WriteFile(filepath.Join(root, name), []byte(value), mode); err != nil {
-					t.Fatal(err)
+	for _, draft := range []string{"false", "true"} {
+		for _, scenario := range []string{"approve", "comment event", "stale", "unresolved", "code incomplete", "security incomplete", "code stale", "security stale", "code findings", "security findings", "closed", "closed during check", "already approved", "head changed", "pagination failed", "no bot summary", "post rejected", "post non-json"} {
+			t.Run(scenario+"/draft="+draft, func(t *testing.T) {
+				root := t.TempDir()
+				write := func(name, value string, mode os.FileMode) {
+					t.Helper()
+					if err := os.WriteFile(filepath.Join(root, name), []byte(value), mode); err != nil {
+						t.Fatal(err)
+					}
 				}
-			}
-			body := summary(head, scenario == "unresolved")
-			if scenario == "stale" {
-				body = summary(strings.Repeat("b", 40), false)
-			}
-			pages := [][]map[string]any{{{"user": map[string]string{"login": "someone"}, "body": body}}, {{"user": map[string]string{"login": "chatgpt-codex-connector[bot]"}, "body": body}}}
-			if scenario == "no bot summary" {
-				pages = pages[:1]
-			}
-			encoded, _ := json.Marshal(pages)
-			write("comments.json", string(encoded), 0600)
-			encoded, _ = json.Marshal(map[string]string{"body": body})
-			write("summary.json", string(encoded), 0600)
-			write("workflow.sh", script.String(), 0600)
-			write("gh", `#!/bin/sh
+				body := summary(scenario)
+				pages := [][]map[string]any{{{"user": map[string]string{"login": "someone"}, "body": body}}, {{"user": map[string]string{"login": "chatgpt-codex-connector[bot]"}, "body": body}}}
+				if scenario == "no bot summary" {
+					pages = pages[:1]
+				}
+				encoded, _ := json.Marshal(pages)
+				write("comments.json", string(encoded), 0600)
+				encoded, _ = json.Marshal(map[string]string{"body": body})
+				write("summary.json", string(encoded), 0600)
+				write("workflow.sh", script.String(), 0600)
+				write("gh", `#!/bin/sh
 set -eu
 case " $* " in *" --slurp "*) case " $* " in *" --jq "*) echo incompatible-gh-flags >&2; exit 64;; esac;; esac
 endpoint=$2
 case "$endpoint" in
   repos/owner/repo/pulls/7)
     if test -f "$FIXTURE_ROOT/pr-read" && test "$SCENARIO" = 'head changed'; then sha=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb; else sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa; fi
+    state=open
+    if test "$SCENARIO" = closed || { test "$SCENARIO" = 'closed during check' && test -f "$FIXTURE_ROOT/pr-read"; }; then state=closed; fi
     touch "$FIXTURE_ROOT/pr-read"
-    printf '{"state":"open","draft":false,"head":{"sha":"%s"}}\n' "$sha";;
+    printf '{"state":"%s","draft":%s,"head":{"sha":"%s"}}\n' "$state" "$DRAFT" "$sha";;
   'repos/owner/repo/issues/7/comments?per_page=100')
     test "$SCENARIO" != 'pagination failed' || exit 55
     test "$#" = 4 && test "$3" = --paginate && test "$4" = --slurp
@@ -111,33 +123,34 @@ case "$endpoint" in
   *) echo unexpected-api-call >&2; exit 70;;
 esac
 `, 0700)
-			comment := ""
-			if scenario == "comment event" {
-				comment = "123"
-			}
-			cmd := exec.Command(bash, filepath.Join(root, "workflow.sh"))
-			cmd.Env = []string{"PATH=" + root + string(os.PathListSeparator) + os.Getenv("PATH"), "HOME=" + root, "XDG_CONFIG_HOME=" + root, "GH_CONFIG_DIR=" + root, "GH_TOKEN=dummy-not-a-token", "GITHUB_REPOSITORY=owner/repo", "PR_NUMBER=7", "COMMENT_ID=" + comment, "FIXTURE_ROOT=" + root, "SCENARIO=" + scenario}
-			output, err := cmd.CombinedOutput()
-			if (err != nil) != (scenario == "pagination failed" || scenario == "post rejected" || scenario == "post non-json") {
-				t.Fatalf("unexpected workflow status: %v %s", err, output)
-			}
-			if scenario == "post rejected" && (!strings.Contains(string(output), "fixture rejected review") || !strings.Contains(string(output), "commit_id")) {
-				t.Fatal("GitHub validation error details were discarded", string(output))
-			}
-			if scenario == "post non-json" && !strings.Contains(string(output), "without a JSON validation response") {
-				t.Fatal("missing safe fallback diagnostic", string(output))
-			}
-			if strings.Contains(string(output), "dummy-not-a-token") {
-				t.Fatal("credential leaked")
-			}
-			approvals, _ := os.ReadFile(filepath.Join(root, "approvals"))
-			want := ""
-			if scenario == "approve" || scenario == "comment event" {
-				want = "commit_id=" + head + "\n"
-			}
-			if string(approvals) != want {
-				t.Fatalf("wrong approval side effect: %q, want %q", approvals, want)
-			}
-		})
+				comment := ""
+				if scenario == "comment event" {
+					comment = "123"
+				}
+				cmd := exec.Command(bash, filepath.Join(root, "workflow.sh"))
+				cmd.Env = []string{"PATH=" + root + string(os.PathListSeparator) + os.Getenv("PATH"), "HOME=" + root, "XDG_CONFIG_HOME=" + root, "GH_CONFIG_DIR=" + root, "GH_TOKEN=dummy-not-a-token", "GITHUB_REPOSITORY=owner/repo", "PR_NUMBER=7", "COMMENT_ID=" + comment, "FIXTURE_ROOT=" + root, "SCENARIO=" + scenario, "DRAFT=" + draft}
+				output, err := cmd.CombinedOutput()
+				if (err != nil) != (scenario == "pagination failed" || scenario == "post rejected" || scenario == "post non-json") {
+					t.Fatalf("unexpected workflow status: %v %s", err, output)
+				}
+				if scenario == "post rejected" && (!strings.Contains(string(output), "fixture rejected review") || !strings.Contains(string(output), "commit_id")) {
+					t.Fatal("GitHub validation error details were discarded", string(output))
+				}
+				if scenario == "post non-json" && !strings.Contains(string(output), "without a JSON validation response") {
+					t.Fatal("missing safe fallback diagnostic", string(output))
+				}
+				if strings.Contains(string(output), "dummy-not-a-token") {
+					t.Fatal("credential leaked")
+				}
+				approvals, _ := os.ReadFile(filepath.Join(root, "approvals"))
+				want := ""
+				if scenario == "approve" || scenario == "comment event" {
+					want = "commit_id=" + head + "\n"
+				}
+				if string(approvals) != want {
+					t.Fatalf("wrong approval side effect: %q, want %q", approvals, want)
+				}
+			})
+		}
 	}
 }

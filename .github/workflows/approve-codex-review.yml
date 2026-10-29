@@ -40,7 +40,7 @@ jobs:
 
           for attempt in {0..6}; do
             pr=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER")
-            jq -e '.state == "open" and .draft == false' <<<"$pr" >/dev/null || exit 0
+            jq -e '.state == "open"' <<<"$pr" >/dev/null || exit 0
             head=$(jq -r '.head.sha' <<<"$pr")
 
             if [[ -n "${COMMENT_ID:-}" ]]; then
@@ -63,7 +63,7 @@ jobs:
             if jq -e 'any(.[][]; .user.login == "chatgpt-codex-connector[bot]" and .content == "+1")' <<<"$reactions" >/dev/null; then
               # Pin the review to the verified commit; never approve a newer push.
               current=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER")
-              jq -e --arg head "$head" '.state == "open" and .draft == false and .head.sha == $head' <<<"$current" >/dev/null || exit 0
+              jq -e --arg head "$head" '.state == "open" and .head.sha == $head' <<<"$current" >/dev/null || exit 0
 
               # A replayed summary edit must not produce a second approval.
               reviews=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/reviews?per_page=100" --paginate --slurp)
