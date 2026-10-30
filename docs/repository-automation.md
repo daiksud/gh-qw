@@ -83,8 +83,10 @@ Required PR checks are `ci-pr` and `prlint`, provided by GitHub Actions.
 The `ci-pr` commit stage builds one candidate on each native platform; its
 acceptance stage verifies and tests those exact transferred bytes without
 rebuilding the product. PR code and base changes move through Draft, Commit
-stage, Ready, and Acceptance stage in one run. Title/body edits rerun both
-PRLint and staged code validation, avoiding skipped-success required checks.
+stage, Ready, and Acceptance stage in one run. For non-Dependabot pull requests, title/body edits rerun both PRLint
+and staged code validation. Dependabot-authored pull requests skip the PRLint
+job; GitHub treats the skipped check as successful for branch protection.
+Other required checks and review protections remain unchanged.
 The native `ci-pr` aggregate uses `always()` and requires every prerequisite
 to succeed, including after cancellation; it has no write token. The
 `ci-push` workflow runs the same Commit and Acceptance stages for `main`
