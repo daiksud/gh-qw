@@ -162,6 +162,12 @@ jobs:
               # that might name another commit. GitHub rejects ambiguous abbreviations.
               require(api(f"{ROOT}/commits/{head[:10]}").get("sha") == head, "receipt commit does not resolve to the current HEAD")
 
+          def base_identity(pr):
+              base = pr.get("base") or {}
+              ref, sha = base.get("ref"), base.get("sha")
+              require(isinstance(ref, str) and bool(ref) and isinstance(sha, str) and re.fullmatch(r"[0-9a-f]{40}", sha), "missing or invalid PR base identity")
+              return ref, sha
+
           def snapshot(head):
               comments = pages(f"{ROOT}/issues/{NUMBER}/comments")
               summaries = [c for c in comments if bot(c, comment=True) and c.get("body", "").startswith(PREFIX)]
@@ -175,7 +181,18 @@ jobs:
               require(state["code_review"].get("has_unresolved_findings") is False, "code findings are unresolved or unknown")
               requests = sorted([c for c in comments if review_request(c)], key=lambda c: c["id"])
               updated = timestamp(summary.get("updated_at"))
-              require(not requests or timestamp(requests[-1].get("updated_at")) < updated, "a newer review request has no completed result")
+              require(all(timestamp(request.get("updated_at")) < updated for request in requests), "a newer review request has no completed result")
+              # A HEAD-only summary cannot prove which target branch was reviewed.
+              # After any retarget, require a new unedited manual review boundary.
+              base_changes = [{key: event.get(key) for key in ("id", "event", "created_at")}
+                              for event in pages(f"{ROOT}/issues/{NUMBER}/timeline")
+                              if event.get("event") in ("base_ref_changed", "automatic_base_change_succeeded")]
+              if base_changes:
+                  require(bool(requests), "a base retarget requires a new manual review request")
+                  request = requests[-1]
+                  require(request.get("created_at") == request.get("updated_at") and request.get("body", "").strip().lower() == "@codex review", "a base retarget has no unambiguous manual review boundary")
+                  start = timestamp(request.get("created_at"))
+                  require(all(timestamp(event.get("created_at")) < start for event in base_changes), "PR base changed since the review request")
               if state["security_review"].get("has_unresolved_findings") is not False:
                   nullable_evidence(comments, summary, requests, head, state)
               # Include bodies and provenance, not just timestamps: an edit or new request
@@ -183,7 +200,7 @@ jobs:
               evidence = [c for c in comments if bot(c, comment=True) or review_request(c)]
               fields = ("id", "body", "created_at", "updated_at", "user", "performed_via_github_app")
               fingerprint = [{k: c.get(k) for k in fields} for c in sorted(evidence, key=lambda c: c["id"])]
-              return fingerprint, updated
+              return {"comments": fingerprint, "base_changes": base_changes}, updated
 
           def fresh_reaction(after):
               reactions = pages(f"{ROOT}/issues/{NUMBER}/reactions")
@@ -197,6 +214,7 @@ jobs:
               require(pr.get("state") == "open", "PR is closed")
               head = pr.get("head", {}).get("sha", "")
               require(re.fullmatch(r"[0-9a-f]{40}", head), "invalid PR HEAD")
+              base = base_identity(pr)
               evidence, completed = snapshot(head)
               for attempt in range(7):
                   reaction = fresh_reaction(completed)
@@ -218,7 +236,7 @@ jobs:
               require(snapshot(head) == (evidence, completed), "review evidence changed before approval")
               require(fresh_reaction(completed) == reaction, "Codex thumbs-up changed before approval")
               current = api(f"{ROOT}/pulls/{NUMBER}")
-              require(current.get("state") == "open" and current.get("head", {}).get("sha") == head, "PR closed or HEAD changed before approval")
+              require(current.get("state") == "open" and current.get("head", {}).get("sha") == head and base_identity(current) == base, "PR closed, HEAD changed or base changed before approval")
               response = api("--method", "POST", f"{ROOT}/pulls/{NUMBER}/reviews", "-f", "event=APPROVE", "-f", f"commit_id={head}")
               if response.get("state") != "APPROVED" or response.get("commit_id") != head:
                   raise RuntimeError("GitHub did not confirm approval of the verified HEAD")

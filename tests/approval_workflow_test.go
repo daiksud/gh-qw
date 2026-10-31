@@ -49,7 +49,7 @@ func approvalFixture() approvalObject {
 	return approvalObject{
 		"state": state, "request": request, "summary": summary, "code": code, "security": security,
 		"reaction": approvalObject{"id": 200, "user": reactionUser, "content": "+1", "created_at": "2026-10-31T02:13:15Z"},
-		"pr":       approvalObject{"state": "open", "draft": false, "head": approvalObject{"sha": approvalHead}},
+		"pr":       approvalObject{"state": "open", "draft": false, "head": approvalObject{"sha": approvalHead}, "base": approvalObject{"ref": "main", "sha": strings.Repeat("b", 40)}},
 	}
 }
 
@@ -117,6 +117,21 @@ func TestCodexApprovalEvidence(t *testing.T) {
 		{"wrong security metadata", false, false}, {"completion before receipt", false, false},
 		{"wrong resolved sha", false, false}, {"unconfirmed approval", true, true}, {"malformed pagination", false, true},
 		{"wrong reaction account", false, false},
+		{"edited older structured request", false, false}, {"same-second older structured request", false, false},
+		{"prior retarget", true, false},
+		{"retarget after review", false, false},
+		{"retarget during review", false, false},
+		{"same-second retarget", false, false},
+		{"automatic retarget", false, false},
+		{"retarget without request", false, false},
+		{"structured retarget", false, false},
+		{"retarget during check", false, false},
+		{"base ref changed", false, false},
+		{"base sha changed", false, false},
+		{"missing base", false, false},
+		{"timeline failed", false, true},
+		{"malformed timeline", false, true},
+		{"retarget missing timestamp", false, false},
 		{"same-second requests", false, false}, {"same-second summary start", false, false}, {"wrong row head", false, false},
 	}
 	for _, tc := range cases {
@@ -128,7 +143,7 @@ func TestCodexApprovalEvidence(t *testing.T) {
 			code, security := f["code"].(approvalObject), f["security"].(approvalObject)
 			pr, reaction := f["pr"].(approvalObject), f["reaction"].(approvalObject)
 			switch tc.name {
-			case "structured clean":
+			case "structured clean", "edited older structured request", "same-second older structured request", "structured retarget", "retarget without request":
 				securityState["has_any_findings"], securityState["has_unresolved_findings"] = false, false
 			case "draft":
 				pr["draft"] = true
@@ -186,6 +201,8 @@ func TestCodexApprovalEvidence(t *testing.T) {
 				reaction["user"].(approvalObject)["id"] = 1
 			case "closed":
 				pr["state"] = "closed"
+			case "missing base":
+				delete(pr, "base")
 			}
 			summary["body"] = approvalSummary(f)
 			if tc.name == "malformed summary" {
@@ -208,7 +225,7 @@ func TestCodexApprovalEvidence(t *testing.T) {
 			}
 			comments := []any{request, summary, code, security}
 			switch tc.name {
-			case "no request":
+			case "no request", "retarget without request":
 				comments = comments[1:]
 			case "no security receipt":
 				comments = comments[:3]
@@ -216,13 +233,20 @@ func TestCodexApprovalEvidence(t *testing.T) {
 				comments = append(comments, approvalComment(104, security["body"].(string), "2026-10-31T02:13:11Z"))
 			case "unknown bot comment":
 				comments = append(comments, approvalComment(104, "A security finding needs attention", "2026-10-31T02:13:12Z"))
-			case "overlapping requests", "prior completed cycle", "edited older request":
+			case "overlapping requests", "prior completed cycle", "edited older request", "edited older structured request", "same-second older structured request":
 				comments = append([]any{approvalRequest(90, "2026-10-31T02:00:00Z")}, comments...)
 				if tc.name != "overlapping requests" {
 					comments = append(comments, approvalComment(91, code["body"].(string), "2026-10-31T02:01:00Z"), approvalComment(92, security["body"].(string), "2026-10-31T02:02:00Z"))
 				}
 				if tc.name == "edited older request" {
 					comments[0].(approvalObject)["updated_at"] = "2026-10-31T02:13:14Z"
+				}
+				if tc.name == "edited older structured request" || tc.name == "same-second older structured request" {
+					edited := "2026-10-31T02:13:14Z"
+					if tc.name == "same-second older structured request" {
+						edited = summary["updated_at"].(string)
+					}
+					comments[0].(approvalObject)["updated_at"] = edited
 				}
 			case "new request":
 				comments = append(comments, approvalRequest(104, "2026-10-31T02:13:14Z"))
@@ -298,6 +322,8 @@ elif endpoint == 'repos/owner/repo/pulls/7':
     result = f['pr']
     if n > 1 and s == 'head changed': result['head']['sha'] = 'b'*40
     if n > 1 and s == 'closed during check': result['state'] = 'closed'
+    if n > 1 and s == 'base ref changed': result['base']['ref'] = 'release'
+    if n > 1 and s == 'base sha changed': result['base']['sha'] = 'c'*40
 elif endpoint == 'repos/owner/repo/issues/7/comments?per_page=100':
     assert a[2:] == ['--paginate', '--slurp'], a
     if s == 'pagination failed': sys.exit(55)
@@ -313,6 +339,19 @@ elif endpoint == 'repos/owner/repo/issues/7/comments?per_page=100':
             comments.append({'id': 104, 'body': '@codex review', 'created_at': '2026-10-31T02:13:20Z', 'updated_at': '2026-10-31T02:13:20Z'})
     result = [comments[:2], comments[2:]]
     if s == 'malformed pagination': result = [comments[:2], {'message': 'error'}]
+elif endpoint == 'repos/owner/repo/issues/7/timeline?per_page=100':
+    assert a[2:] == ['--paginate', '--slurp'], a
+    if s == 'timeline failed': sys.exit(55)
+    result = [[], []]
+    if s in ('prior retarget', 'retarget after review', 'retarget during review', 'same-second retarget', 'automatic retarget', 'retarget without request', 'structured retarget', 'retarget missing timestamp') or (s == 'retarget during check' and n > 1):
+        at = '2026-10-31T02:13:14Z'
+        if s == 'prior retarget': at = '2026-10-31T02:10:00Z'
+        if s == 'retarget during review': at = '2026-10-31T02:12:00Z'
+        if s == 'same-second retarget': at = '2026-10-31T02:11:22Z'
+        event = {'id': 300, 'event': 'automatic_base_change_succeeded' if s == 'automatic retarget' else 'base_ref_changed', 'created_at': at}
+        if s == 'retarget missing timestamp': del event['created_at']
+        result[1] = [event]
+    if s == 'malformed timeline': result = [[], {'message': 'error'}]
 elif endpoint == 'repos/owner/repo/issues/7/reactions?per_page=100':
     assert a[2:] == ['--paginate', '--slurp'], a
     if s == 'reaction fetch failed': sys.exit(55)
