@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/daiksud/gh-qw/internal/gitcmd"
@@ -13,7 +14,6 @@ import (
 func TestParseIsIndependentOfResolution(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	for _, raw := range []string{
-		"widget",
 		"owner/widget",
 		"owner/widget@bad..ref",
 		"ssh://deploy@example.com:2222/owner/widget.git@topic/next",
@@ -34,8 +34,18 @@ func TestParseIsIndependentOfResolution(t *testing.T) {
 	if err != nil || parsed.repository.branch != "@{-1}" {
 		t.Fatalf("Parse() branch = %q, error = %v; want literal checkout shorthand", parsed.repository.branch, err)
 	}
-	if _, err := Parse("invalid?repository"); !errors.Is(err, ErrUsage) {
-		t.Fatalf("malformed bare repository error = %v, want a syntax error before authentication", err)
+	if _, err := Parse("owner/invalid?repository"); !errors.Is(err, ErrUsage) {
+		t.Fatalf("malformed repository error = %v, want a syntax error", err)
+	}
+}
+
+func TestParseRequiresOwnerAndRepository(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	for _, input := range []string{"widget", "widget.git", "widget@topic/next"} {
+		_, err := Parse(input)
+		if !errors.Is(err, ErrUsage) || !strings.Contains(err.Error(), "repository requires <owner>/<repo>") {
+			t.Fatalf("Parse(%q) = %v, want an explicit repository requirement", input, err)
+		}
 	}
 }
 
@@ -44,10 +54,6 @@ func TestResolveOnlyUsesRequiredEnvironment(t *testing.T) {
 	options := Options{
 		Roots:      []string{filepath.Join(t.TempDir(), "missing-root")},
 		WorkingDir: filepath.Join(t.TempDir(), "missing-cwd"),
-		ResolveIdentity: func() (string, string, error) {
-			t.Fatal("explicit or local repository must not authenticate")
-			return "", "", nil
-		},
 	}
 	for _, raw := range []string{
 		"owner/widget",
@@ -95,29 +101,14 @@ func TestResolvePreservesLiteralRefContracts(t *testing.T) {
 	}
 }
 
-func TestResolveRejectsInvalidBranchBeforeAuthentication(t *testing.T) {
-	_, err := parseAndResolve("widget@@{-1}", Options{
-		ResolveIdentity: func() (string, string, error) {
-			t.Fatal("invalid branch must not authenticate")
-			return "", "", nil
-		},
-	})
-	if !errors.Is(err, gitcmd.ErrInvalidRef) {
-		t.Fatalf("Resolve() error = %v, want Git ref rejection", err)
-	}
-}
-
-func TestResolveCancellationPreventsAuthentication(t *testing.T) {
-	parsed, err := Parse("widget")
+func TestResolvePreservesCancellation(t *testing.T) {
+	parsed, err := Parse("owner/widget@topic")
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, err = parsed.Resolve(ctx, Options{ResolveIdentity: func() (string, string, error) {
-		t.Fatal("canceled resolution must not authenticate")
-		return "", "", nil
-	}})
+	_, err = parsed.Resolve(ctx, Options{})
 	if !errors.Is(err, context.Canceled) || errors.Is(err, ErrUsage) {
 		t.Fatalf("Resolve() error = %v, want context cancellation", err)
 	}

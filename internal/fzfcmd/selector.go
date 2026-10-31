@@ -22,6 +22,11 @@ var (
 // Selector chooses one offered record without interpreting its display text.
 type Selector struct {
 	Stderr io.Writer
+	// Prompt and Header default to the repository removal labels when empty.
+	Prompt string
+	Header string
+	// Query seeds fzf's editable search without filtering the offered records.
+	Query string
 
 	commandContext procio.CommandContextFunc
 }
@@ -35,7 +40,7 @@ type CommandError struct {
 
 func (err *CommandError) Error() string {
 	if errors.Is(err.Failure.Unwrap(), exec.ErrNotFound) {
-		return "fzf is required for interactive removal; install fzf or provide an explicit removal target"
+		return "fzf is required for interactive selection; install fzf or provide an explicit target"
 	}
 	return err.Failure.Message("fzf", err.ExitCode)
 }
@@ -62,11 +67,21 @@ func (selector *Selector) Select(ctx context.Context, candidates []string) (stri
 
 	var factory procio.CommandContextFunc
 	var stderr io.Writer = os.Stderr
+	prompt := "Remove> "
+	header := "Repositories include all linked worktrees. Enter: select; Esc: cancel."
+	query := ""
 	if selector != nil {
 		factory = selector.commandContext
 		if selector.Stderr != nil {
 			stderr = selector.Stderr
 		}
+		if selector.Prompt != "" {
+			prompt = selector.Prompt
+		}
+		if selector.Header != "" {
+			header = selector.Header
+		}
+		query = selector.Query
 	}
 	env := make([]string, 0, len(os.Environ()))
 	for _, entry := range os.Environ() {
@@ -76,11 +91,15 @@ func (selector *Selector) Select(ctx context.Context, candidates []string) (stri
 		}
 		env = append(env, entry)
 	}
-	command := procio.Command(ctx, "fzf", "", env, factory,
+	args := []string{
 		"--read0", "--print0", "--no-multi", "--no-select-1", "--no-exit-0",
-		"--prompt=Remove> ",
-		"--header=Repositories include all linked worktrees. Enter: select; Esc: cancel.",
-	)
+		"--prompt=" + prompt,
+		"--header=" + header,
+	}
+	if query != "" {
+		args = append(args, "--query="+query)
+	}
+	command := procio.Command(ctx, "fzf", "", env, factory, args...)
 	command.Stdin = strings.NewReader(strings.Join(candidates, "\x00") + "\x00")
 	result, err := procio.Execute(ctx, command, io.Discard, stderr, true)
 	if err != nil {

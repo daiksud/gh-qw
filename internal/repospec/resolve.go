@@ -16,18 +16,13 @@ import (
 
 const defaultHost = "github.com"
 
-// IdentityResolver returns the authenticated host and username used to expand
-// a bare repository name. A caller may capture a context in this function.
-type IdentityResolver func() (host, username string, err error)
-
 // Options supplies environment-dependent repository resolution settings.
 type Options struct {
 	// DefaultHost selects the host for owner/repository shorthand; empty uses github.com.
-	DefaultHost     string
-	SSH             bool
-	Roots           []string
-	WorkingDir      string
-	ResolveIdentity IdentityResolver
+	DefaultHost string
+	SSH         bool
+	Roots       []string
+	WorkingDir  string
 	// RejectFileScheme rejects a file:// input (local or non-local
 	// authority) as a usage error. clone sets this because it delegates to
 	// `gh repo clone`, which never accepts a file:// URL; other callers such
@@ -50,8 +45,8 @@ type localRepositoryPath struct {
 	root     string
 }
 
-// Resolve fills environment-dependent identity and transport details. Only a
-// bare repository requires authentication; local forms require configured roots.
+// Resolve fills environment-dependent identity and transport details.
+// Local forms require configured roots.
 // A branch suffix requires Git, but no repository lookup or network request.
 func (p Input) Resolve(ctx context.Context, options Options) (Spec, error) {
 	spec, err := p.resolve(ctx, options)
@@ -91,26 +86,7 @@ func (p Input) resolve(ctx context.Context, options Options) (Spec, error) {
 		}
 	}
 
-	if repository.owner == "" {
-		if options.ResolveIdentity == nil {
-			return Spec{}, errors.New("a bare repository requires an authenticated identity; use <owner>/<repo>")
-		}
-		host, username, err := options.ResolveIdentity()
-		if err != nil {
-			return Spec{}, fmt.Errorf("resolve authenticated identity; use <owner>/<repo>: %w", err)
-		}
-		if host == "" || username == "" {
-			return Spec{}, errors.New("authenticated identity is missing or ambiguous; use <owner>/<repo>")
-		}
-		auth, err = parseAuthority(host)
-		if err != nil {
-			return Spec{}, fmt.Errorf("authenticated host: %w", err)
-		}
-		if err := validatePathComponent("owner", username); err != nil {
-			return Spec{}, err
-		}
-		repository.owner = username
-	} else if auth.hostname == "" {
+	if auth.hostname == "" {
 		host := options.DefaultHost
 		if host == "" {
 			host = defaultHost

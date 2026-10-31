@@ -88,8 +88,10 @@ removes the managed root or follows an unrelated path.
 
 Git and gh inherit the caller's environment. gh-qw does not inject tokens,
 switch accounts, read authentication files, or maintain an account cache.
+Captured API requests disable forced terminal and color output so response
+headers and JSON remain machine-readable; authentication variables are unchanged.
 
-`GH_HOST` selects the host for bare names and hostless `owner/repo` inputs;
+`GH_HOST` selects the host for owner discovery and hostless `owner/repo` inputs;
 explicit hosts take precedence and the default is `github.com`. API requests
 pass `--hostname`. Local `gh repo sync` sets its child's `GH_HOST` to the
 selected repository host; all token variables remain unchanged.
