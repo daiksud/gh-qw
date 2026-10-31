@@ -13,28 +13,12 @@ import (
 )
 
 func TestResolveRepositoryForms(t *testing.T) {
-	authenticated := func() (string, string, error) {
-		return "GHE.Example.COM:8443", "AuthUser", nil
-	}
-
 	tests := []struct {
 		name    string
 		input   string
 		options Options
 		want    Spec
 	}{
-		{
-			name:  "bare repository uses authenticated identity",
-			input: "Project.git@feature/parser",
-			options: Options{
-				ResolveIdentity: authenticated,
-			},
-			want: Spec{
-				CloneURL: "https://ghe.example.com:8443/AuthUser/Project.git",
-				Identity: Identity{Host: "ghe.example.com", Owner: "AuthUser", Repo: "Project"},
-				Branch:   "feature/parser",
-			},
-		},
 		{
 			name:  "owner and repository default to GitHub",
 			input: "Acme/Project",
@@ -300,33 +284,7 @@ func TestRelativePathContainment(t *testing.T) {
 	})
 }
 
-func TestBareRepositoryResolverErrorsAreUsageErrors(t *testing.T) {
-	resolverErr := errors.New("multiple authenticated hosts")
-	_, err := parseAndResolve("Repo", Options{
-		ResolveIdentity: func() (string, string, error) {
-			return "", "", resolverErr
-		},
-	})
-	if err == nil {
-		t.Fatal("Parse succeeded")
-	}
-	var usageErr *UsageError
-	if !errors.As(err, &usageErr) {
-		t.Fatalf("errors.As(%T) = false", err)
-	}
-	if !errors.Is(err, ErrUsage) {
-		t.Fatalf("errors.Is(%v, ErrUsage) = false", err)
-	}
-	if !errors.Is(err, resolverErr) {
-		t.Fatalf("resolver error was not preserved: %v", err)
-	}
-}
-
 func TestResolveRejectsInvalidSpecifications(t *testing.T) {
-	identity := func() (string, string, error) {
-		return "github.com", "Acme", nil
-	}
-
 	tests := []struct {
 		name    string
 		input   string
@@ -337,21 +295,8 @@ func TestResolveRejectsInvalidSpecifications(t *testing.T) {
 		{name: "trailing whitespace", input: "Org/Repo "},
 		{name: "NUL", input: "Org/Repo\x00"},
 		{name: "backslash", input: `Org\Repo`},
-		{name: "bare without resolver", input: "Repo"},
-		{
-			name:  "bare with empty resolver identity",
-			input: "Repo",
-			options: Options{ResolveIdentity: func() (string, string, error) {
-				return "", "", nil
-			}},
-		},
-		{
-			name:  "bare with malformed resolver host",
-			input: "Repo",
-			options: Options{ResolveIdentity: func() (string, string, error) {
-				return "bad_host", "Acme", nil
-			}},
-		},
+		{name: "bare name", input: "Repo"},
+		{name: "bare name with branch", input: "Repo@topic/next"},
 		{name: "missing repository", input: "Org/"},
 		{name: "leading empty host", input: "/Org/Repo"},
 		{name: "empty component", input: "Host//Repo"},
@@ -389,7 +334,7 @@ func TestResolveRejectsInvalidSpecifications(t *testing.T) {
 		{name: "URL empty branch", input: "https://example.com/Org/Repo@"},
 		{name: "file URL has user", input: "file://user@example.com/Org/Repo"},
 		{name: "file URL has port", input: "file://example.com:1234/Org/Repo"},
-		{name: "relative without roots", input: "../Repo", options: Options{ResolveIdentity: identity}},
+		{name: "relative without roots", input: "../Repo"},
 	}
 
 	for _, test := range tests {
@@ -417,35 +362,6 @@ func TestLocalFileURLMustBeUnderRoot(t *testing.T) {
 	}
 	traversalURL := "file://" + traversalPath
 	assertUsageError(t, traversalURL, Options{Roots: []string{root}})
-}
-
-func TestIdentityResolverIsOnlyUsedForBareRepositories(t *testing.T) {
-	calls := 0
-	resolver := func() (string, string, error) {
-		calls++
-		return "example.com", "User", nil
-	}
-
-	for _, input := range []string{
-		"Org/Repo",
-		"example.com/Org/Repo",
-		"https://example.com/Org/Repo",
-		"git@example.com:Org/Repo",
-	} {
-		if _, err := parseAndResolve(input, Options{ResolveIdentity: resolver}); err != nil {
-			t.Fatalf("parseAndResolve(%q) error = %v", input, err)
-		}
-	}
-	if calls != 0 {
-		t.Fatalf("resolver calls = %d, want 0", calls)
-	}
-
-	if _, err := parseAndResolve("Repo", Options{ResolveIdentity: resolver}); err != nil {
-		t.Fatal(err)
-	}
-	if calls != 1 {
-		t.Fatalf("resolver calls = %d, want 1", calls)
-	}
 }
 
 func assertUsageError(t *testing.T, input string, options Options) {
