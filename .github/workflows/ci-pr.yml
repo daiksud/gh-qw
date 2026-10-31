@@ -7,10 +7,13 @@ defaults:
   run:
     shell: bash
 concurrency:
-  group: ci-pr-${{ github.event.pull_request.number }}
+  # Metadata-only edits must not cancel running or queued product validation.
+  group: ci-pr-${{ github.event.pull_request.number }}-${{ github.event.action == 'edited' && !github.event.changes.base && 'metadata' || 'product' }}
   cancel-in-progress: true
 jobs:
   draft:
+    # Base retargeting still validates the merge ref; title/body edits do not.
+    if: github.event.action != 'edited' || github.event.changes.base
     runs-on: ubuntu-slim
     timeout-minutes: 3
     permissions: {contents: write, pull-requests: write}
@@ -105,8 +108,11 @@ jobs:
           source-sha: ${{ github.sha }}
           artifact-directory: ${{ runner.temp }}/product
   ci-pr:
+    # A skipped required job is treated as success: never publish the required
+    # ci-pr check for metadata-only edits.
+    name: ${{ github.event.action == 'edited' && !github.event.changes.base && 'ci-pr-metadata-only' || 'ci-pr' }}
     needs: [draft, resolve, commit-stage, ready, acceptance-stage]
-    if: always()
+    if: always() && (github.event.action != 'edited' || github.event.changes.base)
     runs-on: ubuntu-slim
     timeout-minutes: 3
     permissions: {}
