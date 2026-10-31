@@ -18,9 +18,10 @@ import (
 )
 
 type apiInvocation struct {
-	Args  []string
-	Env   []string
-	Stdin string
+	Args       []string
+	Env        []string
+	Formatting []string
+	Stdin      string
 }
 
 // The test executable stands in for gh, so these tests never contact a host or
@@ -35,6 +36,9 @@ func TestMain(m *testing.M) {
 		for _, key := range []string{"GH_HOST", "GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"} {
 			invocation.Env = append(invocation.Env, key+"="+os.Getenv(key))
 		}
+		for _, key := range []string{"GH_FORCE_TTY", "CLICOLOR_FORCE", "NO_COLOR"} {
+			invocation.Formatting = append(invocation.Formatting, key+"="+os.Getenv(key))
+		}
 		data, err := json.Marshal(invocation)
 		if err != nil || os.WriteFile(os.Getenv("GHAPI_TEST_RECORD"), data, 0o600) != nil {
 			os.Exit(91)
@@ -42,7 +46,26 @@ func TestMain(m *testing.M) {
 		if mode == "wait" {
 			time.Sleep(10 * time.Second)
 		}
-		fmt.Fprint(os.Stdout, os.Getenv("GHAPI_TEST_OUTPUT"))
+		output := os.Getenv("GHAPI_TEST_OUTPUT")
+		if mode == "formatting" {
+			// gh can color HTTP headers and JSON even when stdout is captured.
+			colorEnabled := os.Getenv("CLICOLOR_FORCE") != "" && os.Getenv("CLICOLOR_FORCE") != "0"
+			if os.Getenv("GH_FORCE_TTY") != "" {
+				colorEnabled = os.Getenv("NO_COLOR") == "" && os.Getenv("CLICOLOR") != "0"
+			}
+			if colorEnabled {
+				if strings.HasPrefix(output, "HTTP/") {
+					output = strings.ReplaceAll(output, "Content-Type:", "\x1b[1;34mContent-Type\x1b[m:")
+				} else {
+					output = "\x1b[1;34m" + output + "\x1b[m"
+				}
+			}
+		}
+		fmt.Fprint(os.Stdout, output)
+		if mode == "formatting" && strings.HasPrefix(output, "HTTP/2.0 404 ") {
+			fmt.Fprint(os.Stderr, "gh: HTTP 404")
+			os.Exit(1)
+		}
 		if mode == "fail" {
 			fmt.Fprint(os.Stderr, "diagnostic contains "+os.Getenv("GH_TOKEN"))
 			os.Exit(4)
@@ -104,24 +127,80 @@ func TestClientUsesGHPathAndNativeAuthenticationEnvironment(t *testing.T) {
 	}
 }
 
+func TestClientCapturesMachineReadableResponsesWithForcedFormatting(t *testing.T) {
+	for _, forcing := range []struct {
+		name  string
+		color string
+		tty   string
+	}{
+		{name: "forced color", color: "1"},
+		{name: "forced terminal", tty: "80"},
+	} {
+		for _, operation := range []string{"exists", "missing", "owner repositories"} {
+			t.Run(forcing.name+"/"+operation, func(t *testing.T) {
+				output := "HTTP/2.0 200 OK\nContent-Type: application/json\r\n\r\n"
+				if operation == "missing" {
+					output = "HTTP/2.0 404 Not Found\nContent-Type: application/json\r\n\r\n"
+				} else if operation == "owner repositories" {
+					output = "[" + ownerRepositoriesTestPage("acme", false, "acme/widgets") + "]"
+				}
+				record := prepareAPIGhProcess(t, "formatting", output)
+				client := NewClient(io.Discard)
+				// Read the environment for each request, after client construction.
+				t.Setenv("GH_TOKEN", "dummy-late-token")
+				t.Setenv("GH_FORCE_TTY", forcing.tty)
+				t.Setenv("CLICOLOR_FORCE", forcing.color)
+				t.Setenv("CLICOLOR", "1")
+				t.Setenv("NO_COLOR", "")
+				if operation == "owner repositories" {
+					got, err := client.OwnerRepositories(context.Background(), "selected.example.com", "acme")
+					if err != nil || !slices.Equal(got, []string{"acme/widgets"}) {
+						t.Fatalf("OwnerRepositories() = %v, %v, want uncolored repository data", got, err)
+					}
+				} else {
+					got, err := client.RepositoryExists(context.Background(), "selected.example.com", "acme", "widgets")
+					if err != nil || got != (operation == "exists") {
+						t.Fatalf("RepositoryExists() = %v, %v, want parsed HTTP status", got, err)
+					}
+				}
+				data, err := os.ReadFile(record)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var invocation apiInvocation
+				if err := json.Unmarshal(data, &invocation); err != nil {
+					t.Fatal(err)
+				}
+				wantEnv := []string{
+					"GH_HOST=ambient.example.com", "GH_TOKEN=dummy-late-token", "GITHUB_TOKEN=dummy-GITHUB_TOKEN",
+					"GH_ENTERPRISE_TOKEN=dummy-GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN=dummy-GITHUB_ENTERPRISE_TOKEN",
+				}
+				wantFormatting := []string{"GH_FORCE_TTY=", "CLICOLOR_FORCE=0", "NO_COLOR=1"}
+				if !slices.Equal(invocation.Env, wantEnv) || !slices.Equal(invocation.Formatting, wantFormatting) || invocation.Stdin != "" {
+					t.Fatalf("invocation = %#v, want inherited auth, plain output, and null stdin", invocation)
+				}
+				if len(invocation.Args) < 3 || !slices.Equal(invocation.Args[:3], []string{"api", "--hostname", "selected.example.com"}) {
+					t.Fatalf("args = %v, want explicit selected host", invocation.Args)
+				}
+				if os.Getenv("GH_FORCE_TTY") != forcing.tty || os.Getenv("CLICOLOR_FORCE") != forcing.color || os.Getenv("NO_COLOR") != "" {
+					t.Fatal("API capture changed the caller's formatting environment")
+				}
+			})
+		}
+	}
+}
+
 func TestClientErrorsPreserveFailureWithoutIncludingGhDiagnostics(t *testing.T) {
 	prepareAPIGhProcess(t, "fail", "partial response\n")
 	var diagnostics bytes.Buffer
 	client := NewClient(&diagnostics)
-	for _, operation := range []string{"identity", "default branch"} {
-		var err error
-		if operation == "identity" {
-			_, err = client.ResolveIdentity(context.Background())
-		} else {
-			_, err = client.DefaultBranch(context.Background(), "github.com", "acme", "widgets")
-		}
-		var commandErr *ghcmd.CommandError
-		if !errors.As(err, &commandErr) || commandErr.ExitCode != 4 {
-			t.Fatalf("%s error = %v, want preserved gh exit code 4", operation, err)
-		}
-		if strings.Contains(err.Error(), "dummy-GH_TOKEN") || strings.Contains(err.Error(), "partial response") {
-			t.Fatalf("%s error includes gh output: %q", operation, err)
-		}
+	_, err := client.DefaultBranch(context.Background(), "github.com", "acme", "widgets")
+	var commandErr *ghcmd.CommandError
+	if !errors.As(err, &commandErr) || commandErr.ExitCode != 4 {
+		t.Fatalf("DefaultBranch() error = %v, want preserved gh exit code 4", err)
+	}
+	if strings.Contains(err.Error(), "dummy-GH_TOKEN") || strings.Contains(err.Error(), "partial response") {
+		t.Fatalf("DefaultBranch() error includes gh output: %q", err)
 	}
 	if !strings.Contains(diagnostics.String(), "diagnostic contains dummy-GH_TOKEN") {
 		t.Fatalf("native gh diagnostic was not relayed: %q", diagnostics.String())
@@ -131,20 +210,11 @@ func TestClientErrorsPreserveFailureWithoutIncludingGhDiagnostics(t *testing.T) 
 func TestClientPreservesCancellation(t *testing.T) {
 	prepareAPIGhProcess(t, "wait", "unused")
 	client := NewClient(io.Discard)
-	for _, operation := range []string{"identity", "default branch"} {
-		t.Run(operation, func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-			defer cancel()
-			var err error
-			if operation == "identity" {
-				_, err = client.ResolveIdentity(ctx)
-			} else {
-				_, err = client.DefaultBranch(ctx, "github.com", "acme", "widgets")
-			}
-			if !errors.Is(err, context.DeadlineExceeded) {
-				t.Fatalf("error = %v, want context deadline in chain", err)
-			}
-		})
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	_, err := client.DefaultBranch(ctx, "github.com", "acme", "widgets")
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("DefaultBranch() error = %v, want context deadline in chain", err)
 	}
 }
 
