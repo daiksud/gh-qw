@@ -36,49 +36,200 @@ jobs:
     steps:
       - name: Approve the currently reviewed commit
         run: |
-          set -euo pipefail
+          python3 - <<'PYTHON'
+          import datetime as dt
+          import json
+          import os
+          import re
+          import subprocess
+          import sys
 
-          for attempt in {0..6}; do
-            pr=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER")
-            jq -e '.state == "open"' <<<"$pr" >/dev/null || exit 0
-            head=$(jq -r '.head.sha' <<<"$pr")
+          REPO = os.environ["GITHUB_REPOSITORY"]
+          NUMBER = os.environ["PR_NUMBER"]
+          COMMENT = os.environ.get("COMMENT_ID", "")
+          ROOT = f"repos/{REPO}"
+          PREFIX = "<!-- codex-pull-request-review-summary -->"
+          RECEIPT = "<!-- codex-review-receipt:v1 -->"
+          BOT = "chatgpt-codex-connector[bot]"
 
-            if [[ -n "${COMMENT_ID:-}" ]]; then
-              summary=$(gh api "repos/$GITHUB_REPOSITORY/issues/comments/$COMMENT_ID" --jq .body)
-            else
-              summary=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments?per_page=100" --paginate --slurp |
-                jq -r '[.[][] | select(.user.login == "chatgpt-codex-connector[bot]" and (.body | startswith("<!-- codex-pull-request-review-summary -->"))) | .body] | last // ""')
-            fi
-            state=$(sed -n 's/^<!-- codex-review-state:v1 \(.*\) -->$/\1/p' <<<"$summary")
-            jq -e --arg head "$head" '
-              .code_review.status == "completed" and
-              .security_review.status == "completed" and
-              .code_review.commit_sha == $head and
-              .security_review.commit_sha == $head and
-              .code_review.has_unresolved_findings == false and
-              .security_review.has_unresolved_findings == false
-            ' <<<"$state" >/dev/null || exit 0
+          class Hold(Exception):
+              pass
 
-            reactions=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/reactions?per_page=100" --paginate --slurp)
-            if jq -e 'any(.[][]; .user.login == "chatgpt-codex-connector[bot]" and .content == "+1")' <<<"$reactions" >/dev/null; then
-              # Pin the review to the verified commit; never approve a newer push.
-              current=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER")
-              jq -e --arg head "$head" '.state == "open" and .head.sha == $head' <<<"$current" >/dev/null || exit 0
+          def require(ok, reason):
+              if not ok:
+                  raise Hold(reason)
 
-              # A replayed summary edit must not produce a second approval.
-              reviews=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/reviews?per_page=100" --paginate --slurp)
-              if jq -e --arg head "$head" 'any(.[][]; .user.login == "github-actions[bot]" and .state == "APPROVED" and .commit_id == $head)' <<<"$reviews" >/dev/null; then
-                exit 0
-              fi
-              if ! approval_response=$(gh api --method POST "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/reviews" \
-                -f event=APPROVE -f commit_id="$head"); then
-                # Keep only validation details, never raw bodies/headers/tokens.
-                if ! jq -ce 'select(type == "object") | {message, errors}' <<<"$approval_response" >&2 2>/dev/null; then
-                  printf 'GitHub approval failed without a JSON validation response.\n' >&2
-                fi
-                exit 1
-              fi
-              exit 0
-            fi
-            [[ "$attempt" == 6 ]] || sleep 30
-          done
+          def api(endpoint, *args):
+              result = subprocess.run(["gh", "api", endpoint, *args], capture_output=True, text=True)
+              if result.returncode:
+                  # Never echo API bodies, stderr, credentials or untrusted comment text.
+                  raise RuntimeError("GitHub API request failed; no approval confirmed")
+              try:
+                  return json.loads(result.stdout)
+              except ValueError:
+                  raise RuntimeError("GitHub API returned invalid JSON") from None
+
+          def pages(endpoint):
+              data = api(endpoint + "?per_page=100", "--paginate", "--slurp")
+              if not isinstance(data, list) or not all(isinstance(p, list) for p in data):
+                  raise RuntimeError("GitHub pagination returned an invalid collection")
+              rows = [item for page in data for item in page]
+              if not all(isinstance(row, dict) for row in rows):
+                  raise RuntimeError("GitHub pagination returned an invalid item")
+              return rows
+
+          def bot(item, comment=False):
+              user = item.get("user") or {}
+              # The reactions API reports this same immutable Bot account as
+              # type User; comments additionally carry App provenance.
+              valid = user.get("login") == BOT and user.get("id") == 199175422
+              app = item.get("performed_via_github_app") or {}
+              return valid and (not comment or (user.get("type") == "Bot" and app.get("id") == 1144995 and app.get("slug") == "chatgpt-codex-connector"))
+
+          def timestamp(value):
+              require(isinstance(value, str) and re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z", value), "missing or invalid evidence timestamp")
+              try:
+                  return dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+              except ValueError:
+                  raise Hold("invalid evidence timestamp") from None
+
+          def marker(body, name):
+              matches = re.findall(r"^<!-- " + re.escape(name) + r" (.*) -->$", body, re.M)
+              require(len(matches) == 1, "missing or ambiguous structured review state")
+              try:
+                  value = json.loads(matches[0])
+              except ValueError:
+                  raise Hold("malformed structured review state") from None
+              require(isinstance(value, dict), "invalid structured review state")
+              return value
+
+          def review_request(item):
+              # Codex's own summaries/receipts quote the command in their footer.
+              return not bot(item, comment=True) and re.search(r"@codex\s+(?:security\s+)?review\b", item.get("body", ""), re.I) is not None
+
+          def receipt_kind(item):
+              body = item.get("body", "")
+              if not body.startswith(RECEIPT + "\n"):
+                  return None
+              if "\nCodex Review:" in body:
+                  return "code"
+              if "\n### 🛡️ Codex Security Review ·" in body:
+                  return "security"
+              return None
+
+          def completion(body, kind, head):
+              label = "Code Review" if kind == "code" else "Security Review"
+              rows = [line for line in body.splitlines() if f"**{label}**" in line]
+              require(len(rows) == 1 and rows[0].endswith(f"| `{head[:7]}` | Manual request |") and "**Completed**" in rows[0], "nullable result has no identifiable manual review cycle")
+              dates = re.findall(r'<relative-time datetime="([^"]+)">', rows[0])
+              require(len(dates) == 1, "missing or ambiguous review completion time")
+              return timestamp(dates[0])
+
+          def nullable_evidence(comments, summary, requests, head, state):
+              security = state["security_review"]
+              require("has_unresolved_findings" in security and "has_any_findings" in security and security["has_unresolved_findings"] is None and security["has_any_findings"] is None, "security findings are unknown or present")
+              require(state["code_review"].get("has_any_findings") is False, "code review is not explicitly clean")
+              metadata = marker(summary["body"], "codex-security-review:v1")
+              require(metadata.get("headSha") == head and metadata.get("repository") == REPO and metadata.get("pullRequestNumber") == int(NUMBER) and metadata.get("status") == "completed" and metadata.get("mergeGateEnabled") is False, "security metadata does not identify this completed review")
+              require(bool(requests), "nullable result has no review request boundary")
+              request = requests[-1]
+              require(request["body"].strip().lower() == "@codex review" and request.get("created_at") == request.get("updated_at"), "nullable result has an ambiguous or edited review request")
+              start = timestamp(request.get("created_at"))
+              require(all(timestamp(r.get("updated_at")) < start for r in requests[:-1]), "an earlier review request was edited during this cycle")
+              finish = timestamp(summary.get("updated_at"))
+              trusted = [c for c in comments if bot(c, comment=True) and not c.get("body", "").startswith(PREFIX)]
+              # A retry while the previous request is unfinished cannot establish which
+              # request produced a receipt. Leave overlapping/unknown cycles for a reviewer.
+              previous = timestamp(requests[-2].get("created_at")) if len(requests) > 1 else timestamp(summary.get("created_at"))
+              require(previous != start, "review cycle boundaries have ambiguous timestamps")
+              if previous < start:
+                  prior = [c for c in trusted if previous < timestamp(c.get("created_at")) < start]
+                  require(sorted(receipt_kind(c) or "unknown" for c in prior) == ["code", "security"], "overlapping or unidentifiable review requests")
+              current = [c for c in trusted if timestamp(c.get("created_at")) > start]
+              require(sorted(receipt_kind(c) or "unknown" for c in current) == ["code", "security"], "missing, duplicate or contradictory completion receipts")
+              for receipt in current:
+                  kind = receipt_kind(receipt)
+                  body = receipt["body"]
+                  require(receipt.get("created_at") == receipt.get("updated_at"), "edited completion receipt")
+                  require(start < timestamp(receipt.get("created_at")) <= completion(summary["body"], kind, head) <= finish, "receipt does not belong to the completed review interval")
+                  shas = re.findall(r"^\*\*Reviewed commit:\*\* `([0-9a-f]{10})`$", body, re.M)
+                  require(shas == [head[:10]], "receipt reviewed a different or ambiguous commit")
+                  if kind == "security":
+                      require("\nSecurity review completed. No security issues were found in this pull request.\n" in body, "security receipt does not explicitly report no findings")
+                  else:
+                      require("\nCodex Review: Didn't find any major issues." in body, "code receipt does not explicitly report no findings")
+              # Receipts abbreviate the SHA. Resolve it, rather than trusting a prefix
+              # that might name another commit. GitHub rejects ambiguous abbreviations.
+              require(api(f"{ROOT}/commits/{head[:10]}").get("sha") == head, "receipt commit does not resolve to the current HEAD")
+
+          def snapshot(head):
+              comments = pages(f"{ROOT}/issues/{NUMBER}/comments")
+              summaries = [c for c in comments if bot(c, comment=True) and c.get("body", "").startswith(PREFIX)]
+              require(bool(summaries), "no trusted review summary")
+              summary = max(summaries, key=lambda c: c["id"])
+              require(not COMMENT or str(summary["id"]) == COMMENT, "event refers to a superseded summary")
+              state = marker(summary["body"], "codex-review-state:v1")
+              for kind in ("code_review", "security_review"):
+                  review = state.get(kind)
+                  require(isinstance(review, dict) and review.get("status") == "completed" and review.get("commit_sha") == head, "reviews are incomplete or target a different HEAD")
+              require(state["code_review"].get("has_unresolved_findings") is False, "code findings are unresolved or unknown")
+              requests = sorted([c for c in comments if review_request(c)], key=lambda c: c["id"])
+              updated = timestamp(summary.get("updated_at"))
+              require(not requests or timestamp(requests[-1].get("updated_at")) < updated, "a newer review request has no completed result")
+              if state["security_review"].get("has_unresolved_findings") is not False:
+                  nullable_evidence(comments, summary, requests, head, state)
+              # Include bodies and provenance, not just timestamps: an edit or new request
+              # on the same SHA invalidates the proof immediately before the write.
+              evidence = [c for c in comments if bot(c, comment=True) or review_request(c)]
+              fields = ("id", "body", "created_at", "updated_at", "user", "performed_via_github_app")
+              fingerprint = [{k: c.get(k) for k in fields} for c in sorted(evidence, key=lambda c: c["id"])]
+              return fingerprint, updated
+
+          def fresh_reaction(after):
+              reactions = pages(f"{ROOT}/issues/{NUMBER}/reactions")
+              matches = [r for r in reactions if bot(r) and r.get("content") == "+1" and timestamp(r.get("created_at")) > after]
+              # GitHub timestamps have second precision. A same-second/older reaction
+              # cannot establish that it acknowledges this completed review cycle.
+              return matches[0] if len(matches) == 1 else None
+
+          def run():
+              pr = api(f"{ROOT}/pulls/{NUMBER}")
+              require(pr.get("state") == "open", "PR is closed")
+              head = pr.get("head", {}).get("sha", "")
+              require(re.fullmatch(r"[0-9a-f]{40}", head), "invalid PR HEAD")
+              evidence, completed = snapshot(head)
+              for attempt in range(7):
+                  reaction = fresh_reaction(completed)
+                  if reaction is not None:
+                      break
+                  if attempt == 6:
+                      raise Hold("no fresh Codex thumbs-up after this completed review")
+                  print("Waiting for a fresh Codex thumbs-up", flush=True)
+                  subprocess.run(["sleep", "30"], check=True)
+              reviews = pages(f"{ROOT}/pulls/{NUMBER}/reviews")
+              latest = {}
+              for review in reviews:
+                  if review.get("state") in ("APPROVED", "CHANGES_REQUESTED", "DISMISSED"):
+                      latest[review.get("user", {}).get("login")] = review
+              require(not any(r.get("state") == "CHANGES_REQUESTED" for r in latest.values()), "an approving review cannot replace requested changes")
+              if any(r.get("user", {}).get("login") == "github-actions[bot]" and r.get("state") == "APPROVED" and r.get("commit_id") == head for r in latest.values()):
+                  print("Already approved for the current HEAD")
+                  return
+              require(snapshot(head) == (evidence, completed), "review evidence changed before approval")
+              require(fresh_reaction(completed) == reaction, "Codex thumbs-up changed before approval")
+              current = api(f"{ROOT}/pulls/{NUMBER}")
+              require(current.get("state") == "open" and current.get("head", {}).get("sha") == head, "PR closed or HEAD changed before approval")
+              response = api("--method", "POST", f"{ROOT}/pulls/{NUMBER}/reviews", "-f", "event=APPROVE", "-f", f"commit_id={head}")
+              if response.get("state") != "APPROVED" or response.get("commit_id") != head:
+                  raise RuntimeError("GitHub did not confirm approval of the verified HEAD")
+              print(f"Approved verified commit {head}")
+
+          try:
+              run()
+          except Hold as error:
+              print(f"::notice title=Codex approval withheld::{error}")
+          except Exception as error:
+              # Unexpected/malformed evidence and failed reads must never become approval.
+              print(str(error) if isinstance(error, RuntimeError) else "Approval failed: invalid API evidence or execution failure", file=sys.stderr)
+              sys.exit(1)
+          PYTHON

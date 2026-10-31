@@ -2,6 +2,7 @@ package tests
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,18 +11,65 @@ import (
 	"testing"
 )
 
-// Execute the Linux workflow's actual inline script with local paginated API
-// fixtures and real jq. Never send a review or use an ambient credential.
-func TestCodexApprovalPagination(t *testing.T) {
+type approvalObject = map[string]any
+
+const approvalHead = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+func approvalBot() approvalObject {
+	return approvalObject{"login": "chatgpt-codex-connector[bot]", "id": 199175422, "type": "Bot"}
+}
+
+func approvalComment(id int, body, at string) approvalObject {
+	return approvalObject{"id": id, "body": body, "created_at": at, "updated_at": at,
+		"user": approvalBot(), "performed_via_github_app": approvalObject{"id": 1144995, "slug": "chatgpt-codex-connector"}}
+}
+
+func approvalRequest(id int, at string) approvalObject {
+	return approvalObject{"id": id, "body": "@codex review", "created_at": at, "updated_at": at, "user": approvalObject{"login": "author", "type": "User"}}
+}
+
+// The nullable result, receipt wording, ordering and fractional completion times
+// reproduce the public evidence from daiksud/gh-settings#534; identities and timestamps are
+// deliberately independent of the workflow's implementation.
+func approvalFixture() approvalObject {
+	state := approvalObject{
+		"code_review":     approvalObject{"commit_sha": approvalHead, "status": "completed", "has_unresolved_findings": false, "has_any_findings": false},
+		"security_review": approvalObject{"commit_sha": approvalHead, "status": "completed", "has_unresolved_findings": nil, "has_any_findings": nil},
+	}
+	request := approvalRequest(100, "2026-10-31T02:11:22Z")
+	code := approvalComment(102, "<!-- codex-review-receipt:v1 -->\n\nCodex Review: Didn't find any major issues. Keep them coming!\n\n**Reviewed commit:** `aaaaaaaaaa`\n", "2026-10-31T02:12:36Z")
+	security := approvalComment(103, "<!-- codex-review-receipt:v1 -->\n\n### 🛡️ Codex Security Review · _Automatically triggered_\n\nSecurity review completed. No security issues were found in this pull request.\n\n**Reviewed commit:** `aaaaaaaaaa`\n\n[View security finding report](https://chatgpt.com/codex/cloud/tasks/task_example)", "2026-10-31T02:13:10Z")
+	for _, receipt := range []approvalObject{code, security} {
+		receipt["body"] = receipt["body"].(string) + "\n<details>\nReviews are triggered when you comment \"@codex review\" or \"@codex security review\".\n</details>\n"
+	}
+	summary := approvalComment(101, "", "2026-10-31T02:11:44Z")
+	summary["updated_at"] = "2026-10-31T02:13:13Z"
+	reactionUser := approvalBot()
+	reactionUser["type"] = "User" // Actual reactions API representation for this Bot ID.
+	return approvalObject{
+		"state": state, "request": request, "summary": summary, "code": code, "security": security,
+		"reaction": approvalObject{"id": 200, "user": reactionUser, "content": "+1", "created_at": "2026-10-31T02:13:15Z"},
+		"pr":       approvalObject{"state": "open", "draft": false, "head": approvalObject{"sha": approvalHead}},
+	}
+}
+
+func approvalSummary(f approvalObject) string {
+	state, _ := json.Marshal(f["state"])
+	metadata := fmt.Sprintf(`{"blockingSeverityThreshold":"P0","headSha":%q,"mergeGateEnabled":false,"pullRequestNumber":7,"repository":"owner/repo","status":"completed"}`, approvalHead)
+	return "<!-- codex-pull-request-review-summary -->\n<!-- codex-review-state:v1 " + string(state) + " -->\n<!-- codex-security-review:v1 " + metadata + " -->\n" +
+		"| 📝 **Code Review** | ✅ **Completed** <relative-time datetime=\"2026-10-31T02:12:38.414268Z\">2026-10-31T02:12:38.414268Z</relative-time> | `aaaaaaa` | Manual request |\n" +
+		"| 🔒 **Security Review** | ✅ **Completed** <relative-time datetime=\"2026-10-31T02:13:11.462255Z\">2026-10-31T02:13:11.462255Z</relative-time> | `aaaaaaa` | Manual request |\n" +
+		"\n<details>\nReviews are triggered when you comment \"@codex review\" or \"@codex security review\".\n</details>\n"
+}
+
+func TestCodexApprovalEvidence(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("the approval workflow runs on Linux, not Windows")
+		t.Skip("the approval workflow runs on Linux")
 	}
-	bash, err := exec.LookPath("bash")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := exec.LookPath("jq"); err != nil {
-		t.Fatal(err)
+	for _, tool := range []string{"bash", "python3"} {
+		if _, err := exec.LookPath(tool); err != nil {
+			t.Fatal(err)
+		}
 	}
 	workflow := filepath.Join("..", ".github", "workflows", "approve-codex-review.yml")
 	if override := os.Getenv("APPROVAL_WORKFLOW_FIXTURE"); override != "" {
@@ -42,115 +90,244 @@ func TestCodexApprovalPagination(t *testing.T) {
 		}
 		script.WriteString(strings.TrimPrefix(line, "          ") + "\n")
 	}
-	const head = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-	summary := func(scenario string) string {
-		state := map[string]any{}
-		for _, kind := range []string{"code_review", "security_review"} {
-			sha, status, unresolved := head, "completed", scenario == "unresolved"
-			if scenario == "stale" {
-				sha = strings.Repeat("b", 40)
-			}
-			switch scenario {
-			case strings.TrimSuffix(kind, "_review") + " incomplete":
-				status = "in_progress"
-			case strings.TrimSuffix(kind, "_review") + " stale":
-				sha = strings.Repeat("b", 40)
-			case strings.TrimSuffix(kind, "_review") + " findings":
-				unresolved = true
-			}
-			state[kind] = map[string]any{"commit_sha": sha, "status": status, "has_unresolved_findings": unresolved}
-		}
-		encoded, _ := json.Marshal(state)
-		return "<!-- codex-pull-request-review-summary -->\n<!-- codex-review-state:v1 " + string(encoded) + " -->"
+	cases := []struct {
+		name    string
+		approve bool
+		fail    bool
+	}{
+		{"nullable clean", true, false}, {"structured clean", true, false}, {"draft", true, false},
+		{"comment event", true, false}, {"old comment event", false, false}, {"prior completed cycle", true, false},
+		{"code findings", false, false}, {"security findings", false, false}, {"security any findings", false, false},
+		{"missing security flag", false, false}, {"wrong flag type", false, false}, {"code incomplete", false, false},
+		{"security incomplete", false, false}, {"code stale", false, false}, {"security stale", false, false},
+		{"spoofed summary", false, false}, {"spoofed receipt", false, false}, {"wrong app", false, false},
+		{"no security receipt", false, false}, {"security receipt findings", false, false}, {"wrong receipt head", false, false},
+		{"old same-head receipt", false, false}, {"edited receipt", false, false}, {"duplicate receipt", false, false},
+		{"unknown bot comment", false, false}, {"no request", false, false}, {"edited request", false, false},
+		{"overlapping requests", false, false}, {"security-only request", false, false}, {"new request", false, false},
+		{"old reaction", false, false}, {"same-second reaction", false, false}, {"other reaction", false, false},
+		{"missing reaction", false, false}, {"delayed reaction", true, false}, {"closed", false, false},
+		{"head changed", false, false}, {"closed during check", false, false}, {"summary changed", false, false},
+		{"request during check", false, false}, {"receipt edited during check", false, false}, {"reaction removed", false, false},
+		{"already approved", false, false}, {"changes requested", false, false}, {"ambiguous short sha", false, true},
+		{"pagination failed", false, true}, {"reaction fetch failed", false, true}, {"post rejected", false, true},
+		{"post non-json", false, true}, {"malformed summary", false, false}, {"automatic nullable cycle", false, false},
+		{"initial automatic overlap", false, false}, {"edited older request", false, false},
+		{"wrong summary app", false, false}, {"receipt missing app", false, false}, {"duplicate marker", false, false},
+		{"wrong security metadata", false, false}, {"completion before receipt", false, false},
+		{"wrong resolved sha", false, false}, {"unconfirmed approval", true, true}, {"malformed pagination", false, true},
+		{"wrong reaction account", false, false},
+		{"same-second requests", false, false}, {"same-second summary start", false, false}, {"wrong row head", false, false},
 	}
-	for _, draft := range []string{"false", "true"} {
-		for _, scenario := range []string{"approve", "comment event", "stale", "unresolved", "code incomplete", "security incomplete", "code stale", "security stale", "code findings", "security findings", "closed", "closed during check", "already approved", "head changed", "pagination failed", "no bot summary", "post rejected", "post non-json"} {
-			t.Run(scenario+"/draft="+draft, func(t *testing.T) {
-				root := t.TempDir()
-				write := func(name, value string, mode os.FileMode) {
-					t.Helper()
-					if err := os.WriteFile(filepath.Join(root, name), []byte(value), mode); err != nil {
-						t.Fatal(err)
-					}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := approvalFixture()
+			state := f["state"].(approvalObject)
+			codeState, securityState := state["code_review"].(approvalObject), state["security_review"].(approvalObject)
+			request, summary := f["request"].(approvalObject), f["summary"].(approvalObject)
+			code, security := f["code"].(approvalObject), f["security"].(approvalObject)
+			pr, reaction := f["pr"].(approvalObject), f["reaction"].(approvalObject)
+			switch tc.name {
+			case "structured clean":
+				securityState["has_any_findings"], securityState["has_unresolved_findings"] = false, false
+			case "draft":
+				pr["draft"] = true
+			case "code findings":
+				codeState["has_unresolved_findings"] = true
+			case "security findings":
+				securityState["has_unresolved_findings"] = true
+			case "security any findings":
+				securityState["has_any_findings"] = true
+			case "missing security flag":
+				delete(securityState, "has_unresolved_findings")
+			case "wrong flag type":
+				securityState["has_unresolved_findings"] = "false"
+			case "code incomplete":
+				codeState["status"] = "in_progress"
+			case "security incomplete":
+				securityState["status"] = "in_progress"
+			case "code stale":
+				codeState["commit_sha"] = strings.Repeat("b", 40)
+			case "security stale":
+				securityState["commit_sha"] = strings.Repeat("b", 40)
+			case "spoofed summary":
+				summary["user"] = approvalObject{"login": "outsider", "id": 1, "type": "User"}
+			case "spoofed receipt":
+				security["user"] = approvalObject{"login": "outsider", "id": 1, "type": "User"}
+			case "wrong app":
+				security["performed_via_github_app"] = approvalObject{"id": 42}
+			case "wrong summary app":
+				summary["performed_via_github_app"] = approvalObject{"id": 42}
+			case "receipt missing app":
+				delete(security, "performed_via_github_app")
+			case "initial automatic overlap":
+				summary["created_at"] = "2026-10-31T02:11:00Z"
+			case "same-second summary start":
+				summary["created_at"] = request["created_at"]
+			case "security receipt findings":
+				security["body"] = strings.ReplaceAll(security["body"].(string), "No security issues were found in this pull request.", "Security issues were found.")
+			case "wrong receipt head":
+				security["body"] = strings.ReplaceAll(security["body"].(string), "aaaaaaaaaa", "bbbbbbbbbb")
+			case "old same-head receipt":
+				security["created_at"], security["updated_at"] = "2026-10-31T02:10:00Z", "2026-10-31T02:10:00Z"
+			case "edited receipt":
+				security["updated_at"] = "2026-10-31T02:13:12Z"
+			case "edited request":
+				request["updated_at"] = "2026-10-31T02:11:23Z"
+			case "security-only request":
+				request["body"] = "@codex security review"
+			case "old reaction":
+				reaction["created_at"] = "2026-10-31T02:11:00Z"
+			case "same-second reaction":
+				reaction["created_at"] = summary["updated_at"]
+			case "other reaction":
+				reaction["user"] = approvalObject{"login": "other", "id": 1, "type": "User"}
+			case "wrong reaction account":
+				reaction["user"].(approvalObject)["id"] = 1
+			case "closed":
+				pr["state"] = "closed"
+			}
+			summary["body"] = approvalSummary(f)
+			if tc.name == "malformed summary" {
+				summary["body"] = "<!-- codex-pull-request-review-summary -->\n<!-- codex-review-state:v1 broken -->"
+			}
+			if tc.name == "automatic nullable cycle" {
+				summary["body"] = strings.ReplaceAll(summary["body"].(string), "Manual request", "Automatic review")
+			}
+			if tc.name == "duplicate marker" {
+				summary["body"] = summary["body"].(string) + "<!-- codex-review-state:v1 {} -->\n"
+			}
+			if tc.name == "wrong security metadata" {
+				summary["body"] = strings.ReplaceAll(summary["body"].(string), `"pullRequestNumber":7`, `"pullRequestNumber":8`)
+			}
+			if tc.name == "completion before receipt" {
+				summary["body"] = strings.ReplaceAll(summary["body"].(string), "02:13:11.462255", "02:13:09.462255")
+			}
+			if tc.name == "wrong row head" {
+				summary["body"] = strings.ReplaceAll(summary["body"].(string), "`aaaaaaa`", "`bbbbbbb`")
+			}
+			comments := []any{request, summary, code, security}
+			switch tc.name {
+			case "no request":
+				comments = comments[1:]
+			case "no security receipt":
+				comments = comments[:3]
+			case "duplicate receipt":
+				comments = append(comments, approvalComment(104, security["body"].(string), "2026-10-31T02:13:11Z"))
+			case "unknown bot comment":
+				comments = append(comments, approvalComment(104, "A security finding needs attention", "2026-10-31T02:13:12Z"))
+			case "overlapping requests", "prior completed cycle", "edited older request":
+				comments = append([]any{approvalRequest(90, "2026-10-31T02:00:00Z")}, comments...)
+				if tc.name != "overlapping requests" {
+					comments = append(comments, approvalComment(91, code["body"].(string), "2026-10-31T02:01:00Z"), approvalComment(92, security["body"].(string), "2026-10-31T02:02:00Z"))
 				}
-				body := summary(scenario)
-				pages := [][]map[string]any{{{"user": map[string]string{"login": "someone"}, "body": body}}, {{"user": map[string]string{"login": "chatgpt-codex-connector[bot]"}, "body": body}}}
-				if scenario == "no bot summary" {
-					pages = pages[:1]
+				if tc.name == "edited older request" {
+					comments[0].(approvalObject)["updated_at"] = "2026-10-31T02:13:14Z"
 				}
-				encoded, _ := json.Marshal(pages)
-				write("comments.json", string(encoded), 0600)
-				encoded, _ = json.Marshal(map[string]string{"body": body})
-				write("summary.json", string(encoded), 0600)
-				write("workflow.sh", script.String(), 0600)
-				write("gh", `#!/bin/sh
-set -eu
-case " $* " in *" --slurp "*) case " $* " in *" --jq "*) echo incompatible-gh-flags >&2; exit 64;; esac;; esac
-endpoint=$2
-case "$endpoint" in
-  repos/owner/repo/pulls/7)
-    if test -f "$FIXTURE_ROOT/pr-read" && test "$SCENARIO" = 'head changed'; then sha=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb; else sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa; fi
-    state=open
-    if test "$SCENARIO" = closed || { test "$SCENARIO" = 'closed during check' && test -f "$FIXTURE_ROOT/pr-read"; }; then state=closed; fi
-    touch "$FIXTURE_ROOT/pr-read"
-    printf '{"state":"%s","draft":%s,"head":{"sha":"%s"}}\n' "$state" "$DRAFT" "$sha";;
-  'repos/owner/repo/issues/7/comments?per_page=100')
-    test "$SCENARIO" != 'pagination failed' || exit 55
-    test "$#" = 4 && test "$3" = --paginate && test "$4" = --slurp
-    cat "$FIXTURE_ROOT/comments.json";;
-  repos/owner/repo/issues/comments/123)
-    test "$3" = --jq && test "$4" = .body
-    jq -r .body "$FIXTURE_ROOT/summary.json";;
-  'repos/owner/repo/issues/7/reactions?per_page=100')
-    printf '[[{"user":{"login":"other"},"content":"eyes"}],[{"user":{"login":"chatgpt-codex-connector[bot]"},"content":"+1"}]]\n';;
-  'repos/owner/repo/pulls/7/reviews?per_page=100')
-    if test "$SCENARIO" = 'already approved'; then
-      printf '[[{"user":{"login":"github-actions[bot]"},"state":"APPROVED","commit_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]]\n'
-    else printf '[[],[]]\n'; fi;;
-  --method)
-    test "$3" = POST && test "$4" = repos/owner/repo/pulls/7/reviews
-    test "$5" = -f && test "$6" = event=APPROVE
-    test "$7" = -f && test "$8" = commit_id=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-    if test "$SCENARIO" = 'post rejected'; then
-      printf '{"message":"fixture rejected review","errors":[{"field":"commit_id","code":"invalid"}],"ignored":"dummy-not-a-token"}\n'
-      exit 42
-    fi
-    if test "$SCENARIO" = 'post non-json'; then
-      printf 'dummy-not-a-token unexpected proxy response\n'
-      exit 42
-    fi
-    printf '%s\n' "$8" >> "$FIXTURE_ROOT/approvals";;
-  *) echo unexpected-api-call >&2; exit 70;;
-esac
-`, 0700)
-				comment := ""
-				if scenario == "comment event" {
-					comment = "123"
+			case "new request":
+				comments = append(comments, approvalRequest(104, "2026-10-31T02:13:14Z"))
+			case "same-second requests":
+				comments = append(comments, approvalRequest(99, request["created_at"].(string)))
+			}
+			root := t.TempDir()
+			write := func(name string, data []byte, mode os.FileMode) {
+				t.Helper()
+				if err := os.WriteFile(filepath.Join(root, name), data, mode); err != nil {
+					t.Fatal(err)
 				}
-				cmd := exec.Command(bash, filepath.Join(root, "workflow.sh"))
-				cmd.Env = []string{"PATH=" + root + string(os.PathListSeparator) + os.Getenv("PATH"), "HOME=" + root, "XDG_CONFIG_HOME=" + root, "GH_CONFIG_DIR=" + root, "GH_TOKEN=dummy-not-a-token", "GITHUB_REPOSITORY=owner/repo", "PR_NUMBER=7", "COMMENT_ID=" + comment, "FIXTURE_ROOT=" + root, "SCENARIO=" + scenario, "DRAFT=" + draft}
-				output, err := cmd.CombinedOutput()
-				if (err != nil) != (scenario == "pagination failed" || scenario == "post rejected" || scenario == "post non-json") {
-					t.Fatalf("unexpected workflow status: %v %s", err, output)
-				}
-				if scenario == "post rejected" && (!strings.Contains(string(output), "fixture rejected review") || !strings.Contains(string(output), "commit_id")) {
-					t.Fatal("GitHub validation error details were discarded", string(output))
-				}
-				if scenario == "post non-json" && !strings.Contains(string(output), "without a JSON validation response") {
-					t.Fatal("missing safe fallback diagnostic", string(output))
-				}
-				if strings.Contains(string(output), "dummy-not-a-token") {
-					t.Fatal("credential leaked")
-				}
-				approvals, _ := os.ReadFile(filepath.Join(root, "approvals"))
-				want := ""
-				if scenario == "approve" || scenario == "comment event" {
-					want = "commit_id=" + head + "\n"
-				}
-				if string(approvals) != want {
-					t.Fatalf("wrong approval side effect: %q, want %q", approvals, want)
-				}
-			})
-		}
+			}
+			fixture, _ := json.Marshal(approvalObject{"comments": comments, "pr": pr, "reaction": reaction, "summary": summary, "scenario": tc.name})
+			write("fixture.json", fixture, 0600)
+			write("workflow.sh", []byte(script.String()), 0600)
+			write("sleep", []byte("#!/bin/sh\nexit 0\n"), 0700)
+			write("gh", []byte(approvalAPIStub), 0700)
+			commentID := ""
+			if tc.name == "comment event" {
+				commentID = "101"
+			} else if tc.name == "old comment event" {
+				commentID = "99"
+			}
+			cmd := exec.Command("bash", filepath.Join(root, "workflow.sh"))
+			cmd.Env = []string{"PATH=" + root + string(os.PathListSeparator) + os.Getenv("PATH"), "HOME=" + root, "GH_CONFIG_DIR=" + root, "GH_TOKEN=dummy-not-a-token", "GITHUB_REPOSITORY=owner/repo", "PR_NUMBER=7", "COMMENT_ID=" + commentID, "FIXTURE_ROOT=" + root}
+			output, err := cmd.CombinedOutput()
+			if (err != nil) != tc.fail {
+				t.Fatalf("unexpected workflow status: %v %s", err, output)
+			}
+			approvals, _ := os.ReadFile(filepath.Join(root, "approvals"))
+			if (len(approvals) > 0) != tc.approve {
+				t.Fatalf("approval=%q, expected=%v; output=%s", approvals, tc.approve, output)
+			}
+			if tc.approve && string(approvals) != approvalHead+"\n" {
+				t.Fatalf("approval did not pin the exact head: %s", approvals)
+			}
+			if strings.Contains(string(output), "dummy-not-a-token") {
+				t.Fatal("credential or untrusted response leaked")
+			}
+			if len(strings.TrimSpace(string(output))) == 0 {
+				t.Fatal("missing approval/hold diagnostic")
+			}
+		})
 	}
 }
+
+// No live gh process is reachable. Each read is paginated, and races are injected
+// at the second observation; all writes must be one exact-SHA review submission.
+const approvalAPIStub = `#!/usr/bin/env python3
+import json, os, pathlib, sys
+root = pathlib.Path(os.environ['FIXTURE_ROOT'])
+f = json.loads((root / 'fixture.json').read_text())
+s = f['scenario']
+a = sys.argv[1:]
+assert a[0] == 'api', a
+endpoint = a[1]
+counts_file = root / 'counts'
+counts = json.loads(counts_file.read_text()) if counts_file.exists() else {}
+counts[endpoint] = counts.get(endpoint, 0) + 1
+counts_file.write_text(json.dumps(counts))
+n = counts[endpoint]
+if endpoint == '--method':
+    assert a[2:] == ['POST', 'repos/owner/repo/pulls/7/reviews', '-f', 'event=APPROVE', '-f', 'commit_id=' + 'a'*40], a
+    if s in ('post rejected', 'post non-json'):
+        print('dummy-not-a-token', file=sys.stderr)
+        print(json.dumps({'message': 'denied', 'errors': [{'field': 'commit_id'}], 'secret': 'dummy-not-a-token'}) if s == 'post rejected' else 'dummy-not-a-token')
+        sys.exit(42)
+    with (root / 'approvals').open('a') as out: out.write('a'*40 + '\n')
+    result = {'state': 'APPROVED', 'commit_id': 'a'*40}
+    if s == 'unconfirmed approval': result['state'] = 'PENDING'
+elif endpoint == 'repos/owner/repo/pulls/7':
+    result = f['pr']
+    if n > 1 and s == 'head changed': result['head']['sha'] = 'b'*40
+    if n > 1 and s == 'closed during check': result['state'] = 'closed'
+elif endpoint == 'repos/owner/repo/issues/7/comments?per_page=100':
+    assert a[2:] == ['--paginate', '--slurp'], a
+    if s == 'pagination failed': sys.exit(55)
+    comments = f['comments']
+    if n > 1:
+        if s == 'summary changed':
+            for c in comments:
+                if c['id'] == 101: c['body'] = c['body'].replace('completed', 'in_progress')
+        if s == 'receipt edited during check':
+            for c in comments:
+                if c['id'] == 103: c['body'] += '\nchanged'; c['updated_at'] = '2026-10-31T02:13:20Z'
+        if s == 'request during check':
+            comments.append({'id': 104, 'body': '@codex review', 'created_at': '2026-10-31T02:13:20Z', 'updated_at': '2026-10-31T02:13:20Z'})
+    result = [comments[:2], comments[2:]]
+    if s == 'malformed pagination': result = [comments[:2], {'message': 'error'}]
+elif endpoint == 'repos/owner/repo/issues/7/reactions?per_page=100':
+    assert a[2:] == ['--paginate', '--slurp'], a
+    if s == 'reaction fetch failed': sys.exit(55)
+    result = [[], [f['reaction']]]
+    if s == 'missing reaction' or (s == 'delayed reaction' and n == 1) or (s == 'reaction removed' and n > 1): result = [[], []]
+elif endpoint == 'repos/owner/repo/pulls/7/reviews?per_page=100':
+    assert a[2:] == ['--paginate', '--slurp'], a
+    result = [[], []]
+    if s == 'already approved': result[1] = [{'user': {'login': 'github-actions[bot]'}, 'state': 'APPROVED', 'commit_id': 'a'*40}]
+    if s == 'changes requested': result[1] = [{'user': {'login': 'reviewer'}, 'state': 'CHANGES_REQUESTED', 'commit_id': 'a'*40}]
+elif endpoint == 'repos/owner/repo/commits/aaaaaaaaaa':
+    if s == 'ambiguous short sha': sys.exit(22)
+    result = {'sha': 'a'*40}
+    if s == 'wrong resolved sha': result['sha'] = 'b'*40
+else:
+    raise AssertionError('unexpected API ' + str(a))
+print(json.dumps(result))
+`
