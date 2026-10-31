@@ -12,8 +12,9 @@ Names are case-sensitive. Every command supports `-h`/`--help`; the root support
 | Status | Meaning |
 | --- | --- |
 | `0` | Success, including an empty query result or a documented nonfatal skip. |
-| `1` | Runtime failure, safety refusal, declined confirmation, or partial failure. |
+| `1` | Runtime failure, safety refusal, declined confirmation, no interactive match, or partial failure. |
 | `2` | Invalid arguments, repository specification, selector, or configuration. |
+| `130` | Interactive removal selection canceled with Esc or Ctrl-C. |
 
 Successful data alone goes to stdout. Paths are absolute and use `/` separators
 on every platform; a path result is one line per completed item. Progress,
@@ -220,7 +221,7 @@ Do not create missing roots.
 ## remove
 
 ```text
-gh qw remove [--dry-run] <repository-selector>
+gh qw remove [--dry-run] [<repository-selector>]
 gh qw remove --worktree [-R|--repo <repo>] [-f|--force] <slot>
 gh qw remove --worktree [-R|--repo <repo>] --gone
                     [-n|--dry-run] [-y|--yes] [-f|--force]
@@ -231,11 +232,12 @@ and asks once for confirmation. Remove linked worktrees through Git first,
 then revalidate and remove the main directory. No implicit force is applied.
 
 `--dry-run` performs discovery and safety checks and prints the plan without
-prompting or changing anything. Successful stdout is empty. Refusals stop further
-removal; errors identify already-removed and remaining paths. Verify both path
-and registration absence before cleaning empty parents. A registered repository
-outside configured roots may be removed, but its parent is an established
-boundary and is never cleaned. Once the main directory is confirmed absent,
+asking for confirmation or changing anything. Successful stdout is empty.
+Refusals stop further removal; errors identify already-removed and remaining
+paths. Verify both path and registration absence before cleaning empty parents.
+A registered repository outside configured roots may be removed, but its
+parent is an established boundary and is never cleaned. Once the main
+directory is confirmed absent,
 remove its registry entry even if later cleanup or progress output fails. The
 removal is conditional on that same registered path, so a concurrent replacement
 registration is preserved and reported as a partial failure. Refuse
@@ -253,6 +255,40 @@ identities or boundaries. Refuse deletion when another explicitly registered
 repository is physically nested in the linked target, and re-read that managed
 inventory immediately before mutation. Cleanup failures still report a
 completed removal. Stdout is empty.
+
+### Interactive selection
+
+Without a repository selector, `remove` opens the external `fzf` command to
+choose one registered repository or existing managed linked worktree. `fzf`
+must be on `PATH` for this form only. Explicit repository selectors,
+`--worktree <slot>`, and `--gone` do not invoke it.
+
+Each candidate shows its kind, full repository identity, and local path.
+Worktree labels include the checked-out branch, falling back to the stable
+slot for detached worktrees or ambiguous labels. Selection retains the
+canonical repository identity and stable slot independently of that display.
+Worktrees outside the managed layout are not offered.
+
+Selecting a repository follows the repository removal plan and confirmation
+above, including its linked worktrees. Selecting a linked worktree follows
+single-worktree removal without another confirmation or implicit force.
+`remove --dry-run` also opens the selector, then prints the selected target's
+plan without mutation. For a selected linked worktree, this validates its
+association and boundaries; Git's dirty/locked checks run during actual removal.
+Changes to the selected repository mapping, directory
+identity, or worktree branch/HEAD while the selector is open cause a refusal.
+
+Esc or Ctrl-C returns `130`; no match returns `1`. Neither prints an additional
+error or removes anything. With no candidates, report that on stderr and return
+`0` without launching `fzf`. Missing `fzf`, unavailable terminal, invalid
+selection output, and other selector failures return `1` without removal.
+
+The selector reads generated candidates on stdin and uses the controlling
+terminal for interaction; command stdin is never treated as a selection or
+confirmation. Selected output is private, and successful removal stdout stays
+empty. `FZF_DEFAULT_OPTS` and `FZF_DEFAULT_OPTS_FILE` are ignored for this
+subprocess so user defaults cannot accept a target automatically or change
+the selection output format.
 
 ### Gone-upstream selection
 

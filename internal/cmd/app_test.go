@@ -194,7 +194,7 @@ func TestExecuteMapsUsageAndRuntimeErrors(t *testing.T) {
 		},
 		{
 			name:       "missing argument",
-			args:       []string{"remove"},
+			args:       []string{"remove", "--worktree"},
 			wantStatus: 2,
 			wantError:  "gh-qw: accepts 1 arg(s), received 0",
 		},

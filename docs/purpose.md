@@ -27,7 +27,7 @@ not a provisioned development environment.
 | Start work | Choose where to put a missing checkout or remember an existing one. | `clone` acquires a repository at a managed destination; `add` registers an existing checkout in place or moves it with `--move`. |
 | Work in parallel | Choose and keep track of a separate directory for another task. | `add --worktree` places a linked worktree at a predictable, automatically allocated slot. |
 | Resume work | Remember a full path or search directories across repositories. | Registered repository identities and Git's worktree information expose their locations to other tools. |
-| Finish work | Identify the intended cleanup target and understand what was removed. | `remove` applies its documented selection and safety rules and reports failures or partial results. |
+| Finish work | Identify the intended cleanup target and understand what was removed. | `remove` accepts an explicit target or offers candidates through external `fzf`, then applies its safety rules and reports failures or partial results. |
 
 The value is the consistent arrangement across repositories and worktrees, not
 merely wrapping Git commands. A slot identifies a place; gh-qw does not infer a
@@ -49,8 +49,9 @@ never persists a second copy of Git's worktree registrations, and does not
 redefine branch, remote, or authentication semantics.
 
 Return useful identities and paths for composition with existing tools. Shell
-navigation, interactive selection, and editors can consume those results; gh-qw
-does not need to own those interfaces. It is not an editor, a development
+navigation and editors can consume those results. For cleanup, gh-qw can pass
+its known candidates to external `fzf`, which owns the interactive interface;
+gh-qw owns target identity and removal. It is not an editor, a development
 environment provisioner, a task or agent orchestrator, or a system for choosing
 branch strategies and PR workflows.
 
