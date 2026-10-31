@@ -38,15 +38,17 @@ jq program is required by the CLI. Unsupported external commands fail through
 the native tool rather than invoking a second implementation.
 
 fzf owns the interactive interface. `cmd` maps each display row to its original
-repository identity, path, and stable worktree slot. `fzfcmd` exchanges
-NUL-delimited records and accepts only one complete, unchanged candidate.
+repository identity and, for removal, path and stable worktree slot.
+`fzfcmd` exchanges NUL-delimited records and accepts only one complete, unchanged candidate.
 Selection output never becomes public result output or an arbitrary path to
-delete. The [CLI reference](cli.md#interactive-selection) owns selector
+delete. Clone discovery passes the full candidate set and an editable initial
+query independently; it prepares selections before starting parallel clones.
+The [CLI reference](cli.md#fzf-selection) owns selector
 requirements, environment handling, cancellation, and error behavior.
 
 Help, version, syntax validation, and local-only operations do not perform
 unnecessary configuration reads, discovery, or authentication. Pure syntax is
-separate from host/login and filesystem-based input resolution.
+separate from host and filesystem-based input resolution.
 
 ## Filesystem and failure boundaries
 
