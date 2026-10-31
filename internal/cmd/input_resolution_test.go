@@ -28,8 +28,16 @@ func TestCloneSyntaxErrorHasNoResolutionOrCloneSideEffects(t *testing.T) {
 			t.Setenv("PATH", t.TempDir())
 			var stdout bytes.Buffer
 			deps := cloneDependencies(root, &cloneGitOperations{}, &stdout, io.Discard)
-			identity := &cloneIdentityResolver{err: errors.New("authentication must not run")}
-			deps.IdentityResolver = identity
+			deps.RepositoryAPI = &cloneRepositoryAPI{
+				exists: func(context.Context, string, string, string) (bool, error) {
+					t.Fatal("syntax errors must not query repositories")
+					return false, nil
+				},
+				repositories: func(context.Context, string, string) ([]string, error) {
+					t.Fatal("syntax errors must not list owner repositories")
+					return nil, nil
+				},
+			}
 			resolver := &cloneRootResolver{err: errors.New("root resolution must not run")}
 			deps.RootResolver = resolver
 			deps.Discover = func(context.Context, []string) (local.DiscoveryResult, error) {
@@ -45,8 +53,8 @@ func TestCloneSyntaxErrorHasNoResolutionOrCloneSideEffects(t *testing.T) {
 			if err := command.Execute(); !errors.Is(err, cmd.ErrCloneUsage) || !errors.Is(err, repospec.ErrUsage) {
 				t.Fatalf("syntax error = %v, want usage classification", err)
 			}
-			if stdout.Len() != 0 || identity.Calls() != 0 {
-				t.Fatalf("syntax error produced stdout %q or authenticated %d times", stdout.String(), identity.Calls())
+			if stdout.Len() != 0 {
+				t.Fatalf("syntax error produced stdout %q", stdout.String())
 			}
 			if resolver.Calls() != 0 {
 				t.Fatalf("syntax error resolved roots %d times", resolver.Calls())
@@ -221,16 +229,24 @@ func TestExistingCloneTargetRejectsWithoutExternalCommands(t *testing.T) {
 		t.Fatal("existing-repository lookup must not construct clone operations")
 		return nil
 	}
-	identity := &cloneIdentityResolver{err: errors.New("authentication must not be used")}
-	deps.IdentityResolver = identity
+	deps.RepositoryAPI = &cloneRepositoryAPI{
+		exists: func(context.Context, string, string, string) (bool, error) {
+			t.Fatal("existing-repository lookup must not query repositories")
+			return false, nil
+		},
+		repositories: func(context.Context, string, string) ([]string, error) {
+			t.Fatal("existing-repository lookup must not list owner repositories")
+			return nil, nil
+		},
+	}
 	command := cmd.NewCloneCommand(deps)
 	command.SetArgs([]string{"ssh://git@github.com/owner/widget.git"})
 	err := command.Execute()
 	if err == nil || !strings.Contains(err.Error(), "already registered") {
 		t.Fatalf("Execute() error = %v, want registered collision", err)
 	}
-	if stdout.String() != "" || identity.Calls() != 0 {
-		t.Fatalf("stdout = %q, identity calls = %d", stdout.String(), identity.Calls())
+	if stdout.String() != "" {
+		t.Fatalf("stdout = %q, want empty", stdout.String())
 	}
 }
 
