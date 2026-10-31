@@ -36,8 +36,8 @@ and Windows amd64.
 The complete command set requires Git 2.42.0 or newer and GitHub CLI 2.88.0 or
 newer. Git must be on `PATH`; gh is resolved through `GH_PATH`, then `PATH`.
 Configure authentication with `gh auth login` for network operations.
-Install `fzf` on `PATH` to choose cleanup targets with argumentless `remove`.
-Explicit removal selectors do not require it.
+Install `fzf` on `PATH` to choose repositories when cloning by owner or partial
+name, and cleanup targets with argumentless `remove`.
 
 ## Quick start
 
@@ -48,6 +48,9 @@ gh qw list --full-path
 gh qw add --worktree -R cli/cli -b feature/docs
 gh qw list --all
 ```
+
+To find a repository before cloning, run `gh qw clone cli`. This lists the
+owner's repositories, or opens `fzf` to choose one when it is installed.
 
 Main repositories live at `<root>/<host>/<owner>/<repo>`. Linked worktrees
 live at `<root>/worktrees/<unique-name>/<repo>`, with the default root `~/ghqw`.
@@ -69,7 +72,7 @@ subdirectory. Multiple roots and XDG locations are described in the
 
 | Command | Result |
 | --- | --- |
-| `clone` | Acquire and register a new repository; existing checkouts use `add`. |
+| `clone` | Acquire and register a new repository; supply an owner to list or choose a repository. |
 | `add` | Register a local repository; `--move` relocates it; `--worktree` adds a linked worktree. |
 | `list` | List registered repositories; `--worktree` selects worktrees, `--gone` filters them, and `--all` includes both. |
 | `forget` | Unregister a repository without deleting its files. |
