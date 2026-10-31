@@ -14,6 +14,7 @@ The [purpose](purpose.md) owns product direction; the [CLI](cli.md) and
 | `registry` | Explicit identity-to-location mappings under XDG data; no Git metadata. |
 | `local` | Read-only repository/worktree discovery, selectors, slots, and Git associations. |
 | `gitcmd`, `ghcmd`, `ghapi` | Native command arguments and structured output interpretation. |
+| `fzfcmd` | External selector invocation and validation of one returned candidate. |
 | `procio` | Context-bound processes, descriptors, captured output, bounded diagnostic tails, and typed failures. |
 | `physicalpath`, `fsidentity` | Physical paths, established boundaries, and filesystem object identity. |
 | `removal` | Shared observations, revalidation, native removal, verification, and bounded parent cleanup. |
@@ -21,9 +22,11 @@ The [purpose](purpose.md) owns product direction; the [CLI](cli.md) and
 
 ## External commands
 
-Use argument vectors with `exec.CommandContext`, without a shell. Child stdin
-reads from the null device. Progress uses stderr; successful result data alone
-uses stdout. File-backed streams pass their descriptors through directly;
+Use argument vectors with `exec.CommandContext`, without a shell. Git/gh stdin
+reads from the null device. The optional fzf selector receives generated
+candidates on stdin and returns its selection through captured stdout.
+Progress uses stderr; successful result data alone uses public stdout.
+File-backed streams pass their descriptors through directly;
 pipe-based diagnostics retain at most 64 KiB. Error messages exclude arguments,
 environment values, and captured stderr while preserving process status and
 cancellation through the error chain.
@@ -33,6 +36,13 @@ worktree registration, pruning, and repair. gh owns clone/sync, authentication,
 and API transport. API field selection uses gh's built-in `--jq`; no separate
 jq program is required by the CLI. Unsupported external commands fail through
 the native tool rather than invoking a second implementation.
+
+fzf owns the interactive interface. `cmd` maps each display row to its original
+repository identity, path, and stable worktree slot. `fzfcmd` exchanges
+NUL-delimited records and accepts only one complete, unchanged candidate.
+Selection output never becomes public result output or an arbitrary path to
+delete. The [CLI reference](cli.md#interactive-selection) owns selector
+requirements, environment handling, cancellation, and error behavior.
 
 Help, version, syntax validation, and local-only operations do not perform
 unnecessary configuration reads, discovery, or authentication. Pure syntax is
@@ -58,6 +68,9 @@ registrations, and unknown registration state.
 
 Share observations only within one read-only phase. Rebuild bulk removal plans
 after confirmation and revalidate each target immediately before deletion.
+Interactive removal also preserves target observations across the picker and
+rejects changed repository mappings, filesystem identities, or worktree state
+before entering the existing removal flow.
 Whole-repository, single-worktree, and gone-upstream policies retain separate
 selection and continuation decisions.
 

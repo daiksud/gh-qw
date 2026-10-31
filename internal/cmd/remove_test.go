@@ -75,7 +75,6 @@ func TestNewRemoveCommandRejectsUsageBeforeResolution(t *testing.T) {
 	t.Parallel()
 
 	for _, args := range [][]string{
-		nil,
 		{"one", "two"},
 		{"https://github.com/acme/widget"},
 		{"widget@"},

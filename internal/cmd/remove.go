@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/daiksud/gh-qw/internal/fzfcmd"
 	"github.com/daiksud/gh-qw/internal/gitcmd"
 	"github.com/daiksud/gh-qw/internal/local"
 	"github.com/daiksud/gh-qw/internal/physicalpath"
@@ -70,6 +71,7 @@ type RemoveDependencies struct {
 	Forget       func(string, string) error
 	Filesystem   local.FilesystemOptions
 	Prompt       RemovePrompt
+	Select       func(context.Context, []string) (string, error)
 	OpenTerminal func() (io.ReadCloser, error)
 	Remove       func(string) error
 	RemoveAll    func(string) error
@@ -105,12 +107,13 @@ type removeRuntime struct {
 		string,
 		...local.AssociationOptions,
 	) error
-	git        RemoveGit
-	filesystem local.FilesystemOptions
-	fs         removeFilesystem
-	prompt     RemovePrompt
-	stdout     io.Writer
-	stderr     io.Writer
+	git          RemoveGit
+	filesystem   local.FilesystemOptions
+	fs           removeFilesystem
+	prompt       RemovePrompt
+	selectTarget func(context.Context, []string) (string, error)
+	stdout       io.Writer
+	stderr       io.Writer
 }
 
 type removeFilesystem struct {
@@ -163,8 +166,9 @@ func NewRemoveCommand(dependencies RemoveDependencies) *cobra.Command {
 		yes      bool
 	)
 	command := &cobra.Command{
-		Use:           "remove [flags] (<repository-selector>|--worktree <slot>|--worktree --gone)",
+		Use:           "remove [flags] [<repository-selector>|--worktree <slot>|--worktree --gone]",
 		Short:         "Remove a managed repository or linked worktree",
+		Long:          "Remove a managed repository or linked worktree. With no target, select one using external fzf.",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		Args: func(command *cobra.Command, args []string) error {
@@ -185,7 +189,7 @@ func NewRemoveCommand(dependencies RemoveDependencies) *cobra.Command {
 				}
 				return nil
 			}
-			if err := cobra.ExactArgs(1)(command, args); err != nil {
+			if err := cobra.MaximumNArgs(1)(command, args); err != nil {
 				return removeNewUsageError(err)
 			}
 			if command.Flags().Changed("repo") || force || gone || yes {
@@ -215,9 +219,30 @@ func NewRemoveCommand(dependencies RemoveDependencies) *cobra.Command {
 				request.branch = args[0]
 				return worktreeRemoveRun(command.Context(), worktreeRuntime, request)
 			}
-			selection, err := removeParseSelection(args[0])
-			if err != nil {
-				return removeNewUsageError(err)
+			var selection removeSelection
+			var selected *removeCandidate
+			if len(args) == 0 {
+				var err error
+				selected, err = removeSelectTarget(command.Context(), commandRuntime)
+				if err != nil || selected == nil {
+					return err
+				}
+				if !selected.worktree.Main {
+					return worktreeRemoveRun(command.Context(), worktreeRuntime, worktreeRemoveRequest{
+						selector:    selected.repository.Identity,
+						selectorSet: true,
+						branch:      selected.worktree.Slot,
+						dryRun:      dryRun,
+						selected:    selected,
+					})
+				}
+				selection = removeSelection{raw: selected.repository.Identity, selector: selected.repository.Identity}
+			} else {
+				var err error
+				selection, err = removeParseSelection(args[0])
+				if err != nil {
+					return removeNewUsageError(err)
+				}
 			}
 
 			plan, err := removePreflight(
@@ -228,6 +253,11 @@ func NewRemoveCommand(dependencies RemoveDependencies) *cobra.Command {
 			)
 			if err != nil {
 				return err
+			}
+			if selected != nil {
+				if err := selected.revalidate(commandRuntime.fs.observations(), plan.Repository, plan.mainWorktree); err != nil {
+					return err
+				}
 			}
 
 			if err := removeWritePlan(command.ErrOrStderr(), plan); err != nil {
@@ -278,7 +308,7 @@ func NewRemoveCommand(dependencies RemoveDependencies) *cobra.Command {
 		"dry-run",
 		"n",
 		false,
-		"Print the repository or gone-worktree plan without changing files",
+		"Print the selected target or gone-worktree plan without changing files",
 	)
 	flags.BoolVar(&worktree, "worktree", false, "Remove linked Git worktrees instead of a repository")
 	flags.StringVarP(&selector, "repo", "R", "", "Select the repository for linked-worktree removal")
@@ -364,6 +394,10 @@ func removePrepareRuntime(dependencies RemoveDependencies) removeRuntime {
 			return removeConfirm(ctx, writer, message, openTerminal)
 		}
 	}
+	selectTarget := dependencies.Select
+	if selectTarget == nil {
+		selectTarget = (&fzfcmd.Selector{Stderr: stderr}).Select
+	}
 	return removeRuntime{
 		resolver:            resolver,
 		discover:            dependencies.Discover,
@@ -380,9 +414,10 @@ func removePrepareRuntime(dependencies RemoveDependencies) removeRuntime {
 			remove:       remove,
 			removeAll:    removeAll,
 		},
-		prompt: prompt,
-		stdout: stdout,
-		stderr: stderr,
+		prompt:       prompt,
+		selectTarget: selectTarget,
+		stdout:       stdout,
+		stderr:       stderr,
 	}
 }
 

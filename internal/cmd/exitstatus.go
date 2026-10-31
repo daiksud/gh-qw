@@ -4,7 +4,7 @@ import "fmt"
 
 // silentStatusError reports a specific process exit status without
 // Execute's standard "gh-qw: <error>" diagnostic line. Bulk --gone removal
-// uses it after reporting its outcome to avoid a redundant error.
+// and fzf cancellation/no-match use it to avoid a redundant error.
 type silentStatusError struct {
 	status int
 }

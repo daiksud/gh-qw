@@ -121,6 +121,7 @@ type worktreeRemoveRequest struct {
 	gone        bool
 	dryRun      bool
 	yes         bool
+	selected    *removeCandidate
 }
 
 type worktreeRemoveUsageError = repositoryUsageError
@@ -341,6 +342,16 @@ func worktreeRemoveRun(
 	}
 	if err := removal.CompareRepositories(discovery.Repositories, latest.Repositories); err != nil {
 		return fmt.Errorf("revalidate registered repositories: %w", err)
+	}
+	if request.selected != nil {
+		if err := request.selected.revalidate(filesystem.observations(), repository, worktree); err != nil {
+			return err
+		}
+	}
+	if request.dryRun {
+		return commandWriteAll(commandRuntime.stderr, []byte(fmt.Sprintf(
+			"Removal plan:\n  linked worktree: %s\n", removeOutputPath(worktree.Path),
+		)))
 	}
 
 	result := filesystem.executor(commandRuntime.git).RemoveLinked(

@@ -36,6 +36,8 @@ and Windows amd64.
 The complete command set requires Git 2.42.0 or newer and GitHub CLI 2.88.0 or
 newer. Git must be on `PATH`; gh is resolved through `GH_PATH`, then `PATH`.
 Configure authentication with `gh auth login` for network operations.
+Install `fzf` on `PATH` to choose cleanup targets with argumentless `remove`.
+Explicit removal selectors do not require it.
 
 ## Quick start
 
@@ -72,7 +74,7 @@ subdirectory. Multiple roots and XDG locations are described in the
 | `list` | List registered repositories; `--worktree` selects worktrees, `--gone` filters them, and `--all` includes both. |
 | `forget` | Unregister a repository without deleting its files. |
 | `root` | Print repository roots. |
-| `remove` | Remove a repository, one linked worktree, or gone-upstream worktrees. |
+| `remove` | Remove a repository, one linked worktree, or gone-upstream worktrees; omit the target to choose with `fzf`. |
 
 Use native `git worktree prune` for stale Git worktree metadata; gh-qw does not
 own a separate pruning policy.
