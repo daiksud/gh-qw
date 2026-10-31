@@ -107,6 +107,19 @@ jobs:
               # Codex's own summaries/receipts quote the command in their footer.
               return not bot(item, comment=True) and re.search(r"@codex\s+(?:security\s+)?review\b", item.get("body", ""), re.I) is not None
 
+          def manual_review_request(item):
+              # Only the first line is the command; later lines may explain the request.
+              lines = item.get("body", "").splitlines()
+              return bool(lines) and lines[0].strip().lower() == "@codex review" and item.get("created_at") == item.get("updated_at")
+
+          def setup_advisory(item):
+              # Ignore only this observed, unedited informational notice. Unknown or
+              # augmented Codex messages must still withhold approval, not disappear.
+              return (item.get("body") == (
+                  "To use Codex here, [create an environment for this repo]"
+                  "(https://chatgpt.com/codex/cloud/settings/environments)."
+              ) and item.get("created_at") == item.get("updated_at"))
+
           def receipt_kind(item):
               body = item.get("body", "")
               if not body.startswith(RECEIPT + "\n"):
@@ -133,7 +146,7 @@ jobs:
               require(metadata.get("headSha") == head and metadata.get("repository") == REPO and metadata.get("pullRequestNumber") == int(NUMBER) and metadata.get("status") == "completed" and metadata.get("mergeGateEnabled") is False, "security metadata does not identify this completed review")
               require(bool(requests), "nullable result has no review request boundary")
               request = requests[-1]
-              require(request["body"].strip().lower() == "@codex review" and request.get("created_at") == request.get("updated_at"), "nullable result has an ambiguous or edited review request")
+              require(manual_review_request(request), "nullable result requires an unedited request with @codex review on the first line")
               start = timestamp(request.get("created_at"))
               require(all(timestamp(r.get("updated_at")) < start for r in requests[:-1]), "an earlier review request was edited during this cycle")
               finish = timestamp(summary.get("updated_at"))
@@ -143,9 +156,9 @@ jobs:
               previous = timestamp(requests[-2].get("created_at")) if len(requests) > 1 else timestamp(summary.get("created_at"))
               require(previous != start, "review cycle boundaries have ambiguous timestamps")
               if previous < start:
-                  prior = [c for c in trusted if previous < timestamp(c.get("created_at")) < start]
+                  prior = [c for c in trusted if previous < timestamp(c.get("created_at")) < start and not setup_advisory(c)]
                   require(sorted(receipt_kind(c) or "unknown" for c in prior) == ["code", "security"], "overlapping or unidentifiable review requests")
-              current = [c for c in trusted if timestamp(c.get("created_at")) > start]
+              current = [c for c in trusted if timestamp(c.get("created_at")) > start and not setup_advisory(c)]
               require(sorted(receipt_kind(c) or "unknown" for c in current) == ["code", "security"], "missing, duplicate or contradictory completion receipts")
               for receipt in current:
                   kind = receipt_kind(receipt)
@@ -190,7 +203,7 @@ jobs:
               if base_changes:
                   require(bool(requests), "a base retarget requires a new manual review request")
                   request = requests[-1]
-                  require(request.get("created_at") == request.get("updated_at") and request.get("body", "").strip().lower() == "@codex review", "a base retarget has no unambiguous manual review boundary")
+                  require(manual_review_request(request), "a base retarget requires an unedited request with @codex review on the first line")
                   start = timestamp(request.get("created_at"))
                   require(all(timestamp(event.get("created_at")) < start for event in base_changes), "PR base changed since the review request")
               if state["security_review"].get("has_unresolved_findings") is not False:
@@ -208,6 +221,17 @@ jobs:
               # GitHub timestamps have second precision. A same-second/older reaction
               # cannot establish that it acknowledges this completed review cycle.
               return matches[0] if len(matches) == 1 else None
+
+          def report_result(outcome, detail):
+              # Callers supply fixed diagnostics and validated SHAs, never comment bodies.
+              print(f"Codex approval: {outcome}\n{detail}")
+              path = os.environ.get("GITHUB_STEP_SUMMARY")
+              if path:
+                  try:
+                      with open(path, "a", encoding="utf-8") as summary:
+                          summary.write(f"## Codex automatic approval\n\n**Result: {outcome}**\n\n{detail}\n")
+                  except OSError:
+                      print("::warning title=Codex approval summary unavailable::See the approval outcome in the step log")
 
           def run():
               pr = api(f"{ROOT}/pulls/{NUMBER}")
@@ -231,7 +255,7 @@ jobs:
                       latest[review.get("user", {}).get("login")] = review
               require(not any(r.get("state") == "CHANGES_REQUESTED" for r in latest.values()), "an approving review cannot replace requested changes")
               if any(r.get("user", {}).get("login") == "github-actions[bot]" and r.get("state") == "APPROVED" and r.get("commit_id") == head for r in latest.values()):
-                  print("Already approved for the current HEAD")
+                  report_result("Already approved", f"Current HEAD `{head}` already has an approval. No new approval was submitted.")
                   return
               require(snapshot(head) == (evidence, completed), "review evidence changed before approval")
               require(fresh_reaction(completed) == reaction, "Codex thumbs-up changed before approval")
@@ -240,14 +264,17 @@ jobs:
               response = api("--method", "POST", f"{ROOT}/pulls/{NUMBER}/reviews", "-f", "event=APPROVE", "-f", f"commit_id={head}")
               if response.get("state") != "APPROVED" or response.get("commit_id") != head:
                   raise RuntimeError("GitHub did not confirm approval of the verified HEAD")
-              print(f"Approved verified commit {head}")
+              report_result("Approved", f"Approved verified commit `{head}`.")
 
           try:
               run()
           except Hold as error:
-              print(f"::notice title=Codex approval withheld::{error}")
+              print(f"::warning title=Codex approval withheld::{error}")
+              report_result("Withheld", f"No approval was submitted.\n\nReason: {error}\n\nWorkflow success means the check completed, not that the PR was approved.")
           except Exception as error:
               # Unexpected/malformed evidence and failed reads must never become approval.
-              print(str(error) if isinstance(error, RuntimeError) else "Approval failed: invalid API evidence or execution failure", file=sys.stderr)
+              reason = str(error) if isinstance(error, RuntimeError) else "Approval failed: invalid API evidence or execution failure"
+              report_result("Failed", reason)
+              print(reason, file=sys.stderr)
               sys.exit(1)
           PYTHON
