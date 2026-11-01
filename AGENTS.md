@@ -42,10 +42,12 @@ Do not create an ADR archive or repeat workflow implementations in prose.
 
 ## Changes and releases
 
-Branch names are identifiers only. Choose PR types and reviewed labels from
-actual impact; `feat` and `fix` concern user-visible gh-qw behavior, not tooling.
-Keep the resulting merge commit consistent with the reviewed change. Follow
-[contribution guidance](docs/contributing.md) for validation and release labels.
+Branch names are identifiers only. Choose the Conventional Commit type from
+actual impact; `feat`, `fix`, and `perf` concern user-visible gh-qw behavior.
+Use `build`, `ci`, or `chore` as appropriate for development tooling and
+repository automation. Review the PR title and body as the final squash commit
+message. Follow [contribution guidance](docs/contributing.md) for validation;
+the committed message determines the version and release-note category.
 
 Merging and releasing are separate actions. Without an explicit release
 request, do not push release tags, dispatch release workflows, or publish
