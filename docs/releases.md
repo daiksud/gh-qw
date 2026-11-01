@@ -38,8 +38,38 @@ Empty commits do not
 change the selected source and are ignored; a preparation-named commit with a
 tree change remains substantive. No substantive changes, an invalid baseline,
 a changed published baseline, or a conflicting tag stops publication. There is
-no version override, and v0 does not automatically graduate to v1. PR labels
-categorize generated release notes but do not determine the version. Tags are
+no version override, and v0 does not automatically graduate to v1. Tags are
 not moved and published releases/assets are not replaced. Final API operations
 are not atomic; inspect remote state before retrying interrupted publication.
-[.github/release.yml](../.github/release.yml) owns release-note categories.
+
+## Release notes
+
+The [generator](../.github/scripts/release-notes.py) reads committed squash
+messages between the previous published commit and the frozen release source.
+It follows first-parent history, omits commits with the same tree as their first
+parent, and lists each remaining commit once. Both boundaries are full commit
+SHAs; edits to a PR after merging cannot change the generated notes.
+
+The first matching signal determines the section:
+
+| Commit signal | Section |
+| --- | --- |
+| Breaking header `!`, or a formal `BREAKING CHANGE:` / `BREAKING-CHANGE:` footer | BREAKING CHANGE |
+| Formal `DEPRECATED:` footer | DEPRECATED |
+| `feat` | New Feature |
+| `fix` | Bug Fix |
+| `perf` | Performance |
+| Any other type or an unstructured message | Maintenance |
+
+Compatibility footers must start after a blank line or another footer. Prose,
+quoted text, and fenced examples are not compatibility markers. Describe the
+required migration in a breaking-change footer so it appears with the change.
+New Feature, Bug Fix, and Performance describe user-observable gh-qw behavior;
+reviewers check that distinction before merging, following
+[PR classification](contributing.md#pr-classification).
+
+The generated file includes commit links and a comparison link pinned to both
+commit SHAs. The publisher creates it after revalidating the accepted artifacts,
+published baseline, and tag conflicts, and passes the file to `gh release
+create`. Invalid boundaries, incomplete history, or generation failure stop
+publication before that command runs.

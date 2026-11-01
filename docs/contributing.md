@@ -66,40 +66,24 @@ has one type. `feat`, `fix`, and `perf` concern user-observable gh-qw
 behavior, not improvements to internal CI or build tooling. Branch names are
 identifiers, not classification inputs.
 
-The same 20 labels are used in gh-settings: eleven change types, the
-compatibility labels `BREAKING CHANGE` and `DEPRECATED`, and seven independent
-triage labels (`accessibility`, `duplicate`, `good first issue`,
-`help wanted`, `invalid`, `question`, and `wontfix`).
-[Repository settings](../.github/settings.yml) owns their descriptions and
-colors. Compatibility labels can accompany the change type. Reviewers use the
-final diff and its product impact, not only paths or the Issue's initial type.
-
-The [Labeler](../.github/labeler.yml) suggests `docs`, `test`, `build`, or
-`ci` only when **every changed file** matches one category. Docs cover root
-guides, `docs/**`, skill instructions and PR templates; tests cover
-`tests/**` and `**/*_test.go`; build covers `go.mod`, `go.sum`, and
-`mise.toml`; CI covers CI/PRLint/Labeler workflows, and CI-specific local
-Actions/scripts. Release tooling, other workflows, public interfaces, and mixed
-changes require manual classification. Hidden paths are included; labels are
-add-only, so reviewers remove stale suggestions. Dependabot proposes `build`
-for Go modules and `ci` for GitHub Actions updates, without automatic merging.
-
-[Issue forms](../.github/ISSUE_TEMPLATE) initially label bug reports `fix` and
-feature requests `feat`. Tasks and blank issues have no initial label; their
-eventual implementation PRs can use a different type.
+Reviewers choose the type from the final diff and its user impact. Use `build`,
+`ci`, or `chore` as appropriate for development tooling and repository
+automation. Review the PR title and body together as the final squash commit
+message, including any compatibility information and migration instructions.
 
 The independent [PRLint workflow](../.github/workflows/prlint.yml) validates the
 PR title and optional body together as the proposed merge commit message. It
 checks Conventional Commits with one type, an optional scope, and a nonempty
-description under the preset's default rules. A `!` header or
-`BREAKING CHANGE:` footer marks an incompatibility. Passing syntax validation
-does not establish correct semantic classification. Squash messages determine
-versions; reviewed PR labels classify release notes.
+description under the preset's default rules. Passing syntax validation does
+not establish correct semantic classification. The actual committed squash
+message determines both the version and the release-note category; see
+[release notes](releases.md#release-notes) for classification and compatibility
+markers.
 
 ## Repository maintenance
 
 Use [Repository automation](repository-automation.md) for this repository's
-settings, labels, required checks, and credential boundaries. The
+settings, required checks, and credential boundaries. The
 [maintainer release guide](releases.md) owns version selection, manual
 publication, artifact identity, and recovery. Merging a PR is not permission
 to release.
