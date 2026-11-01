@@ -75,8 +75,8 @@ before applying because the live settings can change after observation.
 Only squash merges are allowed. The squash commit uses the reviewed PR title
 and body. The Actions approval setting permits the
 [Codex approval workflow](../.github/workflows/approve-codex-review.yml)
-to produce a valid GitHub Actions approving review when its current-HEAD
-checks pass, whether the open PR is draft or ready. Copilot's reviews and Codex comments alone do not approve PRs.
+to submit a GitHub Actions approving review when its two Codex conditions
+are met, whether the PR is draft or ready. Copilot's reviews and Codex comments alone do not approve PRs.
 ### Review and merge responsibilities
 
 Rulesets decide merge eligibility: required approvals, stale approval dismissal,
@@ -95,22 +95,37 @@ statement of the dismissal conditions. [Strict required checks](https://docs.git
 require an up-to-date base before merge. Neither rule proves that Codex reviewed
 a particular base.
 
-The [approval workflow](../.github/workflows/approve-codex-review.yml) interprets
-trusted Codex results for the current HEAD and submits an approving review for
-that exact commit. It verifies Bot/App provenance, both completed reviews and
-finding gates; nullable security results also require the latest trusted clean
-receipt of each kind for that HEAD, with the abbreviated commit resolved to the
-full SHA. It rechecks trusted evidence, the thumbs-up, open state and HEAD before
-submission. A successful workflow run can report approval withheld; it is not
-itself an approving review or permission to merge.
+The [approval workflow](../.github/workflows/approve-codex-review.yml) has only
+two approval conditions:
 
-Completed results and an existing thumbs-up can be reused for the same HEAD.
-New requests, reaction age and comment timestamps do not invalidate them. The
-workflow does not withdraw approvals, track base history or duplicate merge
-checks. This avoids repeat reviews based only on timing or request cycles.
-Edited/replayed evidence is not detected through timestamps, and a HEAD-only
-result does not establish which base/diff was reviewed. Required CI and the
-live protections remain separate from this interpretation of review evidence.
+1. Codex has a thumbs-up reaction on the PR.
+2. The latest Codex Review Summary shows both Code Review and Security Review
+   as Completed.
+
+It identifies Codex through GitHub's `user.login`, selects the latest Summary
+comment by ID, and reads the two status cells in its Markdown table. It ignores
+structured metadata, including commit identity and finding flags. Before
+submission it rereads only the same two conditions; changed comment bodies or
+reaction IDs do not invalidate them. HEAD, base,
+timestamps, receipts, earlier requests and requested changes are not additional
+approval conditions. GitHub selects the target commit when the review is
+submitted without `commit_id`; the workflow does not read or compare HEAD.
+
+Summary creation/edits and completed `ci-pr` runs trigger evaluation. The CI
+run's conclusion is not an approval condition. Because Summary updates can
+precede the reaction, the workflow waits for thumbs-up with up to six 30-second
+retries, rereading both conditions. This bound is operational, not evidence of
+review completion. A reaction alone does not trigger this workflow; after the
+polling window, another Summary or `ci-pr` completion event is needed.
+Runs for a PR are serialized; qualifying repeated events
+may submit another approval rather than consulting review history.
+
+A completed Summary and existing thumbs-up can cause approval after code or
+base changes. Approval therefore does not prove that Codex reviewed the current
+commit or diff. The workflow neither decides merge eligibility nor withdraws
+approvals. Rulesets enforce their configured approvals, stale dismissal,
+required checks and thread resolution. A successful run can also report approval
+withheld; only GitHub's confirmed approving review is an approval.
 
 ### CI validation
 

@@ -22,9 +22,6 @@ jobs:
        github.event.comment.user.login == 'chatgpt-codex-connector[bot]' &&
        startsWith(github.event.comment.body, '<!-- codex-pull-request-review-summary -->')) ||
       (github.event_name == 'workflow_run' &&
-       github.event.workflow_run.event == 'pull_request' &&
-       github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.head_repository.full_name == github.repository &&
        github.event.workflow_run.pull_requests[0].number != null)
     runs-on: ubuntu-slim
     timeout-minutes: 5
@@ -32,9 +29,8 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       PR_NUMBER: ${{ github.event.issue.number || github.event.workflow_run.pull_requests[0].number }}
-      COMMENT_ID: ${{ github.event.comment.id }}
     steps:
-      - name: Approve the currently reviewed commit
+      - name: Approve when Codex has completed both reviews and reacted
         run: |
           python3 - <<'PYTHON'
           import json
@@ -43,188 +39,102 @@ jobs:
           import subprocess
           import sys
 
-          REPO = os.environ["GITHUB_REPOSITORY"]
+          ROOT = "repos/" + os.environ["GITHUB_REPOSITORY"]
           NUMBER = os.environ["PR_NUMBER"]
-          COMMENT = os.environ.get("COMMENT_ID", "")
-          ROOT = f"repos/{REPO}"
-          PREFIX = "<!-- codex-pull-request-review-summary -->"
-          RECEIPT = "<!-- codex-review-receipt:v1 -->"
           BOT = "chatgpt-codex-connector[bot]"
+          PREFIX = "<!-- codex-pull-request-review-summary -->"
 
-          class Hold(Exception):
-              pass
-
-          def require(ok, reason):
-              if not ok:
-                  raise Hold(reason)
 
           def api(endpoint, *args):
               result = subprocess.run(["gh", "api", endpoint, *args], capture_output=True, text=True)
               if result.returncode:
-                  # Never echo API bodies, stderr, credentials or untrusted comment text.
                   raise RuntimeError("GitHub API request failed; no approval confirmed")
               try:
                   return json.loads(result.stdout)
               except ValueError:
                   raise RuntimeError("GitHub API returned invalid JSON") from None
 
+
           def pages(endpoint):
               data = api(endpoint + "?per_page=100", "--paginate", "--slurp")
-              if not isinstance(data, list) or not all(isinstance(p, list) for p in data):
+              if not isinstance(data, list) or not all(isinstance(page, list) for page in data):
                   raise RuntimeError("GitHub pagination returned an invalid collection")
               rows = [item for page in data for item in page]
               if not all(isinstance(row, dict) for row in rows):
                   raise RuntimeError("GitHub pagination returned an invalid item")
               return rows
 
-          def bot(item, comment=False):
-              user = item.get("user") or {}
-              # The reactions API reports this same immutable Bot account as
-              # type User; comments additionally carry App provenance.
-              valid = user.get("login") == BOT and user.get("id") == 199175422
-              app = item.get("performed_via_github_app") or {}
-              return valid and (not comment or (user.get("type") == "Bot" and app.get("id") == 1144995 and app.get("slug") == "chatgpt-codex-connector"))
 
-          def marker(body, name):
-              matches = re.findall(r"^<!-- " + re.escape(name) + r" (.*) -->$", body, re.M)
-              require(len(matches) == 1, "missing or ambiguous structured review state")
-              try:
-                  value = json.loads(matches[0])
-              except ValueError:
-                  raise Hold("malformed structured review state") from None
-              require(isinstance(value, dict), "invalid structured review state")
-              return value
+          def codex(item):
+              return (item.get("user") or {}).get("login") == BOT
 
-          def receipt_kind(item):
-              body = item.get("body", "")
-              if not body.startswith(RECEIPT + "\n"):
-                  return None
-              if "\nCodex Review:" in body:
-                  return "code"
-              if "\n### 🛡️ Codex Security Review ·" in body:
-                  return "security"
-              return None
 
-          def completion(body, kind, head):
-              label = "Code Review" if kind == "code" else "Security Review"
-              rows = [line for line in body.splitlines() if f"**{label}**" in line]
-              require(len(rows) == 1 and f"| `{head[:7]}` |" in rows[0] and "**Completed**" in rows[0], "nullable result has no identifiable completed review")
+          def completed(body):
+              # Read only the two status cells in Codex's observed Summary table.
+              rows = [line.strip().split("|")[1:-1] for line in body.splitlines()
+                      if line.strip().startswith("|") and line.strip().endswith("|")]
+              for label in ("Code Review", "Security Review"):
+                  matches = [cells for cells in rows if len(cells) >= 2 and f"**{label}**" in cells[0]]
+                  if len(matches) != 1 or not re.search(r"\*\*Completed\*\*", matches[0][1]):
+                      return False
+              return True
 
-          def nullable_evidence(comments, summary, head, state):
-              security = state["security_review"]
-              require("has_unresolved_findings" in security and "has_any_findings" in security and security["has_unresolved_findings"] is None and security["has_any_findings"] is None, "security findings are unknown or present")
-              require(state["code_review"].get("has_any_findings") is False, "code review is not explicitly clean")
-              metadata = marker(summary["body"], "codex-security-review:v1")
-              require(metadata.get("headSha") == head and metadata.get("repository") == REPO and metadata.get("pullRequestNumber") == int(NUMBER) and metadata.get("status") == "completed" and metadata.get("mergeGateEnabled") is False, "security metadata does not identify this completed review")
-              # Reuse the latest trusted receipt of each kind for this HEAD.
-              # A new request alone does not invalidate a completed code review.
-              receipts = {}
-              for receipt in sorted(comments, key=lambda c: c["id"]):
-                  if not bot(receipt, comment=True):
-                      continue
-                  kind = receipt_kind(receipt)
-                  if kind is None:
-                      continue
-                  shas = re.findall(r"^\*\*Reviewed commit:\*\* `([0-9a-f]{10})`$", receipt.get("body", ""), re.M)
-                  if head[:10] not in shas:
-                      continue
-                  require(shas == [head[:10]], "receipt reviewed an ambiguous commit")
-                  receipts[kind] = receipt
-              require(set(receipts) == {"code", "security"}, "missing completion receipts for the current HEAD")
-              for kind, receipt in receipts.items():
-                  body = receipt["body"]
-                  completion(summary["body"], kind, head)
-                  shas = re.findall(r"^\*\*Reviewed commit:\*\* `([0-9a-f]{10})`$", body, re.M)
-                  require(shas == [head[:10]], "receipt reviewed a different or ambiguous commit")
-                  if kind == "security":
-                      require("\nSecurity review completed. No security issues were found in this pull request.\n" in body, "security receipt does not explicitly report no findings")
-                  else:
-                      require("\nCodex Review: Didn't find any major issues." in body, "code receipt does not explicitly report no findings")
-              # Receipts abbreviate the SHA. Resolve it, rather than trusting a prefix
-              # that might name another commit. GitHub rejects ambiguous abbreviations.
-              require(api(f"{ROOT}/commits/{head[:10]}").get("sha") == head, "receipt commit does not resolve to the current HEAD")
 
-          # Reuse completed reviews and reactions for the same HEAD without clock
-          # checks. Rulesets own stale approvals and base synchronization; this
-          # workflow verifies the reviewed HEAD, findings and evidence before approval.
-          def snapshot(head):
-              comments = pages(f"{ROOT}/issues/{NUMBER}/comments")
-              summaries = [c for c in comments if bot(c, comment=True) and c.get("body", "").startswith(PREFIX)]
-              require(bool(summaries), "no trusted review summary")
-              summary = max(summaries, key=lambda c: c["id"])
-              require(not COMMENT or str(summary["id"]) == COMMENT, "event refers to a superseded summary")
-              state = marker(summary["body"], "codex-review-state:v1")
-              for kind in ("code_review", "security_review"):
-                  review = state.get(kind)
-                  require(isinstance(review, dict) and review.get("status") == "completed" and review.get("commit_sha") == head, "reviews are incomplete or target a different HEAD")
-              require(state["code_review"].get("has_unresolved_findings") is False, "code findings are unresolved or unknown")
-              if state["security_review"].get("has_unresolved_findings") is not False:
-                  nullable_evidence(comments, summary, head, state)
-              # Recheck trusted review bodies and provenance before the write.
-              # Requests alone do not invalidate completed evidence for this HEAD.
-              evidence = [c for c in comments if bot(c, comment=True)]
-              fields = ("id", "body", "user", "performed_via_github_app")
-              fingerprint = [{k: c.get(k) for k in fields} for c in sorted(evidence, key=lambda c: c["id"])]
-              return {"comments": fingerprint}
-
-          def codex_reaction():
-              reactions = pages(f"{ROOT}/issues/{NUMBER}/reactions")
-              matches = [r for r in reactions if bot(r) and r.get("content") == "+1"]
-              # The reaction is an identity check; its age is intentionally ignored.
-              return {key: matches[0].get(key) for key in ("id", "user", "content")} if len(matches) == 1 else None
-
-          def report_result(outcome, detail):
-              # Callers supply fixed diagnostics and validated SHAs, never comment bodies.
+          def report(outcome, detail):
               print(f"Codex approval: {outcome}\n{detail}")
               path = os.environ.get("GITHUB_STEP_SUMMARY")
               if path:
                   try:
-                      with open(path, "a", encoding="utf-8") as summary:
-                          summary.write(f"## Codex automatic approval\n\n**Result: {outcome}**\n\n{detail}\n")
+                      with open(path, "a", encoding="utf-8") as output:
+                          output.write(f"## Codex automatic approval\n\n**Result: {outcome}**\n\n{detail}\n")
                   except OSError:
-                      print("::warning title=Codex approval summary unavailable::See the approval outcome in the step log")
+                      print("::warning title=Codex approval summary unavailable::See the step log")
+
+
+          def completed_reviews():
+              summaries = [c for c in pages(f"{ROOT}/issues/{NUMBER}/comments")
+                           if codex(c) and c.get("body", "").startswith(PREFIX)]
+              summary = max(summaries, key=lambda c: c["id"]) if summaries else None
+              return summary is not None and completed(summary["body"])
+
+
+          def thumbs_up():
+              return any(codex(r) and r.get("content") == "+1"
+                         for r in pages(f"{ROOT}/issues/{NUMBER}/reactions"))
+
 
           def run():
-              pr = api(f"{ROOT}/pulls/{NUMBER}")
-              require(pr.get("state") == "open", "PR is closed")
-              head = pr.get("head", {}).get("sha", "")
-              require(re.fullmatch(r"[0-9a-f]{40}", head), "invalid PR HEAD")
-              evidence = snapshot(head)
+              # Summary updates can arrive before the thumbs-up. Poll only these same
+              # two conditions; polling duration is not review evidence.
               for attempt in range(7):
-                  reaction = codex_reaction()
-                  if reaction is not None:
-                      break
-                  if attempt == 6:
-                      raise Hold("no Codex thumbs-up")
-                  print("Waiting for a Codex thumbs-up", flush=True)
-                  subprocess.run(["sleep", "30"], check=True)
-              reviews = pages(f"{ROOT}/pulls/{NUMBER}/reviews")
-              latest = {}
-              for review in reviews:
-                  if review.get("state") in ("APPROVED", "CHANGES_REQUESTED", "DISMISSED"):
-                      latest[review.get("user", {}).get("login")] = review
-              require(not any(r.get("state") == "CHANGES_REQUESTED" for r in latest.values()), "an approving review cannot replace requested changes")
-              if any(r.get("user", {}).get("login") == "github-actions[bot]" and r.get("state") == "APPROVED" and r.get("commit_id") == head for r in latest.values()):
-                  report_result("Already approved", f"Current HEAD `{head}` already has an approval. No new approval was submitted.")
-                  return
-              require(snapshot(head) == evidence, "review evidence changed before approval")
-              require(codex_reaction() == reaction, "Codex thumbs-up changed before approval")
-              current = api(f"{ROOT}/pulls/{NUMBER}")
-              require(current.get("state") == "open" and current.get("head", {}).get("sha") == head, "PR closed or HEAD changed before approval")
-              response = api("--method", "POST", f"{ROOT}/pulls/{NUMBER}/reviews", "-f", "event=APPROVE", "-f", f"commit_id={head}")
-              if response.get("state") != "APPROVED" or response.get("commit_id") != head:
-                  raise RuntimeError("GitHub did not confirm approval of the verified HEAD")
-              report_result("Approved", f"Approved verified commit `{head}`.")
+                  if not completed_reviews():
+                      report("Withheld", "No approval submitted: both Codex reviews must be Completed.")
+                      return
+                  if thumbs_up():
+                      # Re-read only the same two conditions before submission.
+                      # Changed bodies or reaction IDs are not additional gates.
+                      if not completed_reviews() or not thumbs_up():
+                          report("Withheld", "No approval submitted: Codex approval conditions changed.")
+                          return
+                      # Omitting commit_id lets GitHub select the PR commit. Merge
+                      # eligibility, stale approvals and required checks belong to Rulesets.
+                      result = api("--method", "POST", f"{ROOT}/pulls/{NUMBER}/reviews", "-f", "event=APPROVE")
+                      if not isinstance(result, dict) or result.get("state") != "APPROVED":
+                          raise RuntimeError("GitHub did not confirm approval")
+                      report("Approved", "Both Codex reviews are Completed and Codex reacted with thumbs-up.")
+                      return
+                  if attempt < 6:
+                      print("Waiting for a Codex thumbs-up", flush=True)
+                      subprocess.run(["sleep", "30"], check=True)
+              report("Withheld", "No approval submitted: Codex thumbs-up is missing.")
+
 
           try:
               run()
-          except Hold as error:
-              print(f"::warning title=Codex approval withheld::{error}")
-              report_result("Withheld", f"No approval was submitted.\n\nReason: {error}\n\nWorkflow success means the check completed, not that the PR was approved.")
           except Exception as error:
-              # Unexpected/malformed evidence and failed reads must never become approval.
-              reason = str(error) if isinstance(error, RuntimeError) else "Approval failed: invalid API evidence or execution failure"
-              report_result("Failed", reason)
+              # Never print untrusted API response bodies or credentials.
+              reason = str(error) if isinstance(error, RuntimeError) else "Invalid API data or execution failure"
+              report("Failed", reason)
               print(reason, file=sys.stderr)
               sys.exit(1)
           PYTHON
