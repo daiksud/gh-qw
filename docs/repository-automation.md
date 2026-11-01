@@ -75,7 +75,7 @@ before applying because the live settings can change after observation.
 Only squash merges are allowed. The squash commit uses the reviewed PR title
 and body. The Actions approval setting permits the
 [Codex approval workflow](../.github/workflows/approve-codex-review.yml)
-to submit a GitHub Actions approving review when its two Codex conditions
+to submit a GitHub Actions approving review when its Codex review and HEAD conditions
 are met, whether the PR is draft or ready. Copilot's reviews and Codex comments alone do not approve PRs.
 ### Review and merge responsibilities
 
@@ -95,37 +95,42 @@ statement of the dismissal conditions. [Strict required checks](https://docs.git
 require an up-to-date base before merge. Neither rule proves that Codex reviewed
 a particular base.
 
-The [approval workflow](../.github/workflows/approve-codex-review.yml) has only
-two approval conditions:
+The [approval workflow](../.github/workflows/approve-codex-review.yml) follows
+[gh-settings #553](https://github.com/daiksud/gh-settings/pull/553):
 
 1. Codex has a thumbs-up reaction on the PR.
 2. The latest Codex Review Summary shows both Code Review and Security Review
    as Completed.
+3. Both full reviewed commit SHAs match the current PR HEAD.
 
 It identifies Codex through GitHub's `user.login`, selects the latest Summary
-comment by ID, and reads the two status cells in its Markdown table. It ignores
-structured metadata, including commit identity and finding flags. Before
-submission it rereads only the same two conditions; changed comment bodies or
-reaction IDs do not invalidate them. HEAD, base,
-timestamps, receipts, earlier requests and requested changes are not additional
-approval conditions. GitHub selects the target commit when the review is
-submitted without `commit_id`; the workflow does not read or compare HEAD.
+comment by ID, and reads the two status cells in its Markdown table. After the
+signals are present, it reads PR HEAD once and compares it with both full
+`commit_sha` fields in `codex-review-state:v1`. Missing, malformed or ambiguous
+commit metadata withholds approval. It submits that verified SHA as `commit_id`
+and requires GitHub to confirm approval of the same commit.
 
 Summary creation/edits and completed `ci-pr` runs trigger evaluation. The CI
 run's conclusion is not an approval condition. Because Summary updates can
 precede the reaction, the workflow waits for thumbs-up with up to six 30-second
-retries, rereading both conditions. This bound is operational, not evidence of
-review completion. A reaction alone does not trigger this workflow; after the
-polling window, another Summary or `ci-pr` completion event is needed.
-Runs for a PR are serialized; qualifying repeated events
-may submit another approval rather than consulting review history.
+retries. This bound is operational, not evidence of review completion. Each
+attempt reads Summary and reaction once; HEAD is read only after both signals
+are present. It does not reread the signals immediately before submission.
+A reaction alone does not trigger this workflow; after the polling window,
+another Summary or `ci-pr` completion event is needed. Runs for a PR are
+serialized; qualifying repeated events may submit another approval rather than
+consulting review history.
 
-A completed Summary and existing thumbs-up can cause approval after code or
-base changes. Approval therefore does not prove that Codex reviewed the current
-commit or diff. The workflow neither decides merge eligibility nor withdraws
-approvals. Rulesets enforce their configured approvals, stale dismissal,
-required checks and thread resolution. A successful run can also report approval
-withheld; only GitHub's confirmed approving review is an approval.
+Base, timestamps, receipts, finding flags, earlier requests and requested
+changes are not additional approval conditions. A completed same-HEAD Summary
+and existing thumbs-up remain reusable after a base change, so approval does
+not establish which diff Codex reviewed. Verification and POST are separate
+operations: a later push does not change the submitted `commit_id`, but this is
+not an atomic current-HEAD guarantee. The workflow neither decides merge
+eligibility nor withdraws approvals. Rulesets enforce their configured
+approvals, stale dismissal, required checks and thread resolution. A successful
+run can also report approval withheld; only GitHub's confirmed approving review
+is an approval.
 
 ### CI validation
 
