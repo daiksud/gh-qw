@@ -25,6 +25,13 @@ Issue or CI log for essential context. Include `Closes #123` only when the PR
 completes the Issue, and remove template comments and temporary notes before
 merging.
 
+Capture the final reviewed title, body, and PR head SHA together. Submit that
+message explicitly when squashing, with an expected-head SHA guard. For a
+queued merge, set the reviewed message when queuing it. Review later title or
+body edits before adopting a new message; an approval of the unchanged code
+does not establish approval of edited migration instructions.
+Confirm the resulting commit's title and body after merging.
+
 ## Development and review
 
 Use the Go version in [go.mod](../go.mod). Run:
