@@ -52,7 +52,8 @@ Their IDs belong to gh-qw, and unlisted objects are left untouched; no label
 or Ruleset deletion is implied. The existing Rulesets keep required signed
 commits, linear history, CODEOWNER review, one eligible approval, stale review
 dismissal, review-thread resolution, and the `ci-pr` and `prlint` GitHub
-Actions checks, without bypass actors. The tag Ruleset continues preventing
+Actions checks. Enforcement remains subject to the live bypass configuration.
+The tag Ruleset continues preventing
 tag deletion and non-fast-forward changes.
 
 The legacy manifest also specified repository visibility, release
@@ -76,6 +77,43 @@ and body. The Actions approval setting permits the
 [Codex approval workflow](../.github/workflows/approve-codex-review.yml)
 to produce a valid GitHub Actions approving review when its current-HEAD
 checks pass, whether the open PR is draft or ready. Copilot's reviews and Codex comments alone do not approve PRs.
+### Review and merge responsibilities
+
+Rulesets decide merge eligibility: required approvals, stale approval dismissal,
+required checks and synchronization with the base branch belong to GitHub's
+protection rules. The live `default` [Ruleset](https://github.com/daiksud/gh-qw/rules/20506385),
+read on 2026-11-01, was active for `main`, with
+`dismiss_stale_reviews_on_push: true` and
+`strict_required_status_checks_policy: true` for `ci-pr` and `prlint`.
+Recheck live settings when making a merge decision; repository files alone do
+not establish enforcement, and applicable bypass permissions still matter.
+
+GitHub's [stale approval rule](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches#require-pull-request-reviews-before-merging)
+tracks changes to the approved diff, including changes introduced through the
+merge base. A new HEAD SHA or an update to `main` is not by itself a complete
+statement of the dismissal conditions. [Strict required checks](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets#require-status-checks-to-pass-before-merging)
+require an up-to-date base before merge. Neither rule proves that Codex reviewed
+a particular base.
+
+The [approval workflow](../.github/workflows/approve-codex-review.yml) interprets
+trusted Codex results for the current HEAD and submits an approving review for
+that exact commit. It verifies Bot/App provenance, both completed reviews and
+finding gates; nullable security results also require the latest trusted clean
+receipt of each kind for that HEAD, with the abbreviated commit resolved to the
+full SHA. It rechecks trusted evidence, the thumbs-up, open state and HEAD before
+submission. A successful workflow run can report approval withheld; it is not
+itself an approving review or permission to merge.
+
+Completed results and an existing thumbs-up can be reused for the same HEAD.
+New requests, reaction age and comment timestamps do not invalidate them. The
+workflow does not withdraw approvals, track base history or duplicate merge
+checks. This avoids repeat reviews based only on timing or request cycles.
+Edited/replayed evidence is not detected through timestamps, and a HEAD-only
+result does not establish which base/diff was reviewed. Required CI and the
+live protections remain separate from this interpretation of review evidence.
+
+### CI validation
+
 A successful validation job does not prove the manifest has been applied;
 verify the live Ruleset and settings separately before claiming enforcement.
 

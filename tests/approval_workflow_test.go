@@ -95,44 +95,44 @@ func TestCodexApprovalEvidence(t *testing.T) {
 		approve bool
 		fail    bool
 	}{
-		{"nullable clean", true, false}, {"structured clean", true, false}, {"draft", true, false},
+		{"missing timestamps", true, false}, {"malformed timestamps", true, false}, {"nullable clean", true, false}, {"structured clean", true, false}, {"draft", true, false},
 		{"comment event", true, false}, {"old comment event", false, false}, {"prior completed cycle", true, false},
 		{"code findings", false, false}, {"security findings", false, false}, {"security any findings", false, false},
 		{"missing security flag", false, false}, {"wrong flag type", false, false}, {"code incomplete", false, false},
 		{"security incomplete", false, false}, {"code stale", false, false}, {"security stale", false, false},
 		{"spoofed summary", false, false}, {"spoofed receipt", false, false}, {"wrong app", false, false},
 		{"no security receipt", false, false}, {"security receipt findings", false, false}, {"wrong receipt head", false, false},
-		{"old same-head receipt", false, false}, {"edited receipt", false, false}, {"duplicate receipt", false, false},
-		{"unknown bot comment", false, false}, {"no request", false, false}, {"edited request", false, false},
-		{"overlapping requests", false, false}, {"security-only request", false, false}, {"new request", false, false},
-		{"old reaction", false, false}, {"same-second reaction", false, false}, {"other reaction", false, false},
+		{"old same-head receipt", true, false}, {"edited receipt", true, false}, {"duplicate receipt", true, false},
+		{"unknown bot comment", true, false}, {"no request", true, false}, {"edited request", true, false},
+		{"overlapping requests", true, false}, {"security-only request", true, false}, {"new request", true, false},
+		{"old reaction", true, false}, {"same-second reaction", true, false}, {"other reaction", false, false},
 		{"missing reaction", false, false}, {"delayed reaction", true, false}, {"closed", false, false},
 		{"head changed", false, false}, {"closed during check", false, false}, {"summary changed", false, false},
-		{"request during check", false, false}, {"receipt edited during check", false, false}, {"reaction removed", false, false},
+		{"request during check", true, false}, {"receipt edited during check", false, false}, {"reaction removed", false, false},
 		{"already approved", false, false}, {"changes requested", false, false}, {"ambiguous short sha", false, true},
 		{"pagination failed", false, true}, {"reaction fetch failed", false, true}, {"post rejected", false, true},
-		{"post non-json", false, true}, {"malformed summary", false, false}, {"automatic nullable cycle", false, false},
-		{"initial automatic overlap", false, false}, {"edited older request", false, false},
+		{"post non-json", false, true}, {"malformed summary", false, false}, {"automatic nullable cycle", true, false},
+		{"initial automatic overlap", true, false}, {"edited older request", true, false},
 		{"wrong summary app", false, false}, {"receipt missing app", false, false}, {"duplicate marker", false, false},
-		{"wrong security metadata", false, false}, {"completion before receipt", false, false},
+		{"wrong security metadata", false, false}, {"completion before receipt", true, false},
 		{"wrong resolved sha", false, false}, {"unconfirmed approval", true, true}, {"malformed pagination", false, true},
 		{"wrong reaction account", false, false},
-		{"edited older structured request", false, false}, {"same-second older structured request", false, false},
+		{"edited older structured request", true, false}, {"same-second older structured request", true, false},
 		{"prior retarget", true, false},
-		{"retarget after review", false, false},
-		{"retarget during review", false, false},
-		{"same-second retarget", false, false},
-		{"automatic retarget", false, false},
-		{"retarget without request", false, false},
-		{"structured retarget", false, false},
-		{"retarget during check", false, false},
-		{"base ref changed", false, false},
-		{"base sha changed", false, false},
-		{"missing base", false, false},
-		{"timeline failed", false, true},
-		{"malformed timeline", false, true},
-		{"retarget missing timestamp", false, false},
-		{"same-second requests", false, false}, {"same-second summary start", false, false}, {"wrong row head", false, false},
+		{"retarget after review", true, false},
+		{"retarget during review", true, false},
+		{"same-second retarget", true, false},
+		{"automatic retarget", true, false},
+		{"retarget without request", true, false},
+		{"structured retarget", true, false},
+		{"retarget during check", true, false},
+		{"base ref changed", true, false},
+		{"base sha changed", true, false},
+		{"missing base", true, false},
+		{"timeline failed", true, false},
+		{"malformed timeline", true, false},
+		{"retarget missing timestamp", true, false},
+		{"same-second requests", true, false}, {"same-second summary start", true, false}, {"wrong row head", false, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -252,6 +252,17 @@ func TestCodexApprovalEvidence(t *testing.T) {
 				comments = append(comments, approvalRequest(104, "2026-10-31T02:13:14Z"))
 			case "same-second requests":
 				comments = append(comments, approvalRequest(99, request["created_at"].(string)))
+			}
+			if tc.name == "missing timestamps" || tc.name == "malformed timestamps" {
+				for _, item := range append(append([]any{}, comments...), reaction) {
+					for _, field := range []string{"created_at", "updated_at"} {
+						delete(item.(approvalObject), field)
+						if tc.name == "malformed timestamps" {
+							item.(approvalObject)[field] = "not-a-date"
+						}
+					}
+				}
+				summary["body"] = strings.ReplaceAll(summary["body"].(string), "<relative-time datetime=", "<ignored-time value=")
 			}
 			root := t.TempDir()
 			write := func(name string, data []byte, mode os.FileMode) {
