@@ -6,6 +6,14 @@ see [Contributing](contributing.md).
 
 ## Releases
 
+Release cross-builds run on `ubuntu-latest`. Native acceptance uses
+`ubuntu-latest` for Linux amd64, `macos-latest` for macOS arm64, and
+`windows-latest` for Windows amd64; the target OS/architecture assertions remain
+in force. Published-release verification also uses `ubuntu-latest`. The resolve
+and publication orchestration jobs retain `ubuntu-slim`. These `-latest` labels
+follow GitHub's stable image updates rather than pinning an OS version; see the
+[hosted runner specifications](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
+
 Merging does not authorize releasing. Only on an explicit release request, run:
 
 ```sh

@@ -16,7 +16,7 @@ describe_target() {
       TARGET_GOOS=linux
       TARGET_GOARCH=amd64
       TARGET_ASSET=gh-qw-linux-amd64
-      TARGET_RUNNER=ubuntu-slim
+      TARGET_RUNNER=ubuntu-latest
       TARGET_RUNNER_OS=Linux
       TARGET_RUNNER_ARCH=X64
       ;;
@@ -24,7 +24,7 @@ describe_target() {
       TARGET_GOOS=darwin
       TARGET_GOARCH=arm64
       TARGET_ASSET=gh-qw-darwin-arm64
-      TARGET_RUNNER=macos-14
+      TARGET_RUNNER=macos-latest
       TARGET_RUNNER_OS=macOS
       TARGET_RUNNER_ARCH=ARM64
       ;;
@@ -65,11 +65,11 @@ case "$command" in
     ;;
   build-matrix)
     [ "$#" -eq 1 ] || fail "usage: ci-artifacts.sh build-matrix"
-    printf '%s\n' '{"include":[{"target":"linux-amd64","runner":"ubuntu-slim"},{"target":"darwin-arm64","runner":"macos-14"},{"target":"windows-amd64","runner":"windows-latest"}]}'
+    printf '%s\n' '{"include":[{"target":"linux-amd64","runner":"ubuntu-latest"},{"target":"darwin-arm64","runner":"macos-latest"},{"target":"windows-amd64","runner":"windows-latest"}]}'
     ;;
   acceptance-matrix)
     [ "$#" -eq 1 ] || fail "usage: ci-artifacts.sh acceptance-matrix"
-    printf '%s\n' '{"include":[{"target":"linux-amd64","kind":"process","runner":"ubuntu-slim"},{"target":"darwin-arm64","kind":"process","runner":"macos-14"},{"target":"windows-amd64","kind":"process","runner":"windows-latest"}]}'
+    printf '%s\n' '{"include":[{"target":"linux-amd64","kind":"process","runner":"ubuntu-latest"},{"target":"darwin-arm64","kind":"process","runner":"macos-latest"},{"target":"windows-amd64","kind":"process","runner":"windows-latest"}]}'
     ;;
   manifest)
     [ "$#" -eq 4 ] || fail "usage: ci-artifacts.sh manifest TARGET SOURCE_SHA DIRECTORY"
