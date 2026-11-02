@@ -49,7 +49,16 @@ and plan again before retrying.
 
 Labels and Rulesets are **ID-selected** in the gh-settings declaration.
 Their IDs belong to gh-qw, and unlisted objects are left untouched; no label
-or Ruleset deletion is implied. The existing Rulesets keep required signed
+or Ruleset deletion is implied. For label-only maintenance, use an isolated
+checkout of this repository with a `.github/settings.yml` containing only
+`schemaVersion: 1` and the `settings.labels` declaration. Validate it with the
+verified v0.23.0 CLI and inspect its plan before applying. This prevents unrelated
+settings drift from changing protections, permissions, or security controls.
+Record confirmed new IDs in the maintained manifest, then plan again; a successful
+apply alone does not establish that a second plan has no differences. There is
+no automatic settings-apply workflow in this repository.
+
+The existing Rulesets keep required signed
 commits, linear history, CODEOWNER review, one eligible approval, stale review
 dismissal, review-thread resolution, and the `ci-pr` and `prlint` GitHub
 Actions checks. Enforcement remains subject to the live bypass configuration.
@@ -77,6 +86,22 @@ and body. The Actions approval setting permits the
 [Codex approval workflow](../.github/workflows/approve-codex-review.yml)
 to submit a GitHub Actions approving review when its Codex review and HEAD conditions
 are met, whether the PR is draft or ready. Copilot's reviews and Codex comments alone do not approve PRs.
+### Labels
+
+The managed set is `accessibility`, `bug`, `documentation`, `duplicate`,
+`enhancement`, `good first issue`, `help wanted`, `invalid`, `question`, and
+`wontfix`. Other labels and their existing Issue/PR assignments coexist and
+remain unmanaged. Removing a label from the declaration does not delete it.
+
+Bug and feature Issue forms assign `bug` and `enhancement`; maintenance tasks
+have no initial label. The [Labeler](../.github/workflows/labeler.yml) synchronizes
+only `documentation`, using the trusted base branch's
+[path rules](../.github/labeler.yml). It adds that label when every changed file
+is documentation and removes it when the rule stops matching. It does not
+manage other labels. Dependabot uses its default labels without an explicit
+`labels` override. Reviewers choose Conventional Commit types independently;
+labels do not determine release versions or release-note categories.
+
 ### Review and merge responsibilities
 
 Rulesets decide merge eligibility: required approvals, stale approval dismissal,
