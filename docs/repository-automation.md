@@ -152,6 +152,13 @@ and finishes with its own `ci-push` aggregate job.
 Fork and Dependabot pull requests that cannot change Draft/Ready state are not
 supported; a maintainer must handle them manually without a privileged fallback.
 
+Product CI builds and accepts Linux amd64 on `ubuntu-latest`, macOS arm64 on
+`macos-latest`, and Windows amd64 on `windows-latest`. Target metadata retains
+the OS/architecture checks, so an unexpected host architecture fails rather
+than changing the artifact target. Lightweight orchestration jobs continue
+using `ubuntu-slim`. The `-latest` labels follow GitHub's stable image updates;
+see the [hosted runner specifications](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
+
 Together the staged workflows preserve Go builds and tests on Linux amd64,
 macOS arm64, and Windows amd64, plus race, format/vet, settings validation, and
 release-version tests. Dependabot checks Go modules and GitHub Actions weekly.

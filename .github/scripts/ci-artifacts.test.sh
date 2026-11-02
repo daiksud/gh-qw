@@ -10,8 +10,8 @@ OTHER_SHA=1123456789abcdef0123456789abcdef01234567
 
 build_matrix="$(bash "$TOOL" build-matrix)"
 acceptance_matrix="$(bash "$TOOL" acceptance-matrix)"
-jq -e '.include == [{"target":"linux-amd64","runner":"ubuntu-slim"},{"target":"darwin-arm64","runner":"macos-14"},{"target":"windows-amd64","runner":"windows-latest"}]' <<< "$build_matrix" >/dev/null
-jq -e '.include == [{"target":"linux-amd64","kind":"process","runner":"ubuntu-slim"},{"target":"darwin-arm64","kind":"process","runner":"macos-14"},{"target":"windows-amd64","kind":"process","runner":"windows-latest"}]' <<< "$acceptance_matrix" >/dev/null
+jq -e '.include == [{"target":"linux-amd64","runner":"ubuntu-latest"},{"target":"darwin-arm64","runner":"macos-latest"},{"target":"windows-amd64","runner":"windows-latest"}]' <<< "$build_matrix" >/dev/null
+jq -e '.include == [{"target":"linux-amd64","kind":"process","runner":"ubuntu-latest"},{"target":"darwin-arm64","kind":"process","runner":"macos-latest"},{"target":"windows-amd64","kind":"process","runner":"windows-latest"}]' <<< "$acceptance_matrix" >/dev/null
 
 for target in linux-amd64 darwin-arm64 windows-amd64; do
   directory="$TEMP/$target"

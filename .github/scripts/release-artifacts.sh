@@ -114,11 +114,11 @@ case "$command" in
     ;;
   build-matrix)
     [ "$#" -eq 1 ] || fail "usage: release-artifacts.sh build-matrix"
-    printf '%s\n' '{"include":[{"target":"darwin-arm64","runner":"ubuntu-slim"},{"target":"linux-amd64","runner":"ubuntu-slim"},{"target":"windows-amd64","runner":"ubuntu-slim"}]}'
+    printf '%s\n' '{"include":[{"target":"darwin-arm64","runner":"ubuntu-latest"},{"target":"linux-amd64","runner":"ubuntu-latest"},{"target":"windows-amd64","runner":"ubuntu-latest"}]}'
     ;;
   acceptance-matrix)
     [ "$#" -eq 1 ] || fail "usage: release-artifacts.sh acceptance-matrix"
-    printf '%s\n' '{"include":[{"target":"linux-amd64","runner":"ubuntu-slim"},{"target":"darwin-arm64","runner":"macos-14"},{"target":"windows-amd64","runner":"windows-latest"}]}'
+    printf '%s\n' '{"include":[{"target":"linux-amd64","runner":"ubuntu-latest"},{"target":"darwin-arm64","runner":"macos-latest"},{"target":"windows-amd64","runner":"windows-latest"}]}'
     ;;
   manifest)
     [ "$#" -eq 5 ] || fail "usage: release-artifacts.sh manifest TARGET VERSION SOURCE_SHA DIRECTORY"
