@@ -76,15 +76,16 @@ runs:
         ARTIFACT_DIR: ${{ runner.temp }}/gh-qw-release-artifacts
         SOURCE_SHA: ${{ inputs.source-sha }}
         VERSION: ${{ inputs.version }}
-        PREVIOUS_TAG: ${{ inputs.previous-tag }}
+        PREVIOUS_SHA: ${{ inputs.previous-sha }}
       run: |
         set -euo pipefail
+        notes_file="$RUNNER_TEMP/release-notes.md"
+        python3 .github/scripts/release-notes.py > "$notes_file"
         gh release create "$VERSION" \
           --repo "$GITHUB_REPOSITORY" \
           --target "$SOURCE_SHA" \
           --title "$VERSION" \
-          --generate-notes \
-          --notes-start-tag "$PREVIOUS_TAG" \
+          --notes-file "$notes_file" \
           "$ARTIFACT_DIR/gh-qw-darwin-arm64" \
           "$ARTIFACT_DIR/gh-qw-linux-amd64" \
           "$ARTIFACT_DIR/gh-qw-windows-amd64.exe"
