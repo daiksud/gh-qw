@@ -58,6 +58,12 @@ Record confirmed new IDs in the maintained manifest, then plan again; a successf
 apply alone does not establish that a second plan has no differences. There is
 no automatic settings-apply workflow in this repository.
 
+The pinned CLI validates the manifest offline, but a full live plan currently
+fails on the main Ruleset's `code_scanning_tools` parameter, which v0.23.0 does
+not support. A full plan therefore cannot establish drift for this repository.
+Keep label maintenance isolated; managing the complete settings declaration
+requires a separate review of CLI and schema support.
+
 The existing Rulesets keep required signed
 commits, linear history, CODEOWNER review, one eligible approval, stale review
 dismissal, review-thread resolution, and the `ci-pr` and `prlint` GitHub
