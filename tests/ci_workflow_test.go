@@ -28,7 +28,9 @@ func TestNativePRCheckAggregate(t *testing.T) {
 	}
 	for _, required := range []string{
 		"    needs: [draft, resolve, commit-stage, ready, acceptance-stage]\n",
-		"    if: always()\n", "    permissions: {}\n",
+		"    if: always() && (github.event.action != 'edited' || github.event.changes.base)\n",
+		"    name: ${{ github.event.action == 'edited' && !github.event.changes.base && 'ci-pr-metadata-only' || 'ci-pr' }}\n",
+		"    permissions: {}\n",
 		"          RESULTS: ${{ toJSON(needs) }}\n",
 	} {
 		if !strings.Contains(aggregate, required) {
@@ -42,8 +44,9 @@ func TestNativePRCheckAggregate(t *testing.T) {
 	}
 	if strings.Contains(workflow, "code-start:") || strings.Contains(workflow, "code-result:") ||
 		!strings.Contains(workflow, "types: [opened, synchronize, reopened, edited]") ||
-		!strings.Contains(workflow, "group: ci-pr-${{ github.event.pull_request.number }}\n") {
-		t.Fatal("every PR event must run native code validation, without a synthetic status publisher")
+		!strings.Contains(workflow, "group: ci-pr-${{ github.event.pull_request.number }}-${{ github.event.action == 'edited' && !github.event.changes.base && 'metadata' || 'product' }}\n") ||
+		!strings.Contains(workflow, "    if: github.event.action != 'edited' || github.event.changes.base\n") {
+		t.Fatal("product validation must distinguish metadata edits from code and base changes")
 	}
 	_, block, ok := strings.Cut(aggregate, "        run: |\n")
 	if !ok {
