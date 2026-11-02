@@ -10,8 +10,8 @@ VERSION=v0.6.0
 
 build_matrix="$(bash "$TOOL" build-matrix)"
 acceptance_matrix="$(bash "$TOOL" acceptance-matrix)"
-jq -e '.include | length == 3 and map(.target) == ["darwin-arm64","linux-amd64","windows-amd64"] and all(.runner == "ubuntu-slim")' <<< "$build_matrix" >/dev/null
-jq -e '.include == [{"target":"linux-amd64","runner":"ubuntu-slim"},{"target":"darwin-arm64","runner":"macos-14"},{"target":"windows-amd64","runner":"windows-latest"}]' <<< "$acceptance_matrix" >/dev/null
+jq -e '.include | length == 3 and map(.target) == ["darwin-arm64","linux-amd64","windows-amd64"] and all(.runner == "ubuntu-latest")' <<< "$build_matrix" >/dev/null
+jq -e '.include == [{"target":"linux-amd64","runner":"ubuntu-latest"},{"target":"darwin-arm64","runner":"macos-latest"},{"target":"windows-amd64","runner":"windows-latest"}]' <<< "$acceptance_matrix" >/dev/null
 
 mkdir -p "$TEMP/all" "$TEMP/published"
 for target in darwin-arm64 linux-amd64 windows-amd64; do

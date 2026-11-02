@@ -52,7 +52,8 @@ Their IDs belong to gh-qw, and unlisted objects are left untouched; no label
 or Ruleset deletion is implied. The existing Rulesets keep required signed
 commits, linear history, CODEOWNER review, one eligible approval, stale review
 dismissal, review-thread resolution, and the `ci-pr` and `prlint` GitHub
-Actions checks, without bypass actors. The tag Ruleset continues preventing
+Actions checks. Enforcement remains subject to the live bypass configuration.
+The tag Ruleset continues preventing
 tag deletion and non-fast-forward changes.
 
 The legacy manifest also specified repository visibility, release
@@ -74,8 +75,72 @@ before applying because the live settings can change after observation.
 Only squash merges are allowed. The squash commit uses the reviewed PR title
 and body. The Actions approval setting permits the
 [Codex approval workflow](../.github/workflows/approve-codex-review.yml)
-to produce a valid GitHub Actions approving review when its current-HEAD
-checks pass, whether the open PR is draft or ready. Copilot's reviews and Codex comments alone do not approve PRs.
+to submit a GitHub Actions approving review when its Codex review and HEAD conditions
+are met, whether the PR is draft or ready. Copilot's reviews and Codex comments alone do not approve PRs.
+### Review and merge responsibilities
+
+Rulesets decide merge eligibility: required approvals, stale approval dismissal,
+required checks and synchronization with the base branch belong to GitHub's
+protection rules. The live `default` [Ruleset](https://github.com/daiksud/gh-qw/rules/20506385),
+read on 2026-11-01, was active for `main`, with
+`dismiss_stale_reviews_on_push: true` and
+`strict_required_status_checks_policy: true` for `ci-pr` and `prlint`.
+Recheck live settings when making a merge decision; repository files alone do
+not establish enforcement, and applicable bypass permissions still matter.
+
+GitHub's [stale approval rule](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-protected-branches/about-protected-branches#require-pull-request-reviews-before-merging)
+tracks changes to the approved diff, including changes introduced through the
+merge base. A new HEAD SHA or an update to `main` is not by itself a complete
+statement of the dismissal conditions. [Strict required checks](https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/managing-rulesets/available-rules-for-rulesets#require-status-checks-to-pass-before-merging)
+require an up-to-date base before merge. Neither rule proves that Codex reviewed
+a particular base.
+
+The [approval workflow](../.github/workflows/approve-codex-review.yml) follows
+[gh-settings #554](https://github.com/daiksud/gh-settings/pull/554):
+
+1. Codex has a thumbs-up reaction on the PR.
+2. The latest Codex Review Summary shows both Code Review and Security Review
+   as Completed.
+3. Both full reviewed commit SHAs match the current PR HEAD.
+4. This PR has no `github-actions[bot]` review in `APPROVED` or `DISMISSED`
+   state for that full SHA.
+
+It identifies Codex through GitHub's `user.login`, selects the latest Summary
+comment by ID, and reads the two status cells in its Markdown table. After the
+signals are present, it reads PR HEAD once and compares it with both full
+`commit_sha` fields in `codex-review-state:v1`. Missing, malformed or ambiguous
+commit metadata withholds approval. It submits that verified SHA as `commit_id`
+and requires GitHub to confirm approval of the same commit.
+
+Summary creation/edits and completed `ci-pr` runs trigger evaluation. The CI
+run's conclusion is not an approval condition. Because Summary updates can
+precede the reaction, the workflow waits for thumbs-up with up to six 30-second
+retries. This bound is operational, not evidence of review completion. Each
+attempt reads Summary and reaction once; HEAD is read only after both signals
+are present. It does not reread the signals immediately before submission.
+A reaction alone does not trigger this workflow; after the polling window,
+another Summary or `ci-pr` completion event is needed. Runs for a PR are
+serialized. Before POST, the workflow reads all pages of this PR's review
+history once. Existing automatic approvals count without a body marker; a
+dismissed approval is never restored for the same HEAD, even after another
+Codex review. Another HEAD, PR or reviewer does not share that history.
+History-read failures fail the run without approving. The history read and
+POST are separate operations, not an atomic reservation against other writers.
+
+Base, timestamps, receipts, finding flags, earlier requests and requested
+changes are not additional approval conditions. A completed same-HEAD Summary
+and existing thumbs-up remain reusable after a base change when this HEAD has
+no automatic approval history, so approval does not establish which diff Codex
+reviewed. Verification and POST are separate
+operations: a later push does not change the submitted `commit_id`, but this is
+not an atomic current-HEAD guarantee. The workflow neither decides merge
+eligibility nor withdraws approvals. Rulesets enforce their configured
+approvals, stale dismissal, required checks and thread resolution. A successful
+run can also report approval withheld; only GitHub's confirmed approving review
+is an approval.
+
+### CI validation
+
 A successful validation job does not prove the manifest has been applied;
 verify the live Ruleset and settings separately before claiming enforcement.
 
@@ -93,6 +158,13 @@ to succeed, including after cancellation; it has no write token. The
 and finishes with its own `ci-push` aggregate job.
 Fork and Dependabot pull requests that cannot change Draft/Ready state are not
 supported; a maintainer must handle them manually without a privileged fallback.
+
+Product CI builds and accepts Linux amd64 on `ubuntu-latest`, macOS arm64 on
+`macos-latest`, and Windows amd64 on `windows-latest`. Target metadata retains
+the OS/architecture checks, so an unexpected host architecture fails rather
+than changing the artifact target. Lightweight orchestration jobs continue
+using `ubuntu-slim`. The `-latest` labels follow GitHub's stable image updates;
+see the [hosted runner specifications](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
 
 Together the staged workflows preserve Go builds and tests on Linux amd64,
 macOS arm64, and Windows amd64, plus race, format/vet, settings validation, and

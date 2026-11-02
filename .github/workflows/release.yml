@@ -135,7 +135,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
   verify-release:
     needs: [resolve, release]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions: {contents: read}
     steps:
