@@ -219,7 +219,7 @@ func (p Input) parsePlain() (Input, error) {
 	var owner, rawRepo string
 	switch len(parts) {
 	case 1:
-		rawRepo = parts[0]
+		return Input{}, errors.New("repository requires <owner>/<repo>")
 	case 2:
 		owner, rawRepo = parts[0], parts[1]
 	case 3:
@@ -229,12 +229,10 @@ func (p Input) parsePlain() (Input, error) {
 		}
 		owner, rawRepo = parts[1], parts[2]
 	default:
-		return Input{}, errors.New("repository path must be <repo>, <owner>/<repo>, or <host>/<owner>/<repo>")
+		return Input{}, errors.New("repository path must be <owner>/<repo> or <host>/<owner>/<repo>")
 	}
-	if len(parts) > 1 {
-		if err := validatePathComponent("owner", owner); err != nil {
-			return Input{}, err
-		}
+	if err := validatePathComponent("owner", owner); err != nil {
+		return Input{}, err
 	}
 	repo, err := normalizeRepository(rawRepo)
 	if err != nil {
@@ -310,7 +308,7 @@ func splitPlainRepository(input string) ([]string, string, error) {
 		return repositoryParts, branch, nil
 	}
 	if len(parts) > 3 {
-		return nil, "", errors.New("repository path must be <repo>, <owner>/<repo>, or <host>/<owner>/<repo>")
+		return nil, "", errors.New("repository path must be <owner>/<repo> or <host>/<owner>/<repo>")
 	}
 	return parts, "", nil
 }

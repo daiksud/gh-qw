@@ -14,7 +14,7 @@ Names are case-sensitive. Every command supports `-h`/`--help`; the root support
 | `0` | Success, including an empty query result or a documented nonfatal skip. |
 | `1` | Runtime failure, safety refusal, declined confirmation, no interactive match, or partial failure. |
 | `2` | Invalid arguments, repository specification, selector, or configuration. |
-| `130` | Interactive removal selection canceled with Esc or Ctrl-C. |
+| `130` | Interactive selection canceled with Esc or Ctrl-C. |
 
 Successful data alone goes to stdout. Paths are absolute and use `/` separators
 on every platform; a path result is one line per completed item. Progress,
@@ -28,8 +28,22 @@ confirmation response. A failed warning write prevents mutation; an output
 failure after mutation reports the completed operation rather than undoing it.
 
 Git/gh diagnostics use the diagnostic file descriptor directly when available.
-Captured API output never becomes public result output. `--silent` suppresses
-ordinary progress, not errors or result paths.
+Raw API responses and fzf selection output are private. `--silent` suppresses
+ordinary progress, not errors or result data.
+
+### fzf selection
+
+Interactive selection uses external `fzf` on `PATH`. It receives generated
+candidates and uses the controlling terminal for interaction; command stdin is
+never treated as a selection or confirmation response.
+`FZF_DEFAULT_OPTS` and `FZF_DEFAULT_OPTS_FILE` are ignored so defaults cannot
+accept a target automatically or change the selection output format.
+
+Esc or Ctrl-C returns `130`; no match returns `1`. Neither prints an additional
+error or mutates the selected target. An unavailable terminal, invalid selection
+output, or another selector failure returns `1`. An installed but failing
+selector does not fall back to printing candidates. Each command defines when
+selection is offered and what happens if `fzf` is absent.
 
 ## Repository input
 
@@ -40,8 +54,8 @@ details are separate from identity.
 
 | Input to `clone` | Interpretation |
 | --- | --- |
-| `<repo>` | Complete owner using the authenticated login on `GH_HOST` or `github.com`. |
-| `<owner>/<repo>` | HTTPS on `GH_HOST` or `github.com`. |
+| `<owner>` | List or select repositories owned by this user or organization on `GH_HOST` or `github.com`. |
+| `<owner>/<repo>` | HTTPS on `GH_HOST` or `github.com`; offer candidates if the exact repository is not found. |
 | `<host>[:<port>]/<owner>/<repo>` | HTTPS on the explicit host. |
 | `http[s]://<host>/<owner>/<repo>[.git]` | Explicit HTTP(S) transport. |
 | `ssh://[<user>@]<host>[:<port>]/<owner>/<repo>[.git]` | Explicit SSH transport. |
@@ -52,7 +66,8 @@ An optional `@<branch>` after the repository selects the clone branch, not a
 linked worktree. It takes precedence over `--branch`. The delimiter is the
 first `@` in the repository component, not an SSH authority; subsequent `@`
 characters and slashes belong to the branch. Relative paths may contain `@` in
-parent names and must still resolve to exactly one identity.
+parent names and must still resolve to exactly one identity. Owner-only input
+does not accept a branch suffix; use `clone --branch <branch> <owner>`.
 
 Git validates literal refs with `check-ref-format --allow-onelevel`; checkout
 history expressions are not expanded. Reject `@`, a leading `-`, and an invalid
@@ -93,7 +108,7 @@ one, supply `-R`.
 ```text
 gh qw clone [-p] [--shallow] [-b|--branch <branch>]
             [--no-recursive] [-s|--silent] [-P|--parallel]
-            [--partial blobless|treeless] [<repo>...]
+            [--partial blobless|treeless] [<owner>|<owner/repo>...]
 ```
 
 Acquire new repositories in the primary root using `gh repo clone`. Register
@@ -101,6 +116,41 @@ each successful clone before printing its absolute path. If the identity is
 already registered or the destination already exists, fail without reusing,
 updating, adopting, or overwriting it. Use `add` for an existing checkout.
 A failed clone is never registered.
+
+### Repository discovery
+
+Owner-only input selects the user or organization's repositories. A plain
+`<owner>/<repo>` input first checks for that exact repository. If it exists,
+clone it directly. If GitHub reports it as not found, offer the owner's
+repositories using `<repo>` as the search text. Other lookup failures, including
+authentication, rate-limit, and network errors, do not trigger discovery.
+
+| Input | Without fzf | With fzf |
+| --- | --- | --- |
+| `<owner>` | Print all owned repositories. | Choose from all owned repositories, then clone the selection. |
+| Missing `<owner>/<repo>` | Print repositories whose name contains `<repo>` as a literal, case-sensitive substring. | Offer all owned repositories with `<repo>` prefilled as the editable query, then clone the selection. |
+
+Repository discovery includes every page of repositories visible to the current
+gh authentication, including private repositories and forks owned by the user
+or organization. Lists print one `owner/repo` per line on stdout and do not
+create directories or change registrations. An empty result returns `0`.
+Selecting with fzf prints only the completed clone's absolute path on stdout.
+All clone options and the existing destination and registration checks apply
+to the selected repository. See [fzf selection](#fzf-selection) for terminal,
+default-option, cancellation, and error behavior.
+
+Discovery after a missing exact name applies only to `owner/repo` shorthand,
+including an optional `@branch` suffix. Explicit hosts, URLs, SCP-like input,
+and relative forms retain their direct clone transport. A branch suffix is
+preserved when selecting a different repository.
+
+```sh
+gh qw clone cli
+gh qw clone cli/ext
+gh qw clone --shallow --branch main cli
+```
+
+### Options and batches
 
 | Option | Effect |
 | --- | --- |
@@ -119,8 +169,11 @@ Positional inputs ignore stdin. Otherwise read one trimmed specification per
 line from nonterminal stdin, skipping empty lines with no comment syntax.
 Terminal stdin with no arguments is a usage error. Ordered mode stops at the
 first failure; parallel mode attempts valid items and emits completion-order
-paths. Syntax is checked before root resolution, discovery, or authentication.
-Earlier completed items remain complete if a later item is invalid.
+paths. Parallel mode completes candidate selections one at a time before
+starting any clone workers. Canceling a selection or leaving it without a match
+stops that preparation without starting parallel clones. Syntax is checked
+before root resolution, discovery, or authentication. Earlier completed items
+remain complete if a later item is invalid.
 
 ## add
 
@@ -278,17 +331,10 @@ association and boundaries; Git's dirty/locked checks run during actual removal.
 Changes to the selected repository mapping, directory
 identity, or worktree branch/HEAD while the selector is open cause a refusal.
 
-Esc or Ctrl-C returns `130`; no match returns `1`. Neither prints an additional
-error or removes anything. With no candidates, report that on stderr and return
-`0` without launching `fzf`. Missing `fzf`, unavailable terminal, invalid
-selection output, and other selector failures return `1` without removal.
-
-The selector reads generated candidates on stdin and uses the controlling
-terminal for interaction; command stdin is never treated as a selection or
-confirmation. Selected output is private, and successful removal stdout stays
-empty. `FZF_DEFAULT_OPTS` and `FZF_DEFAULT_OPTS_FILE` are ignored for this
-subprocess so user defaults cannot accept a target automatically or change
-the selection output format.
+With no candidates, report that on stderr and return `0` without launching
+`fzf`. Missing `fzf` returns `1` without removal. The shared
+[fzf selection](#fzf-selection) rules cover terminal interaction, defaults,
+cancellation, and selector failures. Successful removal stdout stays empty.
 
 ### Gone-upstream selection
 

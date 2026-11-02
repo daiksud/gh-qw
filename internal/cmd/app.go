@@ -37,7 +37,7 @@ type ApplicationGh interface {
 
 // ApplicationAPI combines the GitHub operations used by the command tree.
 type ApplicationAPI interface {
-	CloneIdentityResolver
+	CloneRepositoryAPI
 	WorktreeAddAPI
 }
 
@@ -129,14 +129,14 @@ func NewCommand(dependencies ApplicationDependencies) *cobra.Command {
 	}
 
 	cloneCommand := NewCloneCommand(CloneDependencies{
-		OnAcquired:       deps.Registry.Register,
-		RootResolver:     deps.Resolver,
-		GitFactory:       deps.GitFactory,
-		Discover:         discover,
-		IdentityResolver: deps.API,
-		Stdin:            deps.Stdin,
-		Stdout:           deps.Stdout,
-		Stderr:           deps.Stderr,
+		OnAcquired:    deps.Registry.Register,
+		RootResolver:  deps.Resolver,
+		GitFactory:    deps.GitFactory,
+		Discover:      discover,
+		RepositoryAPI: deps.API,
+		Stdin:         deps.Stdin,
+		Stdout:        deps.Stdout,
+		Stderr:        deps.Stderr,
 	})
 	listCommand := NewListCommand(ListDependencies{
 		Registry:             deps.Registry,

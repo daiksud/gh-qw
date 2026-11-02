@@ -21,12 +21,12 @@ func TestCLIExcludesAmbientAuthenticationAndGitConfiguration(t *testing.T) {
 	}
 	fixture := newCLIFixture(t)
 	env := append(fixture.envWithPathPrepended(fakeGhDir),
-		"GHQW_TEST_ASSERT_CLEAN_ENV=1", "GHQW_TEST_API_OUTPUT=isolated-user")
-	result := fixture.runCLIWithEnv(t, env, "clone", "widget")
+		"GHQW_TEST_ASSERT_CLEAN_ENV=1")
+	result := fixture.runCLIWithEnv(t, env, "clone", "isolated-user/widget")
 	assertStatus(t, result, 0)
 	want := filepath.Join(fixture.repository, "github.com", "isolated-user", "widget")
 	assertStdout(t, result, filepath.ToSlash(want)+"\n")
-	assertContains(t, result.stderr, "fake gh: api github.com/user")
+	assertContains(t, result.stderr, "fake gh: api github.com/repos/isolated-user/widget")
 	assertPathExists(t, filepath.Join(want, ".git"))
 	result = fixture.runCLI(t, "list")
 	assertStatus(t, result, 0)
@@ -36,8 +36,8 @@ func TestCLIExcludesAmbientAuthenticationAndGitConfiguration(t *testing.T) {
 func TestCLIFixturesShareExecutablesButNotMutableState(t *testing.T) {
 	first := newCLIFixture(t)
 	second := newCLIFixture(t)
-	firstEnv := append(first.envWithPathPrepended(first.buildFakeGh(t)), "GHQW_TEST_API_OUTPUT=first-user")
-	secondEnv := append(second.envWithPathPrepended(second.buildFakeGh(t)), "GHQW_TEST_API_OUTPUT=second-user")
+	firstEnv := first.envWithPathPrepended(first.buildFakeGh(t))
+	secondEnv := second.envWithPathPrepended(second.buildFakeGh(t))
 
 	for _, test := range []struct {
 		fixture *cliFixture
@@ -47,7 +47,7 @@ func TestCLIFixturesShareExecutablesButNotMutableState(t *testing.T) {
 		{first, firstEnv, "first-user"},
 		{second, secondEnv, "second-user"},
 	} {
-		result := test.fixture.runCLIWithEnv(t, test.env, "clone", "widget")
+		result := test.fixture.runCLIWithEnv(t, test.env, "clone", test.owner+"/widget")
 		assertStatus(t, result, 0)
 		want := filepath.Join(test.fixture.repository, "github.com", test.owner, "widget")
 		assertStdout(t, result, filepath.ToSlash(want)+"\n")

@@ -8,10 +8,12 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
 
+	"github.com/daiksud/gh-qw/internal/fzfcmd"
 	"github.com/daiksud/gh-qw/internal/ghapi"
 	"github.com/daiksud/gh-qw/internal/ghcmd"
 	"github.com/daiksud/gh-qw/internal/local"
@@ -134,9 +136,10 @@ type CloneGitFactory func(stdout, stderr io.Writer) CloneGitOperations
 // CloneDiscoverFunc discovers ordinary main repositories below configured roots.
 type CloneDiscoverFunc func(context.Context, []string) (local.DiscoveryResult, error)
 
-// CloneIdentityResolver completes a bare repository name from gh authentication.
-type CloneIdentityResolver interface {
-	ResolveIdentity(context.Context) (ghapi.Identity, error)
+// CloneRepositoryAPI discovers repositories through gh's authentication.
+type CloneRepositoryAPI interface {
+	RepositoryExists(context.Context, string, string, string) (bool, error)
+	OwnerRepositories(context.Context, string, string) ([]string, error)
 }
 
 // CloneTerminalDetector reports whether a reader is an interactive terminal.
@@ -144,19 +147,21 @@ type CloneTerminalDetector func(io.Reader) bool
 
 // CloneDependencies supplies all external operations used by NewCloneCommand.
 type CloneDependencies struct {
-	RootResolver     RootResolver
-	GitFactory       CloneGitFactory
-	MkdirAll         func(string, fs.FileMode) error
-	Lstat            func(string) (fs.FileInfo, error)
-	Discover         CloneDiscoverFunc
-	IdentityResolver CloneIdentityResolver
-	OnAcquired       func(string, string) error
-	Stdin            io.Reader
-	Stdout           io.Writer
-	Stderr           io.Writer
-	IsTerminal       CloneTerminalDetector
-	WarningSink      local.WarningSink
-	WorkingDir       string
+	RootResolver  RootResolver
+	GitFactory    CloneGitFactory
+	MkdirAll      func(string, fs.FileMode) error
+	Lstat         func(string) (fs.FileInfo, error)
+	Discover      CloneDiscoverFunc
+	RepositoryAPI CloneRepositoryAPI
+	LookPath      func(string) (string, error)
+	Select        func(context.Context, []string, string) (string, error)
+	OnAcquired    func(string, string) error
+	Stdin         io.Reader
+	Stdout        io.Writer
+	Stderr        io.Writer
+	IsTerminal    CloneTerminalDetector
+	WarningSink   local.WarningSink
+	WorkingDir    string
 }
 
 type cloneFlags struct {
@@ -228,8 +233,9 @@ func NewCloneCommand(deps CloneDependencies) *cobra.Command {
 	flags := cloneFlags{}
 
 	command := &cobra.Command{
-		Use:           "clone [flags] [<repo>...]",
+		Use:           "clone [flags] [<owner>|<owner/repo>...]",
 		Short:         "Clone and register new repositories",
+		Long:          "Clone and register new repositories. Supply an owner to list repositories or select one with fzf. Missing owner/repo names offer matching repositories.",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE: func(command *cobra.Command, args []string) error {
@@ -329,8 +335,21 @@ func cloneResolveDependencies(deps CloneDependencies) CloneDependencies {
 			return local.DiscoverRepositories(ctx, roots)
 		}
 	}
-	if deps.IdentityResolver == nil {
-		deps.IdentityResolver = ghapi.NewClient(deps.Stderr)
+	if deps.RepositoryAPI == nil {
+		deps.RepositoryAPI = ghapi.NewClient(deps.Stderr)
+	}
+	if deps.LookPath == nil {
+		deps.LookPath = exec.LookPath
+	}
+	if deps.Select == nil {
+		deps.Select = func(ctx context.Context, candidates []string, query string) (string, error) {
+			return (&fzfcmd.Selector{
+				Stderr: deps.Stderr,
+				Prompt: "Clone> ",
+				Header: "Enter: clone; Esc: cancel.",
+				Query:  query,
+			}).Select(ctx, candidates)
+		}
 	}
 	return deps
 }
@@ -344,44 +363,18 @@ func cloneRunOrdered(
 	warn local.WarningSink,
 	stdout, stderr io.Writer,
 ) error {
-	var roots []string
-	var states map[string]*cloneTarget
+	preparation := clonePreparation{deps: deps, ssh: flags.ssh, warn: warn, stdout: stdout, stderr: stderr}
 	for _, input := range inputs {
-		parsed, err := repospec.Parse(input)
-		if err != nil {
-			return cloneUsageError(err)
-		}
-		if roots == nil {
-			roots, err = cloneResolveRoots(deps.RootResolver)
-			if err != nil {
-				return err
-			}
-		}
-		spec, err := cloneResolveRepository(ctx, parsed, roots, flags.ssh, deps)
-		if err != nil {
-			if errors.Is(err, repospec.ErrUsage) {
-				return cloneUsageError(err)
-			}
-			return err
-		}
-		if states == nil {
-			discovery, err := deps.Discover(ctx, roots)
-			if err != nil {
-				return fmt.Errorf("discover existing repositories: %w", err)
-			}
-			if err := cloneEmitDiscoveryWarnings(discovery.Warnings, warn, stderr); err != nil {
-				return fmt.Errorf("write discovery warning: %w", err)
-			}
-			states = cloneInitialTargetStates(discovery.Repositories)
-		}
-
-		state, err := cloneResolveTarget(states, spec, roots[0])
+		item, state, err := preparation.prepare(ctx, input)
 		if err != nil {
 			return fmt.Errorf("prepare repository %q: %w", input, err)
 		}
+		if item == nil {
+			continue
+		}
 		path, err := cloneAcquire(
 			ctx,
-			spec,
+			item.spec,
 			state,
 			flags,
 			filter,
@@ -392,7 +385,7 @@ func cloneRunOrdered(
 			return fmt.Errorf("clone %q: %w", input, err)
 		}
 		if deps.OnAcquired != nil {
-			if err := deps.OnAcquired(spec.Identity.String(), path); err != nil {
+			if err := deps.OnAcquired(item.spec.Identity.String(), path); err != nil {
 				return fmt.Errorf("repository acquired at %q but location registration failed: %w", path, err)
 			}
 		}
@@ -413,73 +406,39 @@ func cloneRunParallel(
 	stdout, stderr io.Writer,
 ) error {
 	aggregate := &CloneAggregateError{}
-	var roots []string
-	parsed := make([]cloneParsedItem, 0, len(inputs))
+	preparation := clonePreparation{deps: deps, ssh: flags.ssh, warn: warn, stdout: stdout, stderr: stderr}
+	previous := make(map[string]<-chan struct{})
+	jobs := make([]cloneParallelJob, 0, len(inputs))
 	for _, input := range inputs {
-		syntax, err := repospec.Parse(input)
+		item, state, err := preparation.prepare(ctx, input)
 		if err != nil {
-			aggregate.usageErrors = append(
-				aggregate.usageErrors,
-				fmt.Errorf("clone %q: %w", input, err),
-			)
-			continue
-		}
-		if roots == nil {
-			roots, err = cloneResolveRoots(deps.RootResolver)
-			if err != nil {
-				aggregate.runtimeErrors = append(aggregate.runtimeErrors, err)
-				return aggregate
+			var silent *silentStatusError
+			if errors.As(err, &silent) {
+				if silent.status == 1 && (len(aggregate.usageErrors) != 0 || len(aggregate.runtimeErrors) != 0) {
+					aggregate.runtimeErrors = append(aggregate.runtimeErrors,
+						fmt.Errorf("clone %q: %w", input, fzfcmd.ErrNoMatch))
+					return aggregate
+				}
+				return err
 			}
-		}
-		spec, err := cloneResolveRepository(ctx, syntax, roots, flags.ssh, deps)
-		if err != nil {
 			err = fmt.Errorf("clone %q: %w", input, err)
-			if errors.Is(err, repospec.ErrUsage) {
+			if errors.Is(err, ErrCloneUsage) || errors.Is(err, repospec.ErrUsage) {
 				aggregate.usageErrors = append(aggregate.usageErrors, err)
 			} else {
 				aggregate.runtimeErrors = append(aggregate.runtimeErrors, err)
 			}
+			if preparation.fatalError != nil {
+				return aggregate
+			}
 			continue
 		}
-		parsed = append(parsed, cloneParsedItem{input: input, spec: spec})
-	}
-
-	if len(parsed) == 0 {
-		if len(aggregate.usageErrors) != 0 || len(aggregate.runtimeErrors) != 0 {
-			return aggregate
-		}
-		return nil
-	}
-
-	discovery, err := deps.Discover(ctx, roots)
-	if err != nil {
-		aggregate.runtimeErrors = append(
-			aggregate.runtimeErrors,
-			fmt.Errorf("discover existing repositories: %w", err),
-		)
-		return aggregate
-	}
-	if err := cloneEmitDiscoveryWarnings(discovery.Warnings, warn, stderr); err != nil {
-		aggregate.runtimeErrors = append(aggregate.runtimeErrors, fmt.Errorf("write discovery warning: %w", err))
-		return aggregate
-	}
-
-	states := cloneInitialTargetStates(discovery.Repositories)
-	previous := make(map[string]<-chan struct{})
-	jobs := make([]cloneParallelJob, 0, len(parsed))
-	for _, item := range parsed {
-		state, err := cloneResolveTarget(states, item.spec, roots[0])
-		if err != nil {
-			aggregate.runtimeErrors = append(
-				aggregate.runtimeErrors,
-				fmt.Errorf("prepare repository %q: %w", item.input, err),
-			)
+		if item == nil {
 			continue
 		}
 
 		done := make(chan struct{})
 		jobs = append(jobs, cloneParallelJob{
-			item:  item,
+			item:  *item,
 			state: state,
 			wait:  previous[item.spec.Identity.String()],
 			done:  done,
@@ -581,13 +540,6 @@ func cloneResolveRepository(
 		// URL, so file:// input is rejected here rather than failing later
 		// as an opaque gh error.
 		RejectFileScheme: true,
-		ResolveIdentity: func() (string, string, error) {
-			identity, err := deps.IdentityResolver.ResolveIdentity(ctx)
-			if err != nil {
-				return "", "", err
-			}
-			return identity.Host, identity.Login, nil
-		},
 	})
 }
 
@@ -648,19 +600,7 @@ func cloneAcquire(
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	if state == nil {
-		return "", errors.New("repository target state is nil")
-	}
-
-	if state.exists {
-		return "", fmt.Errorf(
-			"repository %q is already registered at %q; use add for existing checkouts",
-			state.repository.Identity,
-			state.repository.Path,
-		)
-	}
-
-	if err := cloneRequireMissingDestination(deps.Lstat, state.repository.Path); err != nil {
+	if err := cloneCheckTarget(state, deps); err != nil {
 		return "", err
 	}
 
@@ -721,6 +661,17 @@ func cloneAcquire(
 	state.exists = true
 	state.repository.Path = path
 	return cloneAbsolutePath(path)
+}
+
+func cloneCheckTarget(state *cloneTarget, deps CloneDependencies) error {
+	if state == nil {
+		return errors.New("repository target state is nil")
+	}
+	if state.exists {
+		return fmt.Errorf("repository %q is already registered at %q; use add for existing checkouts",
+			state.repository.Identity, state.repository.Path)
+	}
+	return cloneRequireMissingDestination(deps.Lstat, state.repository.Path)
 }
 
 func cloneRequireMissingDestination(

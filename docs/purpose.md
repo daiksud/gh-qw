@@ -24,7 +24,7 @@ not a provisioned development environment.
 
 | User activity | Burden gh-qw reduces | Current support |
 | --- | --- | --- |
-| Start work | Choose where to put a missing checkout or remember an existing one. | `clone` acquires a repository at a managed destination; `add` registers an existing checkout in place or moves it with `--move`. |
+| Start work | Find the repository and choose where to put its checkout. | `clone` lists or selects an owner's repositories and acquires one at a managed destination; `add` registers an existing checkout in place or moves it with `--move`. |
 | Work in parallel | Choose and keep track of a separate directory for another task. | `add --worktree` places a linked worktree at a predictable, automatically allocated slot. |
 | Resume work | Remember a full path or search directories across repositories. | Registered repository identities and Git's worktree information expose their locations to other tools. |
 | Finish work | Identify the intended cleanup target and understand what was removed. | `remove` accepts an explicit target or offers candidates through external `fzf`, then applies its safety rules and reports failures or partial results. |
@@ -49,11 +49,11 @@ never persists a second copy of Git's worktree registrations, and does not
 redefine branch, remote, or authentication semantics.
 
 Return useful identities and paths for composition with existing tools. Shell
-navigation and editors can consume those results. For cleanup, gh-qw can pass
-its known candidates to external `fzf`, which owns the interactive interface;
-gh-qw owns target identity and removal. It is not an editor, a development
-environment provisioner, a task or agent orchestrator, or a system for choosing
-branch strategies and PR workflows.
+navigation and editors can consume those results. For cloning or cleanup,
+gh-qw can pass its known candidates to external `fzf`, which owns the interactive
+interface; gh-qw owns target identity and the requested operation. It is not
+an editor, a development environment provisioner, a task or agent orchestrator,
+or a system for choosing branch strategies and PR workflows.
 
 Reducing mental overhead must not trade away users' work. Keep management
 boundaries, target identity, confirmation and revalidation where required, and

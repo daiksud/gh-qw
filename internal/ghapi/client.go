@@ -11,67 +11,24 @@ import (
 	"github.com/daiksud/gh-qw/internal/ghcmd"
 )
 
-const githubHost = "github.com"
-
 // Client provides the GitHub API operations used by gh-qw through gh api.
 type Client struct {
 	output func(context.Context, ...string) ([]byte, error)
-}
-
-// Identity is an authenticated GitHub account and its selected host.
-type Identity struct {
-	Host  string
-	Login string
-}
-
-// IdentityError means a repository owner could not be completed from gh
-// authentication. Callers should treat this as a usage error.
-type IdentityError struct {
-	err error
-}
-
-func (e *IdentityError) Error() string {
-	return e.err.Error()
-}
-
-// Unwrap preserves the gh process failure and context cancellation, if any.
-func (e *IdentityError) Unwrap() error {
-	return e.err
 }
 
 // NewClient returns a Client backed by the external gh executable. API response
 // output is captured; gh diagnostics go to stderr. A nil writer uses os.Stderr.
 // The executable is resolved only when an API operation runs.
 func NewClient(stderr io.Writer) *Client {
-	return &Client{output: (&ghcmd.Runner{Stderr: stderr}).Output}
-}
-
-// ResolveIdentity returns the authenticated login on GH_HOST or github.com when
-// completing a repository name that has no owner. gh owns authentication for the
-// selected host; stored accounts do not change gh-qw's shorthand host.
-func (c *Client) ResolveIdentity(ctx context.Context) (Identity, error) {
-	host := strings.ToLower(strings.TrimSpace(os.Getenv("GH_HOST")))
-	if host == "" {
-		host = githubHost
-	}
-
-	output, err := c.output(ctx, "api", "--hostname", host, "user", "--jq", ".login // empty")
-	if err != nil {
-		return Identity{}, &IdentityError{err: fmt.Errorf(
-			"cannot resolve authenticated GitHub user for %q: query current user: %w; specify <owner>/<repo>",
-			host, err,
-		)}
-	}
-
-	login := strings.TrimSpace(string(output))
-	if login == "" {
-		return Identity{}, &IdentityError{err: fmt.Errorf(
-			"cannot resolve authenticated GitHub user for %q: API response did not include a login; specify <owner>/<repo>",
-			host,
-		)}
-	}
-
-	return Identity{Host: host, Login: login}, nil
+	return &Client{output: func(ctx context.Context, args ...string) ([]byte, error) {
+		// Captured HTTP headers and JSON must remain machine-readable even when
+		// the caller forces terminal formatting. Authentication stays with gh.
+		runner := &ghcmd.Runner{
+			Stderr: stderr,
+			Env:    append(os.Environ(), "NO_COLOR=1", "CLICOLOR_FORCE=0", "GH_FORCE_TTY="),
+		}
+		return runner.Output(ctx, args...)
+	}}
 }
 
 // DefaultBranch returns the repository's REST default_branch using gh's

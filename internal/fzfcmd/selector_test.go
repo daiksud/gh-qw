@@ -86,6 +86,39 @@ func TestSelectPassesCandidatesAndControlledOptionsToFzf(t *testing.T) {
 	}
 }
 
+func TestSelectSeedsEditableQueryWithoutFilteringCandidates(t *testing.T) {
+	for _, query := range []string{"widget", "--filter=other $(touch ignored) `literal` 'quoted'"} {
+		t.Run(query, func(t *testing.T) {
+			selector, _ := newHelperSelector(t, "inspect")
+			var stderr bytes.Buffer
+			selector.Stderr = &stderr
+			selector.Prompt = "Clone> "
+			selector.Header = "Enter: clone; Esc: cancel."
+			selector.Query = query
+			candidates := []string{"acme/widget", "acme/unrelated"}
+
+			selected, err := selector.Select(context.Background(), candidates)
+			if err != nil || selected != candidates[1] {
+				t.Fatalf("Select() = %q, %v; want unrelated offered candidate", selected, err)
+			}
+			var report helperReport
+			if err := json.Unmarshal(stderr.Bytes(), &report); err != nil {
+				t.Fatalf("decode helper report: %v; stderr = %q", err, stderr.String())
+			}
+			wantArgs := []string{
+				"--read0", "--print0", "--no-multi", "--no-select-1", "--no-exit-0",
+				"--prompt=Clone> ", "--header=Enter: clone; Esc: cancel.", "--query=" + query,
+			}
+			if !slices.Equal(report.Arguments, wantArgs) {
+				t.Fatalf("arguments = %#v, want %#v", report.Arguments, wantArgs)
+			}
+			if report.Input != strings.Join(candidates, "\x00")+"\x00" {
+				t.Fatalf("candidate input = %q, want the complete unfiltered set", report.Input)
+			}
+		})
+	}
+}
+
 func TestSelectPreservesDirectStderr(t *testing.T) {
 	selector, recorder := newHelperSelector(t, "select")
 	reader, writer, err := os.Pipe()
@@ -171,7 +204,7 @@ func TestSelectReportsMissingFzf(t *testing.T) {
 	if selected != "" || !errors.Is(err, exec.ErrNotFound) || !errors.As(err, &failure) || failure.ExitCode != -1 {
 		t.Fatalf("Select() = %q, %v; want executable failure", selected, err)
 	}
-	if !strings.Contains(err.Error(), "install fzf") || !strings.Contains(err.Error(), "explicit removal target") {
+	if !strings.Contains(err.Error(), "install fzf") || !strings.Contains(err.Error(), "explicit target") {
 		t.Fatalf("missing executable error has no next step: %v", err)
 	}
 }

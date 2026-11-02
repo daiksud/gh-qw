@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/daiksud/gh-qw/internal/cmd"
-	"github.com/daiksud/gh-qw/internal/ghapi"
 	"github.com/daiksud/gh-qw/internal/ghcmd"
 	"github.com/daiksud/gh-qw/internal/local"
 	"github.com/daiksud/gh-qw/internal/procio"
@@ -60,7 +59,8 @@ func TestNewCloneCommandFlagsAndCloneOptions(t *testing.T) {
 	var discoverCalls int
 	var output bytes.Buffer
 	command := cmd.NewCloneCommand(cmd.CloneDependencies{
-		RootResolver: resolver,
+		RootResolver:  resolver,
+		RepositoryAPI: &cloneRepositoryAPI{},
 		GitFactory: func(stdout, stderr io.Writer) cmd.CloneGitOperations {
 			gotGitStdout = stdout
 			gotGitStderr = stderr
@@ -348,13 +348,10 @@ func TestNewCloneCommandPropagatesStdinReadError(t *testing.T) {
 	}
 }
 
-func TestNewCloneCommandBareIdentityAndSuffixOverrideBranchFlag(t *testing.T) {
+func TestNewCloneCommandSuffixOverridesBranchFlag(t *testing.T) {
 	t.Parallel()
 
 	root := cloneTempRoot(t)
-	identity := &cloneIdentityResolver{
-		identity: ghapi.Identity{Host: "github.example.com", Login: "octocat"},
-	}
 	var got ghcmd.CloneOptions
 	var output bytes.Buffer
 	deps := cloneDependencies(root, &cloneGitOperations{
@@ -363,15 +360,11 @@ func TestNewCloneCommandBareIdentityAndSuffixOverrideBranchFlag(t *testing.T) {
 			return nil
 		},
 	}, &output, io.Discard)
-	deps.IdentityResolver = identity
 	command := cmd.NewCloneCommand(deps)
-	command.SetArgs([]string{"--branch", "flag-branch", "widget@feature/topic"})
+	command.SetArgs([]string{"--branch", "flag-branch", "github.example.com/octocat/widget@feature/topic"})
 
 	if err := command.Execute(); err != nil {
 		t.Fatalf("Execute() error = %v", err)
-	}
-	if identity.Calls() != 1 {
-		t.Fatalf("ResolveIdentity() calls = %d, want 1", identity.Calls())
 	}
 	if got, want := got.URL, "https://github.example.com/octocat/widget"; got != want {
 		t.Fatalf("Clone URL = %q, want %q", got, want)
@@ -385,48 +378,16 @@ func TestNewCloneCommandBareIdentityAndSuffixOverrideBranchFlag(t *testing.T) {
 	}
 }
 
-func TestNewCloneCommandMakesParserAndIdentityFailuresUsageErrors(t *testing.T) {
+func TestNewCloneCommandMakesParserFailuresUsageErrors(t *testing.T) {
 	t.Parallel()
-
-	tests := []struct {
-		name     string
-		input    string
-		identity *cloneIdentityResolver
-		wantErr  error
-	}{
-		{
-			name:    "parser",
-			input:   "too/many/repository/path",
-			wantErr: repospec.ErrUsage,
-		},
-		{
-			name:  "identity",
-			input: "widget",
-			identity: &cloneIdentityResolver{
-				err: errors.New("identity failed"),
-			},
-		},
-	}
-	for _, test := range tests {
-		test := test
-		t.Run(test.name, func(t *testing.T) {
+	for _, input := range []string{"too/many/repository/path", "owner@branch"} {
+		t.Run(input, func(t *testing.T) {
 			t.Parallel()
-
-			root := cloneTempRoot(t)
-			deps := cloneDependencies(root, &cloneGitOperations{}, io.Discard, io.Discard)
-			if test.identity != nil {
-				deps.IdentityResolver = test.identity
-				test.wantErr = test.identity.err
-			}
+			deps := cloneDependencies(cloneTempRoot(t), &cloneGitOperations{}, io.Discard, io.Discard)
 			command := cmd.NewCloneCommand(deps)
-			command.SetArgs([]string{test.input})
-
-			err := command.Execute()
-			if !errors.Is(err, cmd.ErrCloneUsage) {
-				t.Fatalf("Execute() error = %v, want ErrCloneUsage", err)
-			}
-			if !errors.Is(err, test.wantErr) {
-				t.Fatalf("Execute() error = %v, want cause %v", err, test.wantErr)
+			command.SetArgs([]string{input})
+			if err := command.Execute(); !errors.Is(err, cmd.ErrCloneUsage) || !errors.Is(err, repospec.ErrUsage) {
+				t.Fatalf("Execute() error = %v, want parser usage failure", err)
 			}
 		})
 	}
@@ -492,7 +453,7 @@ func TestNewCloneCommandRejectsRegisteredRepository(t *testing.T) {
 				RootIndex: 1,
 			}}}, nil
 		},
-		IdentityResolver: &cloneIdentityResolver{},
+		RepositoryAPI: &cloneRepositoryAPI{},
 
 		Stdin:      strings.NewReader(""),
 		Stdout:     &output,
@@ -1238,24 +1199,23 @@ func (r *cloneRootResolver) Calls() int {
 	return r.calls
 }
 
-type cloneIdentityResolver struct {
-	mu       sync.Mutex
-	identity ghapi.Identity
-	err      error
-	calls    int
+type cloneRepositoryAPI struct {
+	exists       func(context.Context, string, string, string) (bool, error)
+	repositories func(context.Context, string, string) ([]string, error)
 }
 
-func (r *cloneIdentityResolver) ResolveIdentity(context.Context) (ghapi.Identity, error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.calls++
-	return r.identity, r.err
+func (api *cloneRepositoryAPI) RepositoryExists(ctx context.Context, host, owner, repo string) (bool, error) {
+	if api.exists != nil {
+		return api.exists(ctx, host, owner, repo)
+	}
+	return true, nil
 }
 
-func (r *cloneIdentityResolver) Calls() int {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.calls
+func (api *cloneRepositoryAPI) OwnerRepositories(ctx context.Context, host, owner string) ([]string, error) {
+	if api.repositories != nil {
+		return api.repositories(ctx, host, owner)
+	}
+	return nil, nil
 }
 
 type cloneGitOperations struct {
@@ -1284,13 +1244,11 @@ func cloneDependencies(
 		Discover: func(context.Context, []string) (local.DiscoveryResult, error) {
 			return local.DiscoveryResult{}, nil
 		},
-		IdentityResolver: &cloneIdentityResolver{
-			identity: ghapi.Identity{Host: "github.com", Login: "octocat"},
-		},
-		Stdin:      strings.NewReader(""),
-		Stdout:     stdout,
-		Stderr:     stderr,
-		IsTerminal: func(io.Reader) bool { return false },
+		RepositoryAPI: &cloneRepositoryAPI{},
+		Stdin:         strings.NewReader(""),
+		Stdout:        stdout,
+		Stderr:        stderr,
+		IsTerminal:    func(io.Reader) bool { return false },
 	}
 }
 
@@ -1377,9 +1335,10 @@ func TestCloneHonorsGHHostForHostlessShorthand(t *testing.T) {
 			var got string
 			git := &cloneGitOperations{clone: func(_ context.Context, options ghcmd.CloneOptions) error { got = options.URL; return nil }}
 			command := cmd.NewCloneCommand(cmd.CloneDependencies{
-				RootResolver: &cloneRootResolver{result: rootpkg.Result{RepositoryRoots: []string{cloneTempRoot(t)}}},
-				GitFactory:   func(io.Writer, io.Writer) cmd.CloneGitOperations { return git },
-				Stdout:       io.Discard, Stderr: io.Discard,
+				RootResolver:  &cloneRootResolver{result: rootpkg.Result{RepositoryRoots: []string{cloneTempRoot(t)}}},
+				GitFactory:    func(io.Writer, io.Writer) cmd.CloneGitOperations { return git },
+				RepositoryAPI: &cloneRepositoryAPI{},
+				Stdout:        io.Discard, Stderr: io.Discard,
 				Discover: func(context.Context, []string) (local.DiscoveryResult, error) { return local.DiscoveryResult{}, nil },
 			})
 			command.SetArgs([]string{test.input})

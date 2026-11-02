@@ -432,13 +432,13 @@ func TestCLIAPILookupsUseGHPathAndKeepStdoutPure(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		ghPath += ".exe"
 	}
-	env := append(fixture.env, "GH_PATH="+ghPath, "GH_HOST=ghe.example.com", "GHQW_TEST_API_OUTPUT=octocat")
+	env := append(fixture.env, "GH_PATH="+ghPath, "GH_HOST=ghe.example.com")
 	mainPath := filepath.Join(fixture.repository, "ghe.example.com", "octocat", "widget")
 
-	result := fixture.runCLIWithEnv(t, env, "clone", "widget")
+	result := fixture.runCLIWithEnv(t, env, "clone", "octocat/widget")
 	assertStatus(t, result, 0)
 	assertStdout(t, result, filepath.ToSlash(mainPath)+"\n")
-	assertContains(t, result.stderr, "fake gh: api ghe.example.com/user")
+	assertContains(t, result.stderr, "fake gh: api ghe.example.com/repos/octocat/widget")
 	assertPathExists(t, mainPath)
 
 	// The explicit repository host wins over the ambient host. The local main
@@ -729,8 +729,9 @@ func (fixture *cliFixture) cloneMain(t *testing.T, remoteURL, mainPath string) {
 }
 
 // fakeGhSource delegates authentication entirely to the external command boundary.
-// API calls require an explicit fixture response; any auth preflight or mutation
-// fails the test. Clone creates a local Git repository, keeping tests network-free.
+// Repository existence defaults to success. Other API calls require an explicit
+// fixture response; any auth preflight or mutation fails the test. Clone creates
+// a local Git repository, keeping tests network-free.
 const fakeGhSource = `package main
 
 import (
@@ -738,6 +739,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -760,10 +762,43 @@ func main() {
 		cloneRepo(args[2:])
 	case len(args) == 4 && args[0] == "repo" && args[1] == "sync" && args[2] == "--source":
 		fmt.Fprintln(os.Stderr, "fake gh: synchronized "+args[3])
-	case len(args) == 6 && args[0] == "api" && args[1] == "--hostname" && args[4] == "--jq":
+	case len(args) == 8 && args[0] == "api" && args[1] == "--hostname" &&
+		strings.HasPrefix(args[3], "repos/") && args[4] == "--method" && args[5] == "HEAD" &&
+		args[6] == "--include" && args[7] == "--silent":
+		status := 200
+		if value := os.Getenv("GHQW_TEST_REPOSITORY_STATUS"); value != "" {
+			var err error
+			status, err = strconv.Atoi(value)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "fake gh: invalid fixture HTTP status")
+				os.Exit(1)
+			}
+		}
+		fmt.Fprintf(os.Stdout, "HTTP/1.1 %d Fixture status\r\n\r\n", status)
+		fmt.Fprintln(os.Stderr, "fake gh: api "+args[2]+"/"+args[3])
+		if status < 200 || status >= 300 {
+			fmt.Fprintf(os.Stderr, "fake gh: HTTP %d\n", status)
+			os.Exit(1)
+		}
+	case len(args) == 10 && args[0] == "api" && args[1] == "--hostname" &&
+		args[3] == "graphql" && args[4] == "--paginate" && args[5] == "--slurp" &&
+		args[6] == "--raw-field" && strings.HasPrefix(args[7], "query=") &&
+		args[8] == "--raw-field" && strings.HasPrefix(args[9], "owner="):
+		output, ok := os.LookupEnv("GHQW_TEST_REPOSITORIES_OUTPUT")
+		if !ok {
+			fmt.Fprintln(os.Stderr, "fake gh: unexpected owner repository lookup")
+			os.Exit(1)
+		}
+		fmt.Fprintln(os.Stdout, output)
+		fmt.Fprintln(os.Stderr, "fake gh: api "+args[2]+"/graphql "+args[9])
+		if os.Getenv("GHQW_TEST_REPOSITORIES_FAIL") == "1" {
+			fmt.Fprintln(os.Stderr, "fake gh: repository page failed")
+			os.Exit(1)
+		}
+	case len(args) == 6 && args[0] == "api" && args[1] == "--hostname" &&
+		strings.HasPrefix(args[3], "repos/") && args[4] == "--jq":
 		output, ok := os.LookupEnv("GHQW_TEST_API_OUTPUT")
-		if !ok || (args[3] == "user" && args[5] != ".login // empty") ||
-			(strings.HasPrefix(args[3], "repos/") && args[5] != ".default_branch // empty") {
+		if !ok || args[5] != ".default_branch // empty" {
 			fmt.Fprintln(os.Stderr, "fake gh: unexpected API lookup")
 			os.Exit(1)
 		}
