@@ -1,13 +1,10 @@
-# Dependabot supplies initial maintenance labels and Conventional Commit types.
-# Branch names are unrestricted and do not determine release classifications.
-# Reviewers can change PR types or add version labels when warranted.
+# Conventional Commit types classify dependency changes independently of labels.
 version: 2
 updates:
   - package-ecosystem: "gomod"
     directory: "/"
     schedule:
       interval: "weekly"
-    labels: ["build"]
     commit-message:
       prefix: "build"
       include: "scope"
@@ -16,7 +13,6 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-    labels: ["ci"]
     commit-message:
       prefix: "ci"
       include: "scope"

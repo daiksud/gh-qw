@@ -18,46 +18,26 @@ settings:
     squash_merge_commit_title: PR_TITLE
     squash_merge_commit_message: PR_BODY
   labels:
-    - id: 11747904126
-      name: "BREAKING CHANGE"
-      color: "b60205"
-      description: "Backward-incompatible user-visible behavior or public interface"
-    - id: 11747904146
-      name: "DEPRECATED"
-      color: "fbca04"
-      description: "Public feature or behavior marked for future removal"
     - id: 12849416294
       name: "accessibility"
       color: "f143ab"
-      description: "Accessibility issues or improvements"
-    - id: 11747904551
-      name: "build"
-      color: "a8aeb4"
-      description: "Build, packaging, release tooling, or dependency management"
-    - id: 11747904620
-      name: "chore"
-      color: "ededed"
-      description: "Maintenance not covered by a more specific change type"
-    - id: 11747904584
-      name: "ci"
-      color: "cfd3d7"
-      description: "CI checks and repository development automation"
-    - id: 11747904352
-      name: "docs"
-      color: "c4b5e0"
-      description: "Documentation or contributor and reviewer guidance"
+      description: "Barrier affecting people with disabilities"
+    - id: 12930185307
+      name: "bug"
+      color: "d73a4a"
+      description: "Something isn't working"
+    - id: 12930185431
+      name: "documentation"
+      color: "0075ca"
+      description: "Improvements or additions to documentation"
     - id: 11736169750
       name: "duplicate"
       color: "cfd3d7"
       description: "This issue or pull request already exists"
-    - id: 11747904181
-      name: "feat"
-      color: "0e8a16"
-      description: "New user-facing capability or behavior"
-    - id: 11747904250
-      name: "fix"
-      color: "0052cc"
-      description: "Correction to user-observable product behavior"
+    - id: 12930185558
+      name: "enhancement"
+      color: "a2eeef"
+      description: "New feature or request"
     - id: 11736169765
       name: "good first issue"
       color: "7057ff"
@@ -69,31 +49,11 @@ settings:
     - id: 11736169769
       name: "invalid"
       color: "e4e669"
-      description: "This does not seem right"
-    - id: 11747904197
-      name: "perf"
-      color: "7fd18a"
-      description: "Runtime performance improvement experienced by product users"
+      description: "This doesn't seem right"
     - id: 11736169775
       name: "question"
       color: "d876e3"
       description: "Further information is requested"
-    - id: 11747904379
-      name: "refactor"
-      color: "8ec9cc"
-      description: "Implementation restructuring without user-observable behavior changes"
-    - id: 11747904297
-      name: "revert"
-      color: "79b8ff"
-      description: "Reverts a previous change; assess resulting user impact"
-    - id: 11747904422
-      name: "style"
-      color: "b5dcde"
-      description: "Formatting changes without behavior changes"
-    - id: 11747904492
-      name: "test"
-      color: "d8ecec"
-      description: "Test-only additions or corrections"
     - id: 11736169781
       name: "wontfix"
       color: "ffffff"
