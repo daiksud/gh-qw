@@ -96,12 +96,14 @@ require an up-to-date base before merge. Neither rule proves that Codex reviewed
 a particular base.
 
 The [approval workflow](../.github/workflows/approve-codex-review.yml) follows
-[gh-settings #553](https://github.com/daiksud/gh-settings/pull/553):
+[gh-settings #554](https://github.com/daiksud/gh-settings/pull/554):
 
 1. Codex has a thumbs-up reaction on the PR.
 2. The latest Codex Review Summary shows both Code Review and Security Review
    as Completed.
 3. Both full reviewed commit SHAs match the current PR HEAD.
+4. This PR has no `github-actions[bot]` review in `APPROVED` or `DISMISSED`
+   state for that full SHA.
 
 It identifies Codex through GitHub's `user.login`, selects the latest Summary
 comment by ID, and reads the two status cells in its Markdown table. After the
@@ -118,13 +120,18 @@ attempt reads Summary and reaction once; HEAD is read only after both signals
 are present. It does not reread the signals immediately before submission.
 A reaction alone does not trigger this workflow; after the polling window,
 another Summary or `ci-pr` completion event is needed. Runs for a PR are
-serialized; qualifying repeated events may submit another approval rather than
-consulting review history.
+serialized. Before POST, the workflow reads all pages of this PR's review
+history once. Existing automatic approvals count without a body marker; a
+dismissed approval is never restored for the same HEAD, even after another
+Codex review. Another HEAD, PR or reviewer does not share that history.
+History-read failures fail the run without approving. The history read and
+POST are separate operations, not an atomic reservation against other writers.
 
 Base, timestamps, receipts, finding flags, earlier requests and requested
 changes are not additional approval conditions. A completed same-HEAD Summary
-and existing thumbs-up remain reusable after a base change, so approval does
-not establish which diff Codex reviewed. Verification and POST are separate
+and existing thumbs-up remain reusable after a base change when this HEAD has
+no automatic approval history, so approval does not establish which diff Codex
+reviewed. Verification and POST are separate
 operations: a later push does not change the submitted `commit_id`, but this is
 not an atomic current-HEAD guarantee. The workflow neither decides merge
 eligibility nor withdraws approvals. Rulesets enforce their configured

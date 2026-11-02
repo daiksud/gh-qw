@@ -42,6 +42,7 @@ jobs:
           ROOT = "repos/" + os.environ["GITHUB_REPOSITORY"]
           NUMBER = os.environ["PR_NUMBER"]
           BOT = "chatgpt-codex-connector[bot]"
+          APPROVER = "github-actions[bot]"
           PREFIX = "<!-- codex-pull-request-review-summary -->"
 
 
@@ -145,6 +146,16 @@ jobs:
                          for r in pages(f"{ROOT}/issues/{NUMBER}/reactions"))
 
 
+          def already_approved(head):
+              # Include dismissed and pre-existing approvals, without requiring a
+              # new body marker. Never restore a dismissed approval for this SHA.
+              return any((r.get("user") or {}).get("login") == APPROVER
+                         and r.get("state") in ("APPROVED", "DISMISSED")
+                         and isinstance(r.get("commit_id"), str)
+                         and r["commit_id"].lower() == head
+                         for r in pages(f"{ROOT}/pulls/{NUMBER}/reviews"))
+
+
           def run():
               # Summary updates can arrive before the thumbs-up. Poll only these same
               # conditions plus HEAD equality; polling duration is not review evidence.
@@ -158,6 +169,9 @@ jobs:
                       head = current_head()
                       if not reviewed_head(body, head):
                           report("Withheld", "No approval submitted: both full reviewed SHAs must match PR HEAD.")
+                          return
+                      if already_approved(head):
+                          report("Withheld", f"No approval submitted: automatic approval history already exists for `{head}` (APPROVED or DISMISSED).")
                           return
                       # Pin the write to the verified commit even if HEAD advances after
                       # this read. Verification and the POST are separate operations.

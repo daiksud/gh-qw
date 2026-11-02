@@ -15,6 +15,7 @@ from unittest.mock import patch
 WORKFLOW = Path(os.environ.get("APPROVAL_WORKFLOW_FIXTURE", Path(__file__).resolve().parents[1] / ".github/workflows/approve-codex-review.yml"))
 ROOT = "repos/owner/repo"
 BOT = "chatgpt-codex-connector[bot]"
+APPROVER = "github-actions[bot]"
 PREFIX = "<!-- codex-pull-request-review-summary -->"
 HEAD = "a" * 40
 STATE = "<!-- codex-review-state:v1 "
@@ -34,10 +35,15 @@ def summary(code="Completed", security="Completed", identifier=10, code_sha=HEAD
 
 
 def fixture():
-    return {"pr": {"head": {"sha": HEAD}}, "comments": [summary()], "reactions": [{"user": {"login": BOT, "type": "User"}, "content": "+1"}]}
+    return {"pr": {"head": {"sha": HEAD}}, "comments": [summary()], "reactions": [{"user": {"login": BOT, "type": "User"}, "content": "+1"}], "reviews": []}
 
 
-def execute(data, mutate=None, failure=None, pagination=None, response=None, summary_file=True, expected_head=HEAD):
+def approval(state="APPROVED", head=HEAD, login=APPROVER):
+    # Existing automatic reviews have no special body/receipt marker.
+    return {"user": {"login": login}, "state": state, "commit_id": head, "body": ""}
+
+
+def execute(data, mutate=None, failure=None, pagination=None, response=None, summary_file=True, expected_head=HEAD, review_pages=None):
     source = textwrap.dedent(WORKFLOW.read_text().split("python3 - <<'PYTHON'\n", 1)[1].rsplit("\n          PYTHON", 1)[0])
     data = copy.deepcopy(data)
     writes, reads, sleeps = [], {}, []
@@ -73,12 +79,17 @@ def execute(data, mutate=None, failure=None, pagination=None, response=None, sum
             return subprocess.CompletedProcess(args, 0, json.dumps(data["pr"]))
         if args[3:] != ["--paginate", "--slurp"]:
             raise AssertionError("Collection must be paginated")
-        values = {f"{ROOT}/issues/7/comments": data["comments"], f"{ROOT}/issues/7/reactions": data["reactions"]}
-        # Any base, receipt, timeline, commit-resolution or review-history read fails here.
+        if args[2] != endpoint + "?per_page=100":
+            raise AssertionError("Collection must request 100 items per page")
+        values = {f"{ROOT}/issues/7/comments": data["comments"], f"{ROOT}/issues/7/reactions": data["reactions"],
+                  f"{ROOT}/pulls/7/reviews": data["reviews"]}
+        # Any base, receipt, timeline or commit-resolution read fails here.
         if endpoint not in values:
             raise AssertionError("Unexpected extra eligibility read")
         rows = values[endpoint]
         result = [rows[:1], rows[1:]] if pagination is None else pagination
+        if endpoint.endswith("/reviews") and review_pages is not None:
+            result = review_pages
         return subprocess.CompletedProcess(args, 0, json.dumps(result))
 
     with tempfile.TemporaryDirectory() as folder:
@@ -327,7 +338,8 @@ class ApprovalWorkflowTests(unittest.TestCase):
         self.approved(result)
         self.assertEqual(result["reads"], {f"{ROOT}/issues/7/comments": 1,
                                          f"{ROOT}/issues/7/reactions": 1,
-                                         f"{ROOT}/pulls/7": 1})
+                                         f"{ROOT}/pulls/7": 1,
+                                         f"{ROOT}/pulls/7/reviews": 1})
         self.assertEqual(result["writes"][0][-1], "commit_id=" + HEAD)
 
     def test_no_extra_head_read_while_thumbs_up_is_missing(self):
@@ -347,7 +359,7 @@ class ApprovalWorkflowTests(unittest.TestCase):
         self.assertTrue(all(count == 1 for count in result["reads"].values()))
 
     def test_api_failures_and_invalid_json_fail_without_leaking(self):
-        for failure in (f"{ROOT}/pulls/7", f"{ROOT}/issues/7/comments", f"{ROOT}/issues/7/reactions", "json", "post"):
+        for failure in (f"{ROOT}/pulls/7", f"{ROOT}/issues/7/comments", f"{ROOT}/issues/7/reactions", f"{ROOT}/pulls/7/reviews", "json", "post"):
             with self.subTest(failure=failure):
                 result = execute(fixture(), failure=failure)
                 self.assertEqual(result["code"], 1, result)
@@ -372,9 +384,71 @@ class ApprovalWorkflowTests(unittest.TestCase):
     def test_missing_step_summary_file_does_not_change_decision(self):
         self.approved(execute(fixture(), summary_file=False))
 
-    def test_repeated_events_do_not_consult_review_history(self):
-        self.approved(execute(fixture()))
-        self.approved(execute(fixture()))
+    def test_repeated_event_and_dismissal_never_restore_approval(self):
+        data = fixture()
+        self.approved(execute(data))
+        data["reviews"] = [approval()]
+        self.withheld(execute(data))
+        data["reviews"][0]["state"] = "DISMISSED"
+        self.withheld(execute(data))
+
+    def test_existing_approved_or_dismissed_reviews_block_without_body_markers(self):
+        for state in ("APPROVED", "DISMISSED"):
+            with self.subTest(state=state):
+                data = fixture()
+                data["reviews"] = [approval(state=state)]
+                self.withheld(execute(data))
+
+    def test_older_history_on_later_pages_blocks_even_after_newer_reviews(self):
+        for state in ("APPROVED", "DISMISSED"):
+            with self.subTest(state=state):
+                data = fixture()
+                data["reviews"] = [approval(head="b" * 40)] * 100 + [approval(state=state)] + [approval(state="COMMENTED")]
+                self.withheld(execute(data, review_pages=[data["reviews"][:100], data["reviews"][100:]]))
+
+    def test_same_head_rereview_still_cannot_reapprove(self):
+        data = fixture()
+        data["reviews"] = [approval(state="DISMISSED")]
+        data["comments"] = [summary(identifier=1000)]
+        self.withheld(execute(data))
+
+    def test_another_head_or_reviewer_or_nonapproval_state_does_not_block(self):
+        cases = [approval(head="b" * 40), approval(login=BOT), approval(login="human"),
+                 approval(login="github-actions"), approval(state="COMMENTED"),
+                 approval(state="CHANGES_REQUESTED"), approval(state="PENDING")]
+        for review in cases:
+            with self.subTest(review=review):
+                data = fixture()
+                data["reviews"] = [review]
+                self.approved(execute(data))
+
+    def test_prior_approval_does_not_cross_pr_scope(self):
+        # The list request is scoped to PR 7; history on another PR is not consulted.
+        data = fixture()
+        data["other_pr_reviews"] = [approval()]
+        self.approved(execute(data))
+
+    def test_approval_history_sha_is_case_insensitive(self):
+        data = fixture()
+        data["reviews"] = [approval(head=HEAD.upper())]
+        self.withheld(execute(data))
+
+    def test_review_history_failure_or_malformed_pages_cannot_approve(self):
+        for pages in ({}, [None], [[None]]):
+            with self.subTest(pages=pages):
+                result = execute(fixture(), review_pages=pages)
+                self.assertEqual(result["code"], 1, result)
+                self.assertEqual(result["writes"], [])
+
+    def test_history_check_and_post_are_not_an_atomic_reservation(self):
+        def change(endpoint, count, data):
+            if endpoint == "POST":
+                data["reviews"].append(approval())
+        # An independent writer can approve after our history read. Workflow
+        # concurrency serializes this workflow's runs, not every possible writer.
+        result = execute(fixture(), mutate=change)
+        self.approved(result)
+        self.assertEqual(result["reads"][f"{ROOT}/pulls/7/reviews"], 1)
 
 
 if __name__ == "__main__":
