@@ -184,14 +184,25 @@ verify the live Ruleset and settings separately before claiming enforcement.
 Required PR checks are `ci-pr` and `prlint`, provided by GitHub Actions.
 The `ci-pr` commit stage builds one candidate on each native platform; its
 acceptance stage verifies and tests those exact transferred bytes without
-rebuilding the product. PR code and base changes move through Draft, Commit
-stage, Ready, and Acceptance stage in one run. Title/body-only edits rerun
-PRLint without changing Draft/Ready state or executing product stages; their
-separate concurrency group cannot cancel running or queued product validation.
-The skipped final job has a different check name, leaving the required `ci-pr`
-result from real validation intact. Dependabot-authored pull requests skip the
-PRLint job; GitHub treats the skipped check as successful for branch protection.
-Other required checks and review protections remain unchanged.
+rebuilding the product. The candidate is the immutable PR HEAD, including the
+checkout, artifact names, and source/digest manifests. Opening, reopening, or
+pushing to the PR runs Draft, Commit, Ready, and Acceptance in one workflow.
+
+Title/body edits trigger PRLint only. They do not create a product-CI workflow
+run or check suite, change Draft/Ready state, or cancel product validation.
+`ci-pr` has one fixed native job name in one workflow; metadata-only skipped
+jobs and other workflows do not publish replacement `ci-pr` checks.
+
+The existing strict up-to-date rule is required for this HEAD-based contract.
+Before merging, HEAD must contain the current base. Retargeting a PR does not
+itself run product CI: if the new base is already in HEAD, the tested candidate
+tree is unchanged; otherwise GitHub blocks merging until the branch is updated.
+That HEAD update triggers full product validation through `synchronize`.
+Do not weaken the strict rule or substitute a metadata-only passing check.
+
+Dependabot-authored pull requests skip PRLint; GitHub treats the skipped check
+as successful for branch protection. Other checks and review protections remain
+unchanged.
 The native `ci-pr` aggregate uses `always()` and requires every prerequisite
 to succeed, including after cancellation; it has no write token. The
 `ci-push` workflow runs the same Commit and Acceptance stages for `main`

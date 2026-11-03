@@ -1,19 +1,16 @@
 name: ci-pr
 on:
   pull_request:
-    types: [opened, synchronize, reopened, edited]
+    types: [opened, synchronize, reopened]
 permissions: {}
 defaults:
   run:
     shell: bash
 concurrency:
-  # Metadata-only edits must not cancel running or queued product validation.
-  group: ci-pr-${{ github.event.pull_request.number }}-${{ github.event.action == 'edited' && !github.event.changes.base && 'metadata' || 'product' }}
+  group: ci-pr-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 jobs:
   draft:
-    # Base retargeting still validates the merge ref; title/body edits do not.
-    if: github.event.action != 'edited' || github.event.changes.base
     runs-on: ubuntu-slim
     timeout-minutes: 3
     permissions: {contents: write, pull-requests: write}
@@ -35,7 +32,7 @@ jobs:
       - name: Checkout validation source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
       - name: Resolve CI target matrices
         id: metadata
@@ -52,18 +49,18 @@ jobs:
       - name: Checkout validation source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
       - name: Check source and build candidate
         id: build
         uses: ./.github/actions/ci-commit
         with:
           target: ${{ matrix.target }}
-          source-sha: ${{ github.sha }}
+          source-sha: ${{ github.event.pull_request.head.sha }}
       - name: Transfer candidate artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: ci-${{ matrix.target }}-${{ github.sha }}
+          name: ci-${{ matrix.target }}-${{ github.event.pull_request.head.sha }}
           path: ${{ steps.build.outputs.artifact-directory }}
           if-no-files-found: error
           overwrite: true
@@ -91,13 +88,13 @@ jobs:
       - name: Checkout candidate source separately from the consumer
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event.pull_request.head.sha }}
           path: .action
           persist-credentials: false
       - name: Retrieve this run's candidate artifact
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: ci-${{ matrix.target }}-${{ github.sha }}
+          name: ci-${{ matrix.target }}-${{ github.event.pull_request.head.sha }}
           path: ${{ runner.temp }}/product
           digest-mismatch: error
       - name: Accept the transferred candidate
@@ -105,14 +102,11 @@ jobs:
         with:
           target: ${{ matrix.target }}
           kind: ${{ matrix.kind }}
-          source-sha: ${{ github.sha }}
+          source-sha: ${{ github.event.pull_request.head.sha }}
           artifact-directory: ${{ runner.temp }}/product
   ci-pr:
-    # A skipped required job is treated as success: never publish the required
-    # ci-pr check for metadata-only edits.
-    name: ${{ github.event.action == 'edited' && !github.event.changes.base && 'ci-pr-metadata-only' || 'ci-pr' }}
     needs: [draft, resolve, commit-stage, ready, acceptance-stage]
-    if: always() && (github.event.action != 'edited' || github.event.changes.base)
+    if: always()
     runs-on: ubuntu-slim
     timeout-minutes: 3
     permissions: {}
