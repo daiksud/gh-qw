@@ -20,7 +20,7 @@ jobs:
       # Read the trusted base branch's rules. Never check out or execute PR
       # code in this write-capable pull_request_target workflow.
       - name: Synchronize the documentation label
-        uses: actions/labeler@bf12e9b00b37c5c0ca2b87b79b2daf7891dbda13 # v7.0.0
+        uses: actions/labeler@b7a88044754812b108a54feec878dd5c328bba59 # v7.0.0 + selective sync fix (#957)
         with:
           sync-labels: true
           dot: true
