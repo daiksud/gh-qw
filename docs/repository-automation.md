@@ -108,6 +108,12 @@ manage other labels. Dependabot uses its default labels without an explicit
 `labels` override. Reviewers choose Conventional Commit types independently;
 labels do not determine release versions or release-note categories.
 
+Labeler is pinned to the untagged v7.0.0 follow-up
+[selective synchronization fix](https://github.com/actions/labeler/pull/957).
+It adds matching labels and removes stale configured labels individually,
+preserving concurrent changes to unrelated labels instead of replacing the
+entire PR label set. This fix is not included in the v7.0.0 tag.
+
 ### Review and merge responsibilities
 
 Rulesets decide merge eligibility: required approvals, stale approval dismissal,
