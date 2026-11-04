@@ -194,10 +194,10 @@ func TestExecuteMapsUsageAndRuntimeErrors(t *testing.T) {
 			wantError:  "gh-qw: unknown flag: --unknown",
 		},
 		{
-			name:       "missing argument",
-			args:       []string{"remove", "--worktree"},
+			name:       "too many worktree slots",
+			args:       []string{"remove", "--worktree", "one", "two"},
 			wantStatus: 2,
-			wantError:  "gh-qw: accepts 1 arg(s), received 0",
+			wantError:  "gh-qw: accepts at most 1 arg(s), received 2",
 		},
 		{
 			name:       "runtime failure",
