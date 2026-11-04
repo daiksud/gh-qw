@@ -11,15 +11,15 @@ import (
 // Only add --cd is intercepted; command gh always calls the real CLI.
 const shellInitScript = `gh() {
   if [ "$#" -ge 2 ] && [ "$1" = "qw" ] && [ "$2" = "add" ]; then
-    local ghqw_arg ghqw_cd=0
+    local ghqw_arg ghqw_cd=0 ghqw_help=0
     for ghqw_arg in "$@"; do
       [ "$ghqw_arg" = "--" ] && break
-      if [ "$ghqw_arg" = "--cd" ]; then
-        ghqw_cd=1
-        break
-      fi
+      case "$ghqw_arg" in
+        --cd) ghqw_cd=1 ;;
+        -h|--help) ghqw_help=1 ;;
+      esac
     done
-    if [ "$ghqw_cd" -eq 1 ]; then
+    if [ "$ghqw_cd" -eq 1 ] && [ "$ghqw_help" -eq 0 ]; then
       local ghqw_target
       ghqw_target="$(GHQW_SHELL_CD=1 command gh "$@")" || return $?
       if [ ! -d "$ghqw_target" ]; then
@@ -31,7 +31,7 @@ const shellInitScript = `gh() {
         return 1
       fi
       printf '%s\n' "$ghqw_target"
-      return 0
+      return $?
     fi
   fi
   command gh "$@"

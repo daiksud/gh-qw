@@ -142,3 +142,55 @@ printf 'native-gh:%s\n' "$1"
 	err = command.Run()
 	return commandResult{status: exitStatus(t, err), stdout: stdout.String(), stderr: stderr.String()}
 }
+
+func TestShellAddCDHelpDoesNotNavigate(t *testing.T) {
+	for _, shell := range []string{"bash", "zsh"} {
+		t.Run(shell, func(t *testing.T) {
+			fixture := newCLIFixture(t)
+			result := runCDShell(t, fixture, shell, "", `set -e
+eval "$(gh qw shell-init "$GHQW_TEST_SHELL")"
+for flag in -h --help; do
+  help="$(gh qw add --cd "$flag")"
+  case "$help" in
+    *"Usage:"*) ;;
+    *) printf 'missing help output\n' >&2; exit 92 ;;
+  esac
+done
+printf 'after-help:%s\n' "$PWD"
+`)
+			assertStatus(t, result, 0)
+			assertStdout(t, result, "after-help:"+filepath.ToSlash(fixture.base)+"\n")
+			registered := fixture.runCLI(t, "list")
+			assertStatus(t, registered, 0)
+			assertStdout(t, registered, "")
+		})
+	}
+}
+
+func TestShellAddCDPropagatesResultWriteFailure(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("/dev/full result-write check is Linux-only")
+	}
+	if _, err := os.Stat("/dev/full"); err != nil {
+		t.Skipf("/dev/full unavailable: %v", err)
+	}
+	fixture := newCLIFixture(t)
+	remoteURL := fixture.createBareRemote(t, "acme", "widget")
+	fixture.seedRemote(t, remoteURL)
+	mainPath := filepath.Join(fixture.base, "working copy", "widget")
+	fixture.cloneMain(t, remoteURL, mainPath)
+
+	result := runCDShell(t, fixture, "bash", mainPath, `set -e
+eval "$(gh qw shell-init bash)"
+if gh qw add --cd "$GHQW_TEST_MAIN" >/dev/full 2>/dev/null; then
+  printf 'unexpected successful output\n' >&2
+  exit 93
+fi
+printf 'after-write-error:%s\n' "$PWD"
+`)
+	assertStatus(t, result, 0)
+	assertStdout(t, result, "after-write-error:"+filepath.ToSlash(mainPath)+"\n")
+	registered := fixture.runCLI(t, "list")
+	assertStatus(t, registered, 0)
+	assertStdout(t, registered, testIdentity+"\n")
+}
