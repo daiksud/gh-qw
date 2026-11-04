@@ -178,8 +178,8 @@ remain complete if a later item is invalid.
 ## add
 
 ```text
-gh qw add [--move] <local-repository-path>
-gh qw add --worktree [-R|--repo <repo>] [-b|-B] [--detach] [--orphan] [-f] <slot> [<commit-ish>]
+gh qw add [--move] [--cd] <local-repository-path>
+gh qw add --worktree [--cd] [-R|--repo <repo>] [-b|-B] [--detach] [--orphan] [-f] <slot> [<commit-ish>]
 ```
 
 By default, validate an existing nonbare main Git repository, derive its
@@ -207,6 +207,28 @@ directory, determines the deterministic slot path, and delegates creation
 to Git. Git owns branch and worktree behavior; see the worktree-add details
 below for the remaining flags. Both successful modes print the resulting
 absolute path.
+
+### Shell navigation
+
+`--cd` enters the registered repository, the `--move` destination, or the
+new linked worktree in the **invoking shell** after `add` succeeds. It requires
+explicit shell integration: a child executable cannot change its parent's
+working directory. Initialize it once in your shell startup file:
+
+```sh
+# Zsh: ~/.zshrc
+eval "$(gh qw shell-init zsh)"
+# Bash: use `eval "$(gh qw shell-init bash)"` in ~/.bashrc instead.
+```
+
+The generated shell function wraps `gh` only for `gh qw add --cd` and
+delegates all other invocations unchanged. It captures the successful path,
+uses the shell's built-in `cd`, then prints the original path result.
+A failed `add` leaves the shell's working directory unchanged. A failed
+`cd` returns an error even though the preceding registration or worktree
+creation is complete. Shell integration is supported for Bash and Zsh.
+Without integration, `add --cd` is a usage error **before mutation**; use
+ordinary `add` to obtain the path in other shells.
 
 ## forget
 

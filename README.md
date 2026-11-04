@@ -39,13 +39,23 @@ Configure authentication with `gh auth login` for network operations.
 Install `fzf` on `PATH` to choose repositories when cloning by owner or partial
 name, and cleanup targets with argumentless `remove`.
 
+To enable `add --cd` in Zsh, put this in `~/.zshrc` (use `bash` and
+`~/.bashrc` for Bash):
+
+```sh
+eval "$(gh qw shell-init zsh)"
+```
+
+The opt-in shell function intercepts only `gh qw add --cd`. Other `gh`
+commands continue to use the normal GitHub CLI.
+
 ## Quick start
 
 ```sh
 gh qw clone cli/cli
-gh qw add ~/projects/my-api
+gh qw add --cd ~/projects/my-api
 gh qw list --full-path
-gh qw add --worktree -R cli/cli -b feature/docs
+gh qw add --worktree --cd -R cli/cli -b feature/docs
 gh qw list --all
 ```
 
@@ -73,7 +83,7 @@ subdirectory. Multiple roots and XDG locations are described in the
 | Command | Result |
 | --- | --- |
 | `clone` | Acquire and register a new repository; supply an owner to list or choose a repository. |
-| `add` | Register a local repository; `--move` relocates it; `--worktree` adds a linked worktree. |
+| `add` | Register a local repository; `--move` relocates it; `--worktree` adds a linked worktree; `--cd` navigates there with shell integration. |
 | `list` | List registered repositories; `--worktree` selects worktrees, `--gone` filters them, and `--all` includes both. |
 | `forget` | Unregister a repository without deleting its files. |
 | `root` | Print repository roots. |

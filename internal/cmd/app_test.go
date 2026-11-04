@@ -41,6 +41,7 @@ func TestNewCommandWiresCompleteSurface(t *testing.T) {
 		{"list"},
 		{"root"},
 		{"remove"},
+		{"shell-init"},
 	} {
 		found, remaining, err := command.Find(path)
 		if err != nil {

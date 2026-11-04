@@ -148,6 +148,7 @@ func NewCommand(dependencies ApplicationDependencies) *cobra.Command {
 		Stderr:               deps.Stderr,
 	})
 	rootCommand := NewRootCommand(deps.Resolver, deps.Stdout)
+	shellInitCommand := NewShellInitCommand(deps.Stdout)
 	addCommand := NewAddCommand(AddDependencies{
 		Resolver: deps.Resolver,
 		Git:      deps.Git,
@@ -187,6 +188,7 @@ func NewCommand(dependencies ApplicationDependencies) *cobra.Command {
 		listCommand,
 		rootCommand,
 		removeCommand,
+		shellInitCommand,
 	)
 	wrapArgumentErrors(command)
 	return command

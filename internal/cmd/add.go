@@ -60,7 +60,7 @@ func NewAddCommand(deps AddDependencies) *cobra.Command {
 	}
 	repositoryMoveApplyDefaults(&movement)
 
-	var move, worktree, makeBranch, resetBranch, detach, orphan, force bool
+	var move, worktree, makeBranch, resetBranch, detach, orphan, force, changeDirectory bool
 	var selector string
 	command := &cobra.Command{
 		Use:           "add [--move|--worktree] <path-or-slot> [start-point]",
@@ -68,6 +68,9 @@ func NewAddCommand(deps AddDependencies) *cobra.Command {
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		Args: func(command *cobra.Command, args []string) error {
+			if changeDirectory && os.Getenv("GHQW_SHELL_CD") != "1" {
+				return newCommandUsageError(errors.New("--cd requires shell integration; initialize with eval \"$(gh qw shell-init zsh)\" (or bash)"))
+			}
 			if worktree {
 				if move {
 					return newCommandUsageError(errors.New("--move cannot be combined with --worktree"))
@@ -146,6 +149,7 @@ func NewAddCommand(deps AddDependencies) *cobra.Command {
 	flags := command.Flags()
 	flags.BoolVar(&move, "move", false, "Move an existing repository into the configured primary root")
 	flags.BoolVar(&worktree, "worktree", false, "Create a linked Git worktree instead of registering a repository")
+	flags.BoolVar(&changeDirectory, "cd", false, "Change the invoking shell's directory after success (requires shell-init)")
 	flags.StringVarP(&selector, "repo", "R", "", "Select the repository for a linked worktree")
 	flags.BoolVarP(&makeBranch, "b", "b", false, "Create a new worktree branch")
 	flags.BoolVarP(&resetBranch, "B", "B", false, "Create or reset a worktree branch")
