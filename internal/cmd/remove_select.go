@@ -22,8 +22,14 @@ type removeCandidate struct {
 	nodes      []removal.Node
 }
 
-func removeSelectTarget(ctx context.Context, commandRuntime removeRuntime) (*removeCandidate, error) {
-	candidates, err := removeCandidates(ctx, commandRuntime)
+type removeSelectionFilter struct {
+	worktreesOnly      bool
+	repositorySelector string
+	repositorySet      bool
+}
+
+func removeSelectTarget(ctx context.Context, commandRuntime removeRuntime, filter removeSelectionFilter) (*removeCandidate, error) {
+	candidates, err := removeCandidates(ctx, commandRuntime, filter)
 	if err != nil {
 		return nil, err
 	}
@@ -56,7 +62,7 @@ func removeSelectTarget(ctx context.Context, commandRuntime removeRuntime) (*rem
 	return nil, fmt.Errorf("%w: selected removal target was not offered", ErrRemoveSafety)
 }
 
-func removeCandidates(ctx context.Context, commandRuntime removeRuntime) ([]removeCandidate, error) {
+func removeCandidates(ctx context.Context, commandRuntime removeRuntime, filter removeSelectionFilter) ([]removeCandidate, error) {
 	roots, err := commandRuntime.resolver.Resolve()
 	if err != nil {
 		return nil, fmt.Errorf("resolve roots: %w", err)
@@ -72,9 +78,20 @@ func removeCandidates(ctx context.Context, commandRuntime removeRuntime) ([]remo
 		)
 	}
 
+	var selectedRepository local.Repository
+	if filter.repositorySet {
+		selectedRepository, err = local.ResolveRepositoryForMutation(discovery.Repositories, filter.repositorySelector)
+		if err != nil {
+			return nil, worktreeRemoveNewUsageError(fmt.Errorf("resolve repository %q: %w", filter.repositorySelector, err))
+		}
+	}
+
 	var candidates []removeCandidate
 	var entries []listEntry
 	for _, repository := range discovery.Repositories {
+		if filter.repositorySet && repository != selectedRepository {
+			continue
+		}
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
@@ -98,6 +115,9 @@ func removeCandidates(ctx context.Context, commandRuntime removeRuntime) ([]remo
 				mainCount++
 				if worktree.Slot != "" || !physicalpath.SamePath(worktree.Path, repository.Path) {
 					return nil, fmt.Errorf("%w: main worktree does not match repository %q", ErrRemoveSafety, repository.Identity)
+				}
+				if filter.worktreesOnly {
+					continue
 				}
 			} else {
 				if worktree.Prunable {

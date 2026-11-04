@@ -114,7 +114,11 @@ func TestRemoveSelectedTargetRejectsChangesWhilePickerIsOpen(t *testing.T) {
 					return row, nil
 				}
 				command := NewRemoveCommand(deps)
-				command.SetArgs([]string{})
+				args := []string{}
+				if kind == "worktree" {
+					args = []string{"--worktree"}
+				}
+				command.SetArgs(args)
 				err := command.Execute()
 				if !errors.Is(err, ErrRemoveSafety) || ExitCode(err) != 1 {
 					t.Fatalf("changed selection = %v, exit=%d; want safety refusal", err, ExitCode(err))
@@ -130,6 +134,28 @@ func TestRemoveSelectedTargetRejectsChangesWhilePickerIsOpen(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestRemoveWorktreePickerOnlyOffersWorktrees(t *testing.T) {
+	fixture := newRemoveTestFixture(t, "topic")
+	deps := removeSelectionDependencies(fixture)
+	deps.Select = func(_ context.Context, rows []string) (string, error) {
+		if len(rows) != 1 || !strings.HasPrefix(rows[0], "worktree\t") {
+			t.Fatalf("worktree candidates = %q, want one linked worktree", rows)
+		}
+		return rows[0], nil
+	}
+	command := NewRemoveCommand(deps)
+	command.SetArgs([]string{"--worktree", "--dry-run"})
+	if err := command.Execute(); err != nil {
+		t.Fatalf("worktree picker dry run: %v", err)
+	}
+	if !strings.Contains(fixture.stderr.String(), "linked worktree:") ||
+		strings.Contains(fixture.stderr.String(), "main repository:") {
+		t.Fatalf("worktree dry-run plan = %q", fixture.stderr.String())
+	}
+	fixture.assertNoMutation(t)
+	fixture.assertStdoutEmpty(t)
 }
 
 func TestRemovePickerWarningFailureDoesNotSelectOrMutate(t *testing.T) {

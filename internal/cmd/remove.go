@@ -166,9 +166,9 @@ func NewRemoveCommand(dependencies RemoveDependencies) *cobra.Command {
 		yes      bool
 	)
 	command := &cobra.Command{
-		Use:           "remove [flags] [<repository-selector>|--worktree <slot>|--worktree --gone]",
+		Use:           "remove [flags] [<repository-selector>|--worktree [<slot>|--gone]]",
 		Short:         "Remove a managed repository or linked worktree",
-		Long:          "Remove a managed repository or linked worktree. With no target, select one using external fzf.",
+		Long:          "Remove a managed repository or linked worktree. With no target, select using external fzf; --worktree limits candidates to linked worktrees.",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		Args: func(command *cobra.Command, args []string) error {
@@ -181,11 +181,14 @@ func NewRemoveCommand(dependencies RemoveDependencies) *cobra.Command {
 					}
 					return nil
 				}
-				if err := cobra.ExactArgs(1)(command, args); err != nil {
+				if err := cobra.MaximumNArgs(1)(command, args); err != nil {
 					return worktreeRemoveNewUsageError(err)
 				}
-				if command.Flags().Changed("dry-run") || command.Flags().Changed("yes") {
-					return worktreeRemoveNewUsageError(errors.New("--dry-run and --yes require --worktree --gone"))
+				if command.Flags().Changed("yes") {
+					return worktreeRemoveNewUsageError(errors.New("--yes requires --worktree --gone"))
+				}
+				if len(args) == 1 && command.Flags().Changed("dry-run") {
+					return worktreeRemoveNewUsageError(errors.New("--dry-run requires interactive selection or --gone"))
 				}
 				return nil
 			}
@@ -210,6 +213,21 @@ func NewRemoveCommand(dependencies RemoveDependencies) *cobra.Command {
 				if gone {
 					return worktreeRemoveGoneRun(command.Context(), worktreeRuntime, request)
 				}
+				if len(args) == 0 {
+					selected, err := removeSelectTarget(command.Context(), commandRuntime, removeSelectionFilter{
+						worktreesOnly:      true,
+						repositorySelector: selector,
+						repositorySet:      request.selectorSet,
+					})
+					if err != nil || selected == nil {
+						return err
+					}
+					request.selector = selected.repository.Identity
+					request.selectorSet = true
+					request.branch = selected.worktree.Slot
+					request.selected = selected
+					return worktreeRemoveRun(command.Context(), worktreeRuntime, request)
+				}
 				if err := local.ValidateSlot(command.Context(), args[0]); err != nil {
 					if errors.Is(err, local.ErrInvalidBranch) {
 						return worktreeRemoveNewUsageError(err)
@@ -223,7 +241,7 @@ func NewRemoveCommand(dependencies RemoveDependencies) *cobra.Command {
 			var selected *removeCandidate
 			if len(args) == 0 {
 				var err error
-				selected, err = removeSelectTarget(command.Context(), commandRuntime)
+				selected, err = removeSelectTarget(command.Context(), commandRuntime, removeSelectionFilter{})
 				if err != nil || selected == nil {
 					return err
 				}
