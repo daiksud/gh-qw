@@ -122,10 +122,6 @@ func TestNewRemoveCommandWorktreeRejectsUsageAndAmbiguity(t *testing.T) {
 		wantIs    error
 	}{
 		{
-			name:   "missing branch",
-			wantIs: repospec.ErrUsage,
-		},
-		{
 			name:   "too many branches",
 			args:   []string{"one", "two"},
 			wantIs: repospec.ErrUsage,

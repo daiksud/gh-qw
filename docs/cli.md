@@ -297,7 +297,8 @@ Do not create missing roots.
 
 ```text
 gh qw remove [--dry-run] [<repository-selector>]
-gh qw remove --worktree [-R|--repo <repo>] [-f|--force] <slot>
+gh qw remove --worktree [-R|--repo <repo>] [-f|--force] [<slot>]
+gh qw remove --worktree [-R|--repo <repo>] [-f|--force] --dry-run
 gh qw remove --worktree [-R|--repo <repo>] --gone
                     [-n|--dry-run] [-y|--yes] [-f|--force]
 ```
@@ -333,10 +334,12 @@ completed removal. Stdout is empty.
 
 ### Interactive selection
 
-Without a repository selector, `remove` opens the external `fzf` command to
-choose one registered repository or existing managed linked worktree. `fzf`
-must be on `PATH` for this form only. Explicit repository selectors,
-`--worktree <slot>`, and `--gone` do not invoke it.
+Without a positional target, `remove` opens the external `fzf` command to
+choose one registered repository or existing managed linked worktree.
+`remove --worktree` opens the same picker with only managed linked worktrees;
+`-R` optionally restricts those candidates to one registered repository.
+`fzf` must be on `PATH` for either interactive form. Explicit repository
+selectors, `--worktree <slot>`, and `--gone` do not invoke it.
 
 Each candidate shows its kind, full repository identity, and local path.
 Worktree labels include the checked-out branch, falling back to the stable
@@ -347,9 +350,11 @@ Worktrees outside the managed layout are not offered.
 Selecting a repository follows the repository removal plan and confirmation
 above, including its linked worktrees. Selecting a linked worktree follows
 single-worktree removal without another confirmation or implicit force.
-`remove --dry-run` also opens the selector, then prints the selected target's
-plan without mutation. For a selected linked worktree, this validates its
-association and boundaries; Git's dirty/locked checks run during actual removal.
+`remove --dry-run` and `remove --worktree --dry-run` also open the selector,
+then print the selected target's plan without mutation. Explicit
+`--worktree <slot> --dry-run` remains unsupported. For a selected linked
+worktree, dry-run validates its association and boundaries; Git's dirty/locked
+checks run during actual removal.
 Changes to the selected repository mapping, directory
 identity, or worktree branch/HEAD while the selector is open cause a refusal.
 
@@ -394,7 +399,7 @@ available numeric suffix (`-1`, `-2`, ...). Reserve directories atomically,
 never reuse an existing path, and never change the actual Git branch name.
 The resulting path and canonical slot name are stable after branch changes.
 `list --worktree` displays the current branch when attached, not the directory
-slot. `remove --worktree` selects the slot exactly; for managed worktrees, this
+slot. `remove --worktree <slot>` selects the slot exactly; for managed worktrees, this
 is the parent directory name of the checkout. `-f` never bypasses location
 safety.
 

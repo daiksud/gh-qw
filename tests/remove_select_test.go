@@ -41,6 +41,75 @@ func TestCLIRemoveSelectedWorktreeUsesStableSlotAndCanonicalRepository(t *testin
 	assertStdout(t, listed, testIdentity+"\n"+secondIdentity+"\n")
 }
 
+func TestCLIRemoveWorktreeOnlyPicker(t *testing.T) {
+	fixture := newCLIFixture(t)
+	main := fixture.registerRemovalRepository(t, "acme", "widget")
+	worktree := fixture.addRemovalWorktree(t, testIdentity, "topic")
+	env := append(fixture.removalSelectorEnvironment(t, "select", "worktree", testIdentity+"@topic"),
+		"GHQW_TEST_FZF_EXPECT_COUNT=1")
+	result := fixture.runCLIWithEnv(t, env, "remove", "--worktree")
+	assertStatus(t, result, 0)
+	assertStdout(t, result, "")
+	assertContains(t, result.stderr, "removed worktree "+filepath.ToSlash(worktree))
+	assertPathMissing(t, worktree)
+	assertPathExists(t, main)
+}
+
+func TestCLIRemoveWorktreeOnlyPickerRepoAndDryRun(t *testing.T) {
+	fixture := newCLIFixture(t)
+	first := fixture.registerRemovalRepository(t, "acme", "widget")
+	second := fixture.registerRemovalRepository(t, "other", "widget")
+	firstWorktree := fixture.addRemovalWorktree(t, testIdentity, "topic")
+	secondIdentity := "github.com/other/widget"
+	secondWorktree := fixture.addRemovalWorktree(t, secondIdentity, "topic")
+	env := append(fixture.removalSelectorEnvironment(t, "select", "worktree", secondIdentity+"@topic"),
+		"GHQW_TEST_FZF_EXPECT_COUNT=1")
+	result := fixture.runCLIWithEnv(t, env, "remove", "--worktree", "-R", secondIdentity, "--dry-run")
+	assertStatus(t, result, 0)
+	assertStdout(t, result, "")
+	assertContains(t, result.stderr, "linked worktree: "+filepath.ToSlash(secondWorktree))
+	for _, path := range []string{first, second, firstWorktree, secondWorktree} {
+		assertPathExists(t, path)
+	}
+}
+
+func TestCLIRemoveWorktreeOnlyPickerCancellationAndEmpty(t *testing.T) {
+	fixture := newCLIFixture(t)
+	main := fixture.registerRemovalRepository(t, "acme", "widget")
+	marker := filepath.Join(fixture.base, "worktree-selector-called")
+	env := append(fixture.removalSelectorEnvironment(t, "failure", "", ""),
+		"GHQW_TEST_FZF_CALLED="+marker)
+	empty := fixture.runCLIWithEnv(t, env, "remove", "--worktree")
+	assertStatus(t, empty, 0)
+	assertStdout(t, empty, "")
+	assertPathMissing(t, marker)
+
+	worktree := fixture.addRemovalWorktree(t, testIdentity, "topic")
+	cancelEnv := fixture.removalSelectorEnvironment(t, "cancel", "", "")
+	canceled := fixture.runCLIWithEnv(t, cancelEnv, "remove", "--worktree")
+	assertStatus(t, canceled, 130)
+	assertStdout(t, canceled, "")
+	assertStderr(t, canceled, "")
+	assertPathExists(t, main)
+	assertPathExists(t, worktree)
+}
+
+func TestCLIRemoveWorktreeOnlyPickerForce(t *testing.T) {
+	fixture := newCLIFixture(t)
+	main := fixture.registerRemovalRepository(t, "acme", "widget")
+	worktree := fixture.addRemovalWorktree(t, testIdentity, "topic")
+	if err := os.WriteFile(filepath.Join(worktree, "tracked.txt"), []byte("dirty"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env := append(fixture.removalSelectorEnvironment(t, "select", "worktree", testIdentity+"@topic"),
+		"GHQW_TEST_FZF_EXPECT_COUNT=1")
+	result := fixture.runCLIWithEnv(t, env, "remove", "--worktree", "--force")
+	assertStatus(t, result, 0)
+	assertStdout(t, result, "")
+	assertPathMissing(t, worktree)
+	assertPathExists(t, main)
+}
+
 func TestCLIRemoveSelectedWorktreeAllowsDetachedMain(t *testing.T) {
 	fixture := newCLIFixture(t)
 	main := fixture.registerRemovalRepository(t, "acme", "widget")
