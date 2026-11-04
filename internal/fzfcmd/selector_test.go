@@ -49,8 +49,13 @@ func newHelperSelector(t *testing.T, mode string) (*Selector, *commandRecorder) 
 
 func TestSelectPassesCandidatesAndControlledOptionsToFzf(t *testing.T) {
 	selector, recorder := newHelperSelector(t, "inspect")
-	t.Setenv("FZF_DEFAULT_OPTS", "--filter=private --print-query --multi")
-	t.Setenv("FZF_DEFAULT_OPTS_FILE", "/private/fzf-defaults")
+	t.Setenv("FZF_DEFAULT_OPTS", "--filter=private --print-query --multi --color=light")
+	defaultsFile := t.TempDir() + "/options"
+	if err := os.WriteFile(defaultsFile, []byte(
+		"--height=~40%\n--layout='reverse'\n--border=rounded\n--cycle\n--bind=start:accept\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("FZF_DEFAULT_OPTS_FILE", defaultsFile)
 	t.Setenv("FZFCMD_TEST_VALUE", "inherited")
 	var stderr bytes.Buffer
 	selector.Stderr = &stderr
@@ -71,6 +76,8 @@ func TestSelectPassesCandidatesAndControlledOptionsToFzf(t *testing.T) {
 		t.Fatalf("decode helper report: %v; stderr = %q", err, stderr.String())
 	}
 	wantArgs := []string{
+		"--height=~40%", "--layout=reverse", "--border=rounded", "--cycle",
+		"--color=light",
 		"--read0", "--print0", "--no-multi", "--no-select-1", "--no-exit-0",
 		"--prompt=Remove> ",
 		"--header=Repositories include all linked worktrees. Enter: select; Esc: cancel.",
