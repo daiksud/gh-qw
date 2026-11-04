@@ -55,6 +55,26 @@ func TestCLIRemoveWorktreeOnlyPicker(t *testing.T) {
 	assertPathExists(t, main)
 }
 
+func TestCLIRemovePickerUsesAppearanceOptionsFile(t *testing.T) {
+	fixture := newCLIFixture(t)
+	main := fixture.registerRemovalRepository(t, "acme", "widget")
+	worktree := fixture.addRemovalWorktree(t, testIdentity, "topic")
+	optionsFile := filepath.Join(fixture.base, "fzf-options")
+	if err := os.WriteFile(optionsFile, []byte(
+		"--height=~40%\n--layout=reverse\n--border=rounded\n--cycle\n"+
+			"--filter=widget\n--bind=start:accept\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env := append(fixture.removalSelectorEnvironment(t, "select", "worktree", testIdentity+"@topic"),
+		"FZF_DEFAULT_OPTS_FILE="+optionsFile,
+		"GHQW_TEST_FZF_EXPECT_APPEARANCE=--height=~40%,--layout=reverse,--border=rounded,--cycle")
+	result := fixture.runCLIWithEnv(t, env, "remove", "--worktree", "--dry-run")
+	assertStatus(t, result, 0)
+	assertStdout(t, result, "")
+	assertPathExists(t, main)
+	assertPathExists(t, worktree)
+}
+
 func TestCLIRemoveWorktreeOnlyPickerRepoAndDryRun(t *testing.T) {
 	fixture := newCLIFixture(t)
 	first := fixture.registerRemovalRepository(t, "acme", "widget")
@@ -342,6 +362,18 @@ func main() {
 	for _, flag := range []string{"--read0", "--print0", "--no-multi"} {
 		if !flags[flag] {
 			fail("missing " + flag)
+		}
+	}
+	for _, unsafe := range []string{"--filter=widget", "--select-1", "--multi", "--print-query", "--bind=start:accept"} {
+		if flags[unsafe] {
+			fail("unsafe default reached fzf: " + unsafe)
+		}
+	}
+	if expected := os.Getenv("GHQW_TEST_FZF_EXPECT_APPEARANCE"); expected != "" {
+		for _, option := range strings.Split(expected, ",") {
+			if !flags[option] {
+				fail("missing appearance default: " + option)
+			}
 		}
 	}
 	input, err := io.ReadAll(os.Stdin)

@@ -45,8 +45,8 @@ func (err *CommandError) Error() string {
 	return err.Failure.Message("fzf", err.ExitCode)
 }
 
-// Select runs fzf with a fixed single-selection protocol. User defaults are
-// excluded because they can auto-select targets or change the output format.
+// Select runs fzf with a fixed single-selection protocol. Only appearance
+// defaults are imported; user-defined selection behavior remains excluded.
 func (selector *Selector) Select(ctx context.Context, candidates []string) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", &CommandError{ExitCode: -1, Failure: procio.NewFailure(ctx, err, nil)}
@@ -91,11 +91,11 @@ func (selector *Selector) Select(ctx context.Context, candidates []string) (stri
 		}
 		env = append(env, entry)
 	}
-	args := []string{
+	args := append(appearanceOptions(), []string{
 		"--read0", "--print0", "--no-multi", "--no-select-1", "--no-exit-0",
 		"--prompt=" + prompt,
 		"--header=" + header,
-	}
+	}...)
 	if query != "" {
 		args = append(args, "--query="+query)
 	}

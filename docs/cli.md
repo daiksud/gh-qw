@@ -36,8 +36,14 @@ ordinary progress, not errors or result data.
 Interactive selection uses external `fzf` on `PATH`. It receives generated
 candidates and uses the controlling terminal for interaction; command stdin is
 never treated as a selection or confirmation response.
-`FZF_DEFAULT_OPTS` and `FZF_DEFAULT_OPTS_FILE` are ignored so defaults cannot
-accept a target automatically or change the selection output format.
+Simple display options from `FZF_DEFAULT_OPTS_FILE` and `FZF_DEFAULT_OPTS`
+are honored in that order: height, layout, border, cycle, color, info, margin,
+padding, pointer, marker, separator, scrollbar, and style. These accept
+whitespace-separated flags (for example `--height=~40% --layout=reverse`);
+an unreadable defaults file is ignored. All other defaults, including filters,
+key bindings, auto-selection, and output-format changes, are excluded. gh-qw
+always supplies its own fixed single-selection options and validates the
+selected record before acting.
 
 Esc or Ctrl-C returns `130`; no match returns `1`. Neither prints an additional
 error or mutates the selected target. An unavailable terminal, invalid selection
