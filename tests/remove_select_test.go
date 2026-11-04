@@ -61,7 +61,7 @@ func TestCLIRemovePickerUsesAppearanceOptionsFile(t *testing.T) {
 	worktree := fixture.addRemovalWorktree(t, testIdentity, "topic")
 	optionsFile := filepath.Join(fixture.base, "fzf-options")
 	if err := os.WriteFile(optionsFile, []byte(
-		"--height=~40%\n--layout=reverse\n--border=rounded\n--cycle\n"+
+		"--height=~40%\n--layout='reverse'\n--border=rounded\n--cycle\n"+
 			"--filter=widget\n--bind=start:accept\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}

@@ -52,7 +52,7 @@ func TestSelectPassesCandidatesAndControlledOptionsToFzf(t *testing.T) {
 	t.Setenv("FZF_DEFAULT_OPTS", "--filter=private --print-query --multi --color=light")
 	defaultsFile := t.TempDir() + "/options"
 	if err := os.WriteFile(defaultsFile, []byte(
-		"--height=~40%\n--layout=reverse\n--border=rounded\n--cycle\n--bind=start:accept\n"), 0o600); err != nil {
+		"--height=~40%\n--layout='reverse'\n--border=rounded\n--cycle\n--bind=start:accept\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("FZF_DEFAULT_OPTS_FILE", defaultsFile)
