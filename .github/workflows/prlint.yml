@@ -27,12 +27,24 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Install message validation tools
-        uses: jdx/mise-action@6612f0ef07ed2a736cd1e00a94a065522dd41195 # v5.2.5
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
-          version: 2026.10.8
-          install_args: bun npm:@commitlint/cli
-          cache: false
+          bun-version-file: package.json
+
+      - name: Install message validation dependencies
+        run: bun install --ignore-scripts
+
+      - name: Inspect generated dependency lockfile
+        run: cat bun.lock
+
+      - name: Verify message validation behavior
+        run: |
+          printf 'build: verify local commitlint\n' | bun run --bun --no-install commitlint --strict
+          if printf 'invalid message\n' | bun run --bun --no-install commitlint --strict; then
+            echo 'Expected commitlint to reject an invalid message' >&2
+            exit 1
+          fi
 
       - name: Validate current PR title and body
         env:
@@ -40,4 +52,4 @@ jobs:
           PR_BODY: ${{ github.event.pull_request.body }}
         run: |
           printf '%s\n\n%s\n' "$PR_TITLE" "$PR_BODY" |
-            mise exec bun npm:@commitlint/cli -- bun run --bun --no-install "$(mise which commitlint)" --strict
+            bun run --bun --no-install commitlint --strict

@@ -9,3 +9,6 @@
 # Go workspaces
 go.work
 go.work.sum
+
+# JavaScript dependencies
+/node_modules/
