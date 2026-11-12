@@ -73,7 +73,8 @@ Use only a normal squash merge after obtaining a valid approving review, resolvi
 
 ## GitHub Actions
 
-Pin every external action to its full 40-character commit SHA with its version
-in a trailing comment. Do not reference external actions by tag or branch.
-Preserve appropriate existing pins and Dependabot updates. Resolve changed
-versions against the action's repository, not from memory.
+Pin every external action to the full 40-character commit SHA of a
+published, stable upstream release, with its version in a trailing comment.
+Never adopt unreleased commits or prereleases, including Dependabot updates.
+Do not reference external actions by tag or branch. Verify each version and
+SHA against the action's upstream release before changing the pin.
