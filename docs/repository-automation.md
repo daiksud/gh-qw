@@ -100,19 +100,20 @@ The managed set is `accessibility`, `bug`, `documentation`, `duplicate`,
 remain unmanaged. Removing a label from the declaration does not delete it.
 
 Bug and feature Issue forms assign `bug` and `enhancement`; maintenance tasks
-have no initial label. The [Labeler](../.github/workflows/labeler.yml) synchronizes
-only `documentation`, using the trusted base branch's
+have no initial label. The [Labeler](../.github/workflows/labeler.yml) is
+configured to synchronize only `documentation`, using the trusted base branch's
 [path rules](../.github/labeler.yml). It adds that label when every changed file
-is documentation and removes it when the rule stops matching. It does not
-manage other labels. Dependabot uses its default labels without an explicit
-`labels` override. Reviewers choose Conventional Commit types independently;
-labels do not determine release versions or release-note categories.
+is documentation and removes it when the rule stops matching. Dependabot uses
+its default labels without an explicit `labels` override. Reviewers choose
+Conventional Commit types independently; labels do not determine release
+versions or release-note categories.
 
-Labeler is pinned to the untagged v7.0.0 follow-up
-[selective synchronization fix](https://github.com/actions/labeler/pull/957).
-It adds matching labels and removes stale configured labels individually,
-preserving concurrent changes to unrelated labels instead of replacing the
-entire PR label set. This fix is not included in the v7.0.0 tag.
+Labeler is pinned to the published v7.0.0 release. With `sync-labels: true`,
+that version replaces the complete PR label set after reading existing labels.
+Concurrent additions to unrelated labels may be lost. The upstream
+[selective synchronization fix](https://github.com/actions/labeler/pull/957)
+is not included in v7.0.0, so the workflow cannot guarantee that concurrent
+changes to other labels are preserved.
 
 ### Review and merge responsibilities
 
