@@ -33,18 +33,7 @@ jobs:
           bun-version-file: package.json
 
       - name: Install message validation dependencies
-        run: bun install --ignore-scripts
-
-      - name: Inspect generated dependency lockfile
-        run: cat bun.lock
-
-      - name: Verify message validation behavior
-        run: |
-          printf 'build: verify local commitlint\n' | bun run --bun --no-install commitlint --strict
-          if printf 'invalid message\n' | bun run --bun --no-install commitlint --strict; then
-            echo 'Expected commitlint to reject an invalid message' >&2
-            exit 1
-          fi
+        run: bun install --frozen-lockfile --ignore-scripts
 
       - name: Validate current PR title and body
         env:

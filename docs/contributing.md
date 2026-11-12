@@ -34,7 +34,21 @@ Confirm the resulting commit's title and body after merging.
 
 ## Development and review
 
-Use the Go version in [go.mod](../go.mod). Run:
+Use the Go version in [go.mod](../go.mod) and the Bun version in the
+`packageManager` field of [package.json](../package.json). These are the only
+runtime version declarations; [mise.toml](../mise.toml) enables their idiomatic
+version files. Install the runtimes and local development dependencies with:
+
+```sh
+mise install
+mise exec -- bun install --frozen-lockfile --ignore-scripts
+```
+
+Maintain commitlint versions in `package.json` devDependencies and regenerate
+[bun.lock](../bun.lock) with `bun install` after changing dependencies. The
+lockfile records the resolved dependency graph; do not edit its versions by hand.
+
+Run:
 
 ```sh
 gofmt -w <changed-go-files>
