@@ -47,7 +47,7 @@ func TestRunnerResolvesGHPathLazilyAndPreservesExplicitExecutable(t *testing.T) 
 		t.Fatalf("executable = %q, want selected-gh", got)
 	}
 	runner.Executable = "explicit-gh"
-	if err := runner.runDir(context.Background(), "", "repo", "sync"); err != nil {
+	if err := runner.runDir(context.Background(), "", "repo", "clone", "acme/widget"); err != nil {
 		t.Fatal(err)
 	}
 	if got := recorder.last(t).executable; got != "explicit-gh" {
@@ -64,7 +64,7 @@ func TestRunnerWrapsMissingPathExecutable(t *testing.T) {
 		if output {
 			_, err = runner.Output(context.Background(), "api", "user")
 		} else {
-			err = runner.runDir(context.Background(), "", "repo", "sync")
+			err = runner.runDir(context.Background(), "", "repo", "clone", "acme/widget")
 		}
 		var commandErr *CommandError
 		if !errors.As(err, &commandErr) || !errors.Is(err, exec.ErrNotFound) || commandErr.ExitCode != -1 {
@@ -85,7 +85,7 @@ func TestRunnerRunDirStreamsConfiguredIO(t *testing.T) {
 		t.Fatalf("EvalSymlinks() error = %v", err)
 	}
 
-	err = runner.runDir(context.Background(), dir, "repo", "sync")
+	err = runner.runDir(context.Background(), dir, "repo", "clone", "acme/widget")
 	if err != nil {
 		t.Fatalf("runDir() error = %v", err)
 	}
@@ -94,7 +94,7 @@ func TestRunnerRunDirStreamsConfiguredIO(t *testing.T) {
 	if command.executable != "fake-gh" {
 		t.Fatalf("executable = %q, want %q", command.executable, "fake-gh")
 	}
-	wantArgs := []string{"repo", "sync"}
+	wantArgs := []string{"repo", "clone", "acme/widget"}
 	if !slicesEqual(command.args, wantArgs) {
 		t.Fatalf("args = %#v, want %#v", command.args, wantArgs)
 	}
@@ -186,7 +186,7 @@ func TestRunnerReportsContextDeadline(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 
-	_, err := runner.outputDir(ctx, "", "repo", "sync")
+	_, err := runner.outputDir(ctx, "", "repo", "clone", "acme/widget")
 	if err == nil {
 		t.Fatal("outputDir() error = nil, want deadline failure")
 	}
@@ -204,7 +204,7 @@ func TestRunnerWrapsExecutableStartFailure(t *testing.T) {
 		Stderr:     &bytes.Buffer{},
 	}
 
-	_, err := runner.outputDir(context.Background(), "", "repo", "sync")
+	_, err := runner.outputDir(context.Background(), "", "repo", "clone", "acme/widget")
 	if err == nil {
 		t.Fatal("outputDir() error = nil, want start failure")
 	}

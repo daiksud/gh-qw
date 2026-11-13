@@ -428,7 +428,7 @@ func TestCLICloneAcquiresOnlyNewDestinationsAndRegistersSuccess(t *testing.T) {
 	}
 }
 
-func TestCLIAPILookupsUseGHPathAndKeepStdoutPure(t *testing.T) {
+func TestCLICloneAPILookupsUseGHPathAndKeepStdoutPure(t *testing.T) {
 	fixture := newCLIFixture(t)
 	ghPath := filepath.Join(fixture.buildFakeGh(t), "gh")
 	if runtime.GOOS == "windows" {
@@ -442,21 +442,6 @@ func TestCLIAPILookupsUseGHPathAndKeepStdoutPure(t *testing.T) {
 	assertStdout(t, result, filepath.ToSlash(mainPath)+"\n")
 	assertContains(t, result.stderr, "fake gh: api ghe.example.com/repos/octocat/widget")
 	assertPathExists(t, mainPath)
-
-	// The explicit repository host wins over the ambient host. The local main
-	// branch supplies the start point returned by the external REST lookup.
-	env = append(env, "GH_HOST=unrelated.example.com", "GHQW_TEST_API_OUTPUT=main")
-	result = fixture.runCLIWithEnv(t, env, "add", "--worktree", "-R", "ghe.example.com/octocat/widget", "-b", "feature-from-api")
-	assertStatus(t, result, 0)
-	worktreePath := filepath.Join(fixture.worktreeRoot, "ghe-example-com-octocat-widget-feature-from-api", "widget")
-	assertStdout(t, result, filepath.ToSlash(worktreePath)+"\n")
-	assertContains(t, result.stderr, "fake gh: api ghe.example.com/repos/octocat/widget")
-
-	result = fixture.runCLIWithEnv(t, append(env, "GHQW_TEST_API_OUTPUT="), "add", "--worktree", "-R", "ghe.example.com/octocat/widget", "-b", "feature-missing-default")
-	assertStatus(t, result, 1)
-	assertStdout(t, result, "")
-	assertContains(t, result.stderr, "API response did not include default_branch")
-	assertPathMissing(t, filepath.Join(fixture.worktreeRoot, "ghe-example-com-octocat-widget-feature-missing-default", "widget"))
 
 	// An unusable GH_PATH must not affect help, local inputs, or attaching an
 	// existing branch: none requires resolving or starting gh.
@@ -720,8 +705,6 @@ func main() {
 	switch {
 	case len(args) >= 2 && args[0] == "repo" && args[1] == "clone":
 		cloneRepo(args[2:])
-	case len(args) == 4 && args[0] == "repo" && args[1] == "sync" && args[2] == "--source":
-		fmt.Fprintln(os.Stderr, "fake gh: synchronized "+args[3])
 	case len(args) == 8 && args[0] == "api" && args[1] == "--hostname" &&
 		strings.HasPrefix(args[3], "repos/") && args[4] == "--method" && args[5] == "HEAD" &&
 		args[6] == "--include" && args[7] == "--silent":
@@ -755,15 +738,6 @@ func main() {
 			fmt.Fprintln(os.Stderr, "fake gh: repository page failed")
 			os.Exit(1)
 		}
-	case len(args) == 6 && args[0] == "api" && args[1] == "--hostname" &&
-		strings.HasPrefix(args[3], "repos/") && args[4] == "--jq":
-		output, ok := os.LookupEnv("GHQW_TEST_API_OUTPUT")
-		if !ok || args[5] != ".default_branch // empty" {
-			fmt.Fprintln(os.Stderr, "fake gh: unexpected API lookup")
-			os.Exit(1)
-		}
-		fmt.Fprintln(os.Stdout, output)
-		fmt.Fprintln(os.Stderr, "fake gh: api "+args[2]+"/"+args[3])
 	default:
 		fmt.Fprintf(os.Stderr, "fake gh: unsupported invocation %q\n", strings.Join(args, " "))
 		os.Exit(1)

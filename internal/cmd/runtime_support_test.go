@@ -50,7 +50,7 @@ func TestCommandWriteAllDetectsShortWritesAndFailures(t *testing.T) {
 func TestApplicationCompositionUsesStreamAwareCloneFactory(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	deps := composeApplicationDependencies(ApplicationDependencies{Stdout: &stdout, Stderr: &stderr})
-	if deps.Resolver == nil || deps.Git == nil || deps.Gh == nil || deps.API == nil || deps.Registry == nil {
+	if deps.Resolver == nil || deps.Git == nil || deps.API == nil || deps.Registry == nil {
 		t.Fatal("composition left a required dependency nil")
 	}
 	if deps.Stdin == nil || deps.Version == "" {

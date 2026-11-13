@@ -22,32 +22,19 @@ const developmentVersion = "dev"
 var ErrCommandUsage = errors.New("invalid command usage")
 
 // ApplicationGit combines every local Git operation used by the command
-// tree. Network-capable operations are delegated to gh; see ApplicationGh.
+// tree. Network-capable operations are delegated to gh.
 type ApplicationGit interface {
 	RepositoryMoveGit
 	WorktreeAddGit
 	WorktreeRemoveGit
 }
 
-// ApplicationGh combines every gh operation used by the command tree.
-type ApplicationGh interface {
-	CloneGitOperations
-	WorktreeAddGh
-}
-
-// ApplicationAPI combines the GitHub operations used by the command tree.
-type ApplicationAPI interface {
-	CloneRepositoryAPI
-	WorktreeAddAPI
-}
-
 // ApplicationDependencies supplies shared process dependencies.
 type ApplicationDependencies struct {
 	Resolver   RootResolver
 	Git        ApplicationGit
-	Gh         ApplicationGh
 	GitFactory CloneGitFactory
-	API        ApplicationAPI
+	API        CloneRepositoryAPI
 	Registry   LocationRegistry
 	Stdin      io.Reader
 	Stdout     io.Writer
@@ -144,8 +131,6 @@ func NewCommand(dependencies ApplicationDependencies) *cobra.Command {
 			Resolver: deps.Resolver,
 			Registry: deps.Registry,
 			Git:      deps.Git,
-			Gh:       deps.Gh,
-			API:      deps.API,
 			Stdout:   deps.Stdout,
 			Stderr:   deps.Stderr,
 		},
@@ -245,9 +230,6 @@ func composeApplicationDependencies(deps ApplicationDependencies) ApplicationDep
 			Stdout:     deps.Stderr,
 			Stderr:     deps.Stderr,
 		}
-	}
-	if deps.Gh == nil {
-		deps.Gh = &ghcmd.Runner{Stdout: deps.Stderr, Stderr: deps.Stderr}
 	}
 	if deps.GitFactory == nil {
 		// A fake needing clone-specific output streams must supply GitFactory.

@@ -15,7 +15,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/daiksud/gh-qw/internal/ghcmd"
 	"github.com/daiksud/gh-qw/internal/gitcmd"
 	"github.com/daiksud/gh-qw/internal/local"
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
@@ -26,12 +25,10 @@ import (
 
 func TestAddWorktreeAutomaticResolution(t *testing.T) {
 	tests := []struct {
-		name         string
-		args         []string
-		configure    func(*worktreeAddFixture)
-		wantOptions  gitcmd.WorktreeAddOptions
-		wantAPICalls int
-		wantSyncs    []ghcmd.SyncOptions
+		name        string
+		args        []string
+		configure   func(*worktreeAddFixture)
+		wantOptions gitcmd.WorktreeAddOptions
 	}{
 		{
 			name:        "attaches existing local branch and ignores explicit commit-ish",
@@ -40,7 +37,7 @@ func TestAddWorktreeAutomaticResolution(t *testing.T) {
 			wantOptions: gitcmd.WorktreeAddOptions{Commitish: "feature-local"},
 		},
 		{
-			name:        "delegates branch selection to Git without speculative API",
+			name:        "delegates branch selection to Git",
 			args:        []string{"feature-requested"},
 			wantOptions: gitcmd.WorktreeAddOptions{Commitish: "feature-requested"},
 		},
@@ -50,25 +47,20 @@ func TestAddWorktreeAutomaticResolution(t *testing.T) {
 			wantOptions: gitcmd.WorktreeAddOptions{Commitish: "release-base", NewBranch: "feature-explicit"},
 		},
 		{
-			name:         "explicit new branch starts at local GitHub default",
-			args:         []string{"-b", "feature-api-local"},
-			configure:    func(f *worktreeAddFixture) { f.git.localBranches["main"] = true },
-			wantOptions:  gitcmd.WorktreeAddOptions{Commitish: "refs/heads/main", NewBranch: "feature-api-local"},
-			wantAPICalls: 1,
+			name:        "explicit new branch starts at main checkout HEAD",
+			args:        []string{"-b", "feature-new"},
+			wantOptions: gitcmd.WorktreeAddOptions{Commitish: "HEAD", NewBranch: "feature-new"},
 		},
 		{
-			name:         "explicit new branch synchronizes missing local default",
-			args:         []string{"-b", "feature-api-sync"},
-			configure:    func(f *worktreeAddFixture) { f.gh.syncCreatesLocalBranch = true },
-			wantOptions:  gitcmd.WorktreeAddOptions{Commitish: "refs/heads/main", NewBranch: "feature-api-sync"},
-			wantAPICalls: 1,
-			wantSyncs:    []ghcmd.SyncOptions{{Host: "github.com", Source: "acme/widget", Branch: "main"}},
+			name:        "explicit reset branch starts at main checkout HEAD",
+			args:        []string{"-B", "feature-reset"},
+			wantOptions: gitcmd.WorktreeAddOptions{Commitish: "HEAD", ResetBranch: "feature-reset"},
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			branch := test.args[len(test.args)-1]
-			if len(test.args) == 2 && test.args[0] != "-b" {
+			if len(test.args) == 2 && test.args[0] != "-b" && test.args[0] != "-B" {
 				branch = test.args[0]
 			}
 			fixture := worktreeAddNewFixture(t, branch)
@@ -86,29 +78,7 @@ func TestAddWorktreeAutomaticResolution(t *testing.T) {
 			if got := fixture.git.adds[0].options; !reflect.DeepEqual(got, want) {
 				t.Fatalf("WorktreeAdd options = %#v, want %#v", got, want)
 			}
-			if fixture.api.calls != test.wantAPICalls {
-				t.Fatalf("DefaultBranch calls = %d, want %d", fixture.api.calls, test.wantAPICalls)
-			}
-			if !reflect.DeepEqual(fixture.gh.syncs, test.wantSyncs) {
-				t.Fatalf("RepoSync calls = %#v, want %#v", fixture.gh.syncs, test.wantSyncs)
-			}
 		})
-	}
-}
-
-func TestAddWorktreeFetchesDefaultBranchThroughAPIAndSync(t *testing.T) {
-	t.Setenv("GH_HOST", "ambient.example.com")
-	fixture := worktreeAddNewFixture(t, "feature-api-fetch")
-	fixture.api.branch = "main"
-	fixture.gh.syncCreatesLocalBranch = true
-	if err := fixture.worktreeAddExecute("-b", "feature-api-fetch"); err != nil {
-		t.Fatalf("Execute() error = %v", err)
-	}
-	if fixture.api.calls != 1 || len(fixture.gh.syncs) != 1 {
-		t.Fatalf("API calls=%d, syncs=%v; want one of each", fixture.api.calls, fixture.gh.syncs)
-	}
-	if fixture.gh.syncs[0].Host != "github.com" {
-		t.Fatalf("sync host = %q, want github.com", fixture.gh.syncs[0].Host)
 	}
 }
 
@@ -182,9 +152,6 @@ func TestAddWorktreeModesAndForce(t *testing.T) {
 			if got := fixture.git.adds[0].options; !reflect.DeepEqual(got, want) {
 				t.Fatalf("WorktreeAdd options = %#v, want %#v", got, want)
 			}
-			if fixture.api.calls != 0 || len(fixture.gh.syncs) != 0 {
-				t.Fatal("explicit creation modes must not query or sync a default branch")
-			}
 		})
 	}
 }
@@ -234,57 +201,6 @@ func TestAddWorktreeModeValidation(t *testing.T) {
 			}
 			if fixture.resolver.calls != 0 {
 				t.Fatalf("Resolve() calls = %d, want 0", fixture.resolver.calls)
-			}
-			if len(fixture.git.adds) != 0 {
-				t.Fatalf("WorktreeAdd() calls = %d, want 0", len(fixture.git.adds))
-			}
-		})
-	}
-}
-
-func TestAddWorktreeAPIAndSyncFailures(t *testing.T) {
-	tests := []struct {
-		name      string
-		configure func(*worktreeAddFixture)
-		want      string
-	}{
-		{
-			name: "API unavailable",
-			configure: func(fixture *worktreeAddFixture) {
-				fixture.api.err = errors.New("offline")
-			},
-			want: "provide an explicit commit-ish",
-		},
-		{
-			name: "invalid API branch",
-			configure: func(fixture *worktreeAddFixture) {
-				fixture.api.branch = "HEAD"
-			},
-			want: "invalid default branch",
-		},
-		{
-			name: "sync failure",
-			configure: func(fixture *worktreeAddFixture) {
-				fixture.gh.syncErr = errors.New("sync failed")
-			},
-			want: "sync failed",
-		},
-		{
-			name:      "sync did not create ref",
-			configure: func(fixture *worktreeAddFixture) {},
-			want:      "did not materialize local default branch",
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			fixture := worktreeAddNewFixture(t, "feature-api-failure")
-			fixture.api.branch = "main"
-			test.configure(fixture)
-
-			err := fixture.worktreeAddExecute("-b", "feature-api-failure")
-			if err == nil || !strings.Contains(err.Error(), test.want) {
-				t.Fatalf("Execute() error = %v, want containing %q", err, test.want)
 			}
 			if len(fixture.git.adds) != 0 {
 				t.Fatalf("WorktreeAdd() calls = %d, want 0", len(fixture.git.adds))
@@ -658,8 +574,6 @@ type worktreeAddFixture struct {
 
 	resolver         *worktreeAddResolver
 	git              *worktreeAddGit
-	gh               *worktreeAddGh
-	api              *worktreeAddAPI
 	initialWorktrees []local.Worktree
 	enumerateCalls   int
 	omitPostWorktree bool
@@ -710,8 +624,6 @@ func worktreeAddNewFixture(t *testing.T, branch string) *worktreeAddFixture {
 			WorktreeRoot:   worktreeRoot,
 		}},
 		git: git,
-		gh:  &worktreeAddGh{git: git},
-		api: &worktreeAddAPI{branch: "main"},
 		cwd: repository.Path,
 	}
 	fixture.destination = worktreeAddDestination(worktreeRoot, repository, branch)
@@ -820,8 +732,6 @@ func (fixture *worktreeAddFixture) worktreeAddExecute(args ...string) error {
 			return fixture.associationErr
 		},
 		Git:    fixture.git,
-		Gh:     fixture.gh,
-		API:    fixture.api,
 		Getwd:  func() (string, error) { return fixture.cwd, nil },
 		Mkdir:  mkdir,
 		Remove: remove,
@@ -912,53 +822,6 @@ func (git *worktreeAddGit) LocalBranchExists(
 	return git.localBranches[branch], nil
 }
 
-// worktreeAddGh simulates synchronization materializing the local default branch.
-type worktreeAddGh struct {
-	git *worktreeAddGit
-
-	syncErr                error
-	syncCreatesLocalBranch bool
-
-	syncs []ghcmd.SyncOptions
-}
-
-func (gh *worktreeAddGh) RepoSync(
-	_ context.Context,
-	_ string,
-	options ghcmd.SyncOptions,
-) error {
-	gh.syncs = append(gh.syncs, options)
-	if gh.syncErr != nil {
-		return gh.syncErr
-	}
-	if gh.syncCreatesLocalBranch {
-		gh.git.localBranches[options.Branch] = true
-	}
-	return nil
-}
-
-type worktreeAddAPI struct {
-	branch string
-	err    error
-	calls  int
-	host   string
-	owner  string
-	repo   string
-}
-
-func (api *worktreeAddAPI) DefaultBranch(
-	_ context.Context,
-	host string,
-	owner string,
-	repo string,
-) (string, error) {
-	api.calls++
-	api.host = host
-	api.owner = owner
-	api.repo = repo
-	return api.branch, api.err
-}
-
 type worktreeAddFailingWriter struct {
 	err error
 }
@@ -998,4 +861,3 @@ func worktreeAddPhysicalPath(t *testing.T, path string) string {
 
 var _ io.Writer = worktreeAddFailingWriter{}
 var _ WorktreeAddGit = (*worktreeAddGit)(nil)
-var _ WorktreeAddAPI = (*worktreeAddAPI)(nil)

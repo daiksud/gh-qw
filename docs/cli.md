@@ -416,9 +416,9 @@ branch, create it through `git branch` first. An existing local branch wins
 regardless of a supplied start point.
 
 `-b` creates; `-B` creates or resets. An explicit start point is resolved by Git.
-Without one, query the GitHub default via `gh api`; when its local ref is absent,
-run `gh repo sync` after destination validation and re-observe the local ref.
-Existing-branch and explicit-start operations do not need an API lookup.
+Without one, use `HEAD` in the selected repository's main checkout, including
+when invoked from a linked worktree or with `-R`. Worktree creation uses local
+Git state and does not query GitHub or synchronize branches.
 
 Named creation/reset uses `git branch` before `git worktree add`. If the branch
 step succeeds but adding the worktree fails, leave the branch intact and report

@@ -91,8 +91,7 @@ headers and JSON remain machine-readable; authentication variables are unchanged
 
 `GH_HOST` selects the host for owner discovery and hostless `owner/repo` inputs;
 explicit hosts take precedence and the default is `github.com`. API requests
-pass `--hostname`. Local `gh repo sync` sets its child's `GH_HOST` to the
-selected repository host; all token variables remain unchanged.
+pass `--hostname`; all token variables remain unchanged.
 
 `GH_TOKEN`, `GITHUB_TOKEN`, `GH_ENTERPRISE_TOKEN`, and
 `GITHUB_ENTERPRISE_TOKEN` are interpreted by gh. **`GH_HOST` is not a token
