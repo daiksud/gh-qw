@@ -3,8 +3,6 @@ package ghcmd
 import (
 	"context"
 	"fmt"
-	"os"
-	"slices"
 )
 
 // SubmoduleMode controls whether gh recursively initializes submodules
@@ -96,54 +94,4 @@ func validateSubmoduleMode(mode SubmoduleMode) error {
 	default:
 		return fmt.Errorf("unsupported submodule mode")
 	}
-}
-
-// SyncOptions controls `gh repo sync`.
-type SyncOptions struct {
-	// Host selects the repository host for local remote discovery.
-	Host string
-	// Source is the "<owner>/<repo>" to synchronize from. It is required so
-	// synchronization always targets the repository's own remote rather than
-	// a fork parent, which is `gh repo sync`'s default source.
-	Source string
-	// Branch selects the branch to synchronize. An empty Branch synchronizes
-	// gh's resolved default branch.
-	Branch string
-}
-
-// RepoSync fast-forwards the repository checked out in dir from Source using
-// `gh repo sync`, updating both the local branch and its remote-tracking
-// ref.
-func (r *Runner) RepoSync(ctx context.Context, dir string, options SyncOptions) error {
-	args, err := repoSyncArgs(options)
-	if err != nil {
-		return err
-	}
-	if options.Host == "" {
-		return r.runDir(ctx, dir, args...)
-	}
-	var scoped Runner
-	if r != nil {
-		scoped = *r
-	}
-	if scoped.Env == nil {
-		scoped.Env = os.Environ()
-	} else {
-		scoped.Env = slices.Clone(scoped.Env)
-	}
-	// os/exec applies the last value for duplicate environment keys.
-	scoped.Env = append(scoped.Env, "GH_HOST="+options.Host)
-	return scoped.runDir(ctx, dir, args...)
-}
-
-func repoSyncArgs(options SyncOptions) ([]string, error) {
-	if options.Source == "" {
-		return nil, fmt.Errorf("gh repo sync: source is required")
-	}
-
-	args := []string{"repo", "sync", "--source", options.Source}
-	if options.Branch != "" {
-		args = append(args, "--branch", options.Branch)
-	}
-	return args, nil
 }

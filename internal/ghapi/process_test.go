@@ -96,12 +96,12 @@ func prepareAPIGhProcess(t *testing.T, mode, output string) string {
 }
 
 func TestClientUsesGHPathAndNativeAuthenticationEnvironment(t *testing.T) {
-	record := prepareAPIGhProcess(t, "success", "trunk\n")
+	record := prepareAPIGhProcess(t, "success", "HTTP/2.0 200 OK\r\n\r\n")
 	var diagnostics bytes.Buffer
 	client := NewClient(&diagnostics)
-	branch, err := client.DefaultBranch(context.Background(), "selected.example.com", "acme", "widgets")
-	if err != nil || branch != "trunk" {
-		t.Fatalf("DefaultBranch() = %q, %v, want trunk", branch, err)
+	exists, err := client.RepositoryExists(context.Background(), "selected.example.com", "acme", "widgets")
+	if err != nil || !exists {
+		t.Fatalf("RepositoryExists() = %v, %v, want true", exists, err)
 	}
 	if diagnostics.String() != "gh api diagnostic" {
 		t.Fatalf("diagnostics = %q, want only gh stderr", diagnostics.String())
@@ -114,7 +114,7 @@ func TestClientUsesGHPathAndNativeAuthenticationEnvironment(t *testing.T) {
 	if err := json.Unmarshal(data, &invocation); err != nil {
 		t.Fatal(err)
 	}
-	wantArgs := []string{"api", "--hostname", "selected.example.com", "repos/acme/widgets", "--jq", ".default_branch // empty"}
+	wantArgs := []string{"api", "--hostname", "selected.example.com", "repos/acme/widgets", "--method", "HEAD", "--include", "--silent"}
 	if !slices.Equal(invocation.Args, wantArgs) {
 		t.Fatalf("args = %#v, want %#v", invocation.Args, wantArgs)
 	}
@@ -194,13 +194,13 @@ func TestClientErrorsPreserveFailureWithoutIncludingGhDiagnostics(t *testing.T) 
 	prepareAPIGhProcess(t, "fail", "partial response\n")
 	var diagnostics bytes.Buffer
 	client := NewClient(&diagnostics)
-	_, err := client.DefaultBranch(context.Background(), "github.com", "acme", "widgets")
+	_, err := client.RepositoryExists(context.Background(), "github.com", "acme", "widgets")
 	var commandErr *ghcmd.CommandError
 	if !errors.As(err, &commandErr) || commandErr.ExitCode != 4 {
-		t.Fatalf("DefaultBranch() error = %v, want preserved gh exit code 4", err)
+		t.Fatalf("RepositoryExists() error = %v, want preserved gh exit code 4", err)
 	}
 	if strings.Contains(err.Error(), "dummy-GH_TOKEN") || strings.Contains(err.Error(), "partial response") {
-		t.Fatalf("DefaultBranch() error includes gh output: %q", err)
+		t.Fatalf("RepositoryExists() error includes gh output: %q", err)
 	}
 	if !strings.Contains(diagnostics.String(), "diagnostic contains dummy-GH_TOKEN") {
 		t.Fatalf("native gh diagnostic was not relayed: %q", diagnostics.String())
@@ -212,9 +212,9 @@ func TestClientPreservesCancellation(t *testing.T) {
 	client := NewClient(io.Discard)
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
-	_, err := client.DefaultBranch(ctx, "github.com", "acme", "widgets")
+	_, err := client.RepositoryExists(ctx, "github.com", "acme", "widgets")
 	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("DefaultBranch() error = %v, want context deadline in chain", err)
+		t.Fatalf("RepositoryExists() error = %v, want context deadline in chain", err)
 	}
 }
 
@@ -222,7 +222,7 @@ func TestClientReportsMissingExecutableOnlyWhenCalled(t *testing.T) {
 	t.Setenv("GH_PATH", "")
 	t.Setenv("PATH", t.TempDir())
 	client := NewClient(io.Discard)
-	_, err := client.DefaultBranch(context.Background(), "github.com", "acme", "widgets")
+	_, err := client.RepositoryExists(context.Background(), "github.com", "acme", "widgets")
 	var commandErr *ghcmd.CommandError
 	if !errors.As(err, &commandErr) || commandErr.ExitCode != -1 ||
 		!strings.Contains(err.Error(), "gh command could not be started") {

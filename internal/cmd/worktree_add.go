@@ -12,8 +12,6 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/daiksud/gh-qw/internal/ghapi"
-	"github.com/daiksud/gh-qw/internal/ghcmd"
 	"github.com/daiksud/gh-qw/internal/gitcmd"
 	"github.com/daiksud/gh-qw/internal/local"
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
@@ -24,18 +22,6 @@ type WorktreeAddGit interface {
 	local.Git
 	WorktreeAdd(context.Context, string, gitcmd.WorktreeAddOptions) error
 	LocalBranchExists(context.Context, string, string) (bool, error)
-}
-
-// WorktreeAddGh is the gh capability required by worktree add to bring the
-// API-selected default branch into the local repository when it is missing,
-// so GitHub authentication and host resolution follow gh's own rules.
-type WorktreeAddGh interface {
-	RepoSync(context.Context, string, ghcmd.SyncOptions) error
-}
-
-// WorktreeAddAPI is the GitHub API capability required by worktree add.
-type WorktreeAddAPI interface {
-	DefaultBranch(ctx context.Context, host, owner, repo string) (string, error)
 }
 
 // WorktreeAddDependencies supplies command integration and test seams.
@@ -73,8 +59,6 @@ type WorktreeAddDependencies struct {
 	) error
 
 	Git        WorktreeAddGit
-	Gh         WorktreeAddGh
-	API        WorktreeAddAPI
 	Filesystem local.FilesystemOptions
 	Getwd      func() (string, error)
 	Mkdir      func(string, fs.FileMode) error
@@ -102,13 +86,6 @@ type worktreeAddRequest struct {
 	force       bool
 }
 
-type worktreeAddPlanner struct {
-	ctx        context.Context
-	git        WorktreeAddGit
-	api        WorktreeAddAPI
-	repository local.Repository
-}
-
 func worktreeAddPrepareRuntime(deps WorktreeAddDependencies) WorktreeAddDependencies {
 	deps.Registry = commandRegistry(deps.Registry)
 	deps.Stdout = commandStdout(deps.Stdout)
@@ -122,12 +99,6 @@ func worktreeAddPrepareRuntime(deps WorktreeAddDependencies) WorktreeAddDependen
 			Stdout:     io.Discard,
 			Stderr:     deps.Stderr,
 		}
-	}
-	if deps.Gh == nil {
-		deps.Gh = &ghcmd.Runner{Stdout: io.Discard, Stderr: deps.Stderr}
-	}
-	if deps.API == nil {
-		deps.API = ghapi.NewClient(deps.Stderr)
 	}
 	if deps.Current == nil {
 		deps.Current = local.DiscoverCurrent
@@ -207,37 +178,9 @@ func worktreeAddRun(
 		return errors.Join(operationErr, cleanupErr)
 	}
 
-	planner := &worktreeAddPlanner{
-		ctx:        ctx,
-		git:        runtime.Git,
-		api:        runtime.API,
-		repository: repository,
-	}
-	options, syncBranch, err := planner.worktreeAddPlan(request, destination)
+	options, err := worktreeAddPlan(ctx, runtime.Git, repository.Path, request, destination)
 	if err != nil {
 		return worktreeAddFailure(err)
-	}
-
-	// Only explicit -b/-B requests without a start point use the GitHub
-	// default branch. Perform synchronization after destination validation
-	// and re-observe the resulting local branch using Git.
-	if syncBranch != "" {
-		if err := runtime.Gh.RepoSync(
-			ctx, repository.Path, ghcmd.SyncOptions{
-				Host:   repository.Host,
-				Source: repository.Owner + "/" + repository.Repo,
-				Branch: syncBranch,
-			},
-		); err != nil {
-			return worktreeAddFailure(fmt.Errorf("sync API default branch %q: %w", syncBranch, err))
-		}
-		exists, err := runtime.Git.LocalBranchExists(ctx, repository.Path, syncBranch)
-		if err != nil {
-			return worktreeAddFailure(fmt.Errorf("inspect synchronized default branch %q: %w", syncBranch, err))
-		}
-		if !exists {
-			return worktreeAddFailure(fmt.Errorf("gh repo sync did not materialize local default branch %q", syncBranch))
-		}
 	}
 
 	if err := runtime.Git.WorktreeAdd(ctx, repository.Path, options); err != nil {
@@ -451,85 +394,59 @@ func worktreeAddSelectRepository(
 	return current.Repository, nil
 }
 
-// worktreeAddPlan performs only read-only observations and default-branch API
-// lookup. Git itself owns branch creation, remote guessing, tracking, and
-// revision/conflict validation. The returned syncBranch is executed later,
-// after the destination has been revalidated.
-func (planner *worktreeAddPlanner) worktreeAddPlan(
+// worktreeAddPlan performs only read-only observations. Git owns branch
+// creation, remote guessing, tracking, and revision/conflict validation.
+func worktreeAddPlan(
+	ctx context.Context,
+	git WorktreeAddGit,
+	repositoryPath string,
 	request worktreeAddRequest,
 	destination string,
-) (gitcmd.WorktreeAddOptions, string, error) {
+) (gitcmd.WorktreeAddOptions, error) {
 	options := gitcmd.WorktreeAddOptions{Path: destination, Force: request.force}
 
 	switch request.mode {
 	case worktreeAddModeOrphan:
 		options.Orphan = true
 		options.NewBranch = request.branch
-		return options, "", nil
+		return options, nil
 	case worktreeAddModeDetach:
 		options.Detach = true
 		options.Commitish = request.commitish
 		if options.Commitish == "" {
 			options.Commitish = request.branch
 		}
-		return options, "", nil
+		return options, nil
 	case worktreeAddModeNew, worktreeAddModeReset:
-		target, syncBranch, err := planner.worktreeAddCreationTarget(request.commitish)
-		if err != nil {
-			return gitcmd.WorktreeAddOptions{}, "", err
+		options.Commitish = request.commitish
+		if options.Commitish == "" {
+			options.Commitish = "HEAD"
 		}
-		options.Commitish = target
 		if request.mode == worktreeAddModeNew {
 			options.NewBranch = request.branch
 		} else {
 			options.ResetBranch = request.branch
 		}
-		return options, syncBranch, nil
+		return options, nil
 	case worktreeAddModeAutomatic:
 		// Git applies checkout.defaultRemote and rejects unknown or ambiguous
-		// branches without requesting a GitHub default-branch lookup.
+		// branches.
 		options.Commitish = request.branch
 		if request.commitish == "" {
-			return options, "", nil
+			return options, nil
 		}
-		exists, err := planner.git.LocalBranchExists(planner.ctx, planner.repository.Path, request.branch)
+		exists, err := git.LocalBranchExists(ctx, repositoryPath, request.branch)
 		if err != nil {
-			return gitcmd.WorktreeAddOptions{}, "", fmt.Errorf("inspect local branch %q: %w", request.branch, err)
+			return gitcmd.WorktreeAddOptions{}, fmt.Errorf("inspect local branch %q: %w", request.branch, err)
 		}
 		if !exists {
 			options.NewBranch = request.branch
 			options.Commitish = request.commitish
 		}
-		return options, "", nil
+		return options, nil
 	default:
-		return gitcmd.WorktreeAddOptions{}, "", errors.New("unsupported worktree add mode")
+		return gitcmd.WorktreeAddOptions{}, errors.New("unsupported worktree add mode")
 	}
-}
-
-// worktreeAddCreationTarget returns the explicit start point unchanged, or the
-// GitHub default branch for -b/-B without a start point. If the default is not
-// a local branch, the caller must synchronize it after checking the destination.
-func (planner *worktreeAddPlanner) worktreeAddCreationTarget(explicit string) (string, string, error) {
-	if explicit != "" {
-		return explicit, "", nil
-	}
-	defaultBranch, err := planner.api.DefaultBranch(
-		planner.ctx, planner.repository.Host, planner.repository.Owner, planner.repository.Repo,
-	)
-	if err != nil {
-		return "", "", fmt.Errorf("determine a start point for the new branch: %w; provide an explicit commit-ish", err)
-	}
-	if err := local.ValidateBranch(planner.ctx, defaultBranch); err != nil {
-		return "", "", fmt.Errorf("GitHub API returned an invalid default branch %q: %w", defaultBranch, err)
-	}
-	exists, err := planner.git.LocalBranchExists(planner.ctx, planner.repository.Path, defaultBranch)
-	if err != nil {
-		return "", "", fmt.Errorf("inspect default branch %q: %w", defaultBranch, err)
-	}
-	if exists {
-		return "refs/heads/" + defaultBranch, "", nil
-	}
-	return "refs/heads/" + defaultBranch, defaultBranch, nil
 }
 
 func worktreeAddCreateParents(

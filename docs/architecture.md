@@ -32,10 +32,11 @@ environment values, and captured stderr while preserving process status and
 cancellation through the error chain.
 
 Git owns ref validation, branch creation/reset, tracking and remote choice,
-worktree registration, pruning, and repair. gh owns clone/sync, authentication,
-and API transport. API field selection uses gh's built-in `--jq`; no separate
-jq program is required by the CLI. Unsupported external commands fail through
-the native tool rather than invoking a second implementation.
+worktree registration, pruning, and repair. Worktree creation uses the selected
+main checkout as its Git working directory and needs no GitHub API access.
+gh owns cloning, authentication, and API transport. Unsupported external
+commands fail through the native tool rather than invoking a second
+implementation.
 
 fzf owns the interactive interface. `cmd` maps each display row to its original
 repository identity and, for removal, path and stable worktree slot.
