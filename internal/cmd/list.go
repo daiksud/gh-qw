@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -31,6 +32,9 @@ type ListDependencies struct {
 	Registry           LocationRegistry
 	Git                ListGit
 	EnumerateWorktrees func(context.Context, local.Repository, string) ([]local.Worktree, error)
+	LookPath           func(string) (string, error)
+	IsTerminal         func(io.Writer) bool
+	Select             func(context.Context, []string, string) (string, error)
 	Stdout             io.Writer
 	Stderr             io.Writer
 }
@@ -63,6 +67,8 @@ func NewListCommand(deps ListDependencies) *cobra.Command {
 	var worktreesOnly bool
 	var all bool
 	var gone bool
+	var fzf bool
+	var changeDirectory bool
 
 	command := &cobra.Command{
 		Use:           "list [query]",
@@ -70,7 +76,18 @@ func NewListCommand(deps ListDependencies) *cobra.Command {
 		Args:          cobra.MaximumNArgs(1),
 		SilenceErrors: true,
 		SilenceUsage:  true,
-		PreRunE: func(_ *cobra.Command, _ []string) error {
+		PreRunE: func(command *cobra.Command, _ []string) error {
+			if changeDirectory {
+				if unique {
+					return &repositoryUsageError{message: "--cd and --unique are mutually exclusive"}
+				}
+				if command.Flags().Changed("fzf") && !fzf {
+					return &repositoryUsageError{message: "--cd cannot be combined with --fzf=false"}
+				}
+				if os.Getenv("GHQW_SHELL_CD") != "1" {
+					return &repositoryUsageError{message: "--cd requires shell integration; initialize with eval \"$(gh qw shell-init zsh)\" (or bash)"}
+				}
+			}
 			if fullPath && unique {
 				return &repositoryUsageError{
 					message: "--full-path and --unique are mutually exclusive",
@@ -125,7 +142,44 @@ func NewListCommand(deps ListDependencies) *cobra.Command {
 					return err
 				}
 			}
-			entries = listFilterEntries(entries, query, exact, worktreesOnly || all)
+			interactive := changeDirectory || fzf
+			if !changeDirectory && !command.Flags().Changed("fzf") {
+				interactive = deps.IsTerminal(command.OutOrStdout())
+			}
+			if exact || !interactive {
+				entries = listFilterEntries(entries, query, exact, worktreesOnly || all)
+			}
+			if len(entries) == 0 {
+				if changeDirectory {
+					return newSilentStatusError(1)
+				}
+				return nil
+			}
+			if interactive {
+				if _, err := deps.LookPath("fzf"); err != nil {
+					if !errors.Is(err, exec.ErrNotFound) {
+						return fmt.Errorf("find fzf: %w", err)
+					}
+					if changeDirectory {
+						return fmt.Errorf("list --cd requires fzf; install fzf or omit --cd: %w", err)
+					}
+					if command.Flags().Changed("fzf") {
+						return fmt.Errorf("fzf is required for list selection; install fzf or use --fzf=false: %w", err)
+					}
+					interactive = false
+					entries = listFilterEntries(entries, query, exact, worktreesOnly || all)
+				}
+			}
+			if interactive {
+				if exact {
+					query = ""
+				}
+				line, err := listSelectOutput(command.Context(), entries, query, fullPath || changeDirectory, unique, deps.Select)
+				if err != nil {
+					return err
+				}
+				return commandWriteAll(command.OutOrStdout(), listRenderLines([]string{line}))
+			}
 
 			lines, err := listOutputLines(entries, fullPath, unique)
 			if err != nil {
@@ -146,6 +200,8 @@ func NewListCommand(deps ListDependencies) *cobra.Command {
 	command.Flags().BoolVar(&worktreesOnly, "worktree", false, "List linked worktrees only")
 	command.Flags().BoolVar(&all, "all", false, "List both repositories and linked worktrees")
 	command.Flags().BoolVar(&gone, "gone", false, "List worktrees whose upstream refs are gone")
+	command.Flags().BoolVar(&fzf, "fzf", false, "Choose one result with fzf (automatic on terminal stdout; --fzf=false disables)")
+	command.Flags().BoolVar(&changeDirectory, "cd", false, "Select and enter a directory in the invoking shell (requires shell-init)")
 	command.SetOut(deps.Stdout)
 	command.SetErr(deps.Stderr)
 
@@ -174,6 +230,15 @@ func listDependenciesWithDefaults(deps ListDependencies) ListDependencies {
 	}
 	if deps.Git == nil {
 		deps.Git = &gitcmd.Runner{Executable: "git", Stdout: io.Discard, Stderr: deps.Stderr}
+	}
+	if deps.LookPath == nil {
+		deps.LookPath = exec.LookPath
+	}
+	if deps.IsTerminal == nil {
+		deps.IsTerminal = listIsTerminal
+	}
+	if deps.Select == nil {
+		deps.Select = listSelector(deps.Stderr)
 	}
 	return deps
 }

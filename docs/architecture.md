@@ -39,11 +39,13 @@ commands fail through the native tool rather than invoking a second
 implementation.
 
 fzf owns the interactive interface. `cmd` maps each display row to its original
-repository identity and, for removal, path and stable worktree slot.
+repository identity, path, and stable worktree slot as needed by the command.
 `fzfcmd` exchanges NUL-delimited records and accepts only one complete, unchanged candidate.
 Selection output never becomes public result output or an arbitrary path to
 delete. Clone discovery passes the full candidate set and an editable initial
 query independently; it prepares selections before starting parallel clones.
+List selection maps rows to precomputed result values; its optional shell
+wrapper consumes the resulting absolute path to navigate in the invoking shell.
 The [CLI reference](cli.md#fzf-selection) owns selector
 requirements, environment handling, cancellation, and error behavior.
 
