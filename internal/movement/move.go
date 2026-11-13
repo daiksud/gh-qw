@@ -20,7 +20,6 @@ var ErrDestinationExists = errors.New("repository move destination already exist
 // MoveOptions supplies boundaries and filesystem seams for Move.
 type MoveOptions struct {
 	Filesystem      Filesystem
-	SourceRoot      string
 	DestinationRoot string
 }
 
@@ -36,9 +35,6 @@ func Move(source, destination string, options MoveOptions) error {
 		return errors.New("move repository: destination root is required")
 	}
 	if err := ValidateDisjoint(source, destination); err != nil {
-		return err
-	}
-	if err := ValidateSourceContainment(options.SourceRoot, source, options.Filesystem); err != nil {
 		return err
 	}
 	if err := ValidateTree(source, options.Filesystem); err != nil {

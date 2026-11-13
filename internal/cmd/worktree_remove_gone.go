@@ -29,7 +29,7 @@ type worktreeRemoveGonePlan struct {
 	roots        rootpkg.Result
 	repositories []local.Repository
 	repository   local.Repository
-	common       removePlan
+	common       removeObservation
 	current      string
 	entries      []worktreeRemoveGoneEntry
 }
@@ -204,7 +204,7 @@ func worktreeRemoveGoneBuildPlan(
 	if err != nil {
 		return worktreeRemoveGonePlan{}, err
 	}
-	common := removePlan{RepositoryObservation: observation, selection: removeSelection{raw: repository.Identity, selector: repository.Identity}}
+	common := removeObservation{RepositoryObservation: observation}
 
 	worktrees, err := commandRuntime.enumerate(
 		ctx,
@@ -348,7 +348,11 @@ func worktreeRemoveGoneBuildPlan(
 			removeOutputPath(plan.entries[right].worktree.Path)
 	})
 	plan.common = common
-	if err := removeRejectNestedRegistrations(plan.common, repositories); err != nil {
+	var targets []string
+	for _, target := range common.linked {
+		targets = append(targets, target.Directory.Path)
+	}
+	if err := removeRejectNestedRegisteredPaths(repository.Identity, targets, repositories); err != nil {
 		return worktreeRemoveGonePlan{}, err
 	}
 	return plan, nil
@@ -445,7 +449,7 @@ func worktreeRemoveGoneComparePlans(
 	); err != nil {
 		return err
 	}
-	if err := removeComparePlans(filesystem, before.common, after.common); err != nil {
+	if err := removeCompareObservations(filesystem, before.common, after.common); err != nil {
 		return err
 	}
 	if len(before.entries) != len(after.entries) {

@@ -7,7 +7,6 @@ import (
 	"io/fs"
 	"path/filepath"
 	"sort"
-	"strings"
 
 	"github.com/daiksud/gh-qw/internal/fsidentity"
 	"github.com/daiksud/gh-qw/internal/gitcmd"
@@ -263,31 +262,6 @@ func CheckDestination(
 	}
 }
 
-// ValidateSourceContainment verifies that a bulk source remains below its
-// physical legacy root.
-func ValidateSourceContainment(
-	sourceRoot, source string,
-	options Filesystem,
-) error {
-	if sourceRoot == "" {
-		return nil
-	}
-	filesystem := newFilesystem(options)
-	physical, err := rootpkg.NewResolverWithOptions(rootOptions(filesystem)).
-		PhysicalizeTarget(sourceRoot, source, rootpkg.StrictlyUnder)
-	if err != nil {
-		return fmt.Errorf("validate repository move source containment: %w", err)
-	}
-	if physical != filepath.Clean(source) {
-		return fmt.Errorf(
-			"validate repository move source containment: physical source changed from %q to %q",
-			source,
-			physical,
-		)
-	}
-	return nil
-}
-
 // ValidateDisjoint rejects moves whose source and destination overlap.
 func ValidateDisjoint(source, destination string) error {
 	if pathsOverlap(source, destination) {
@@ -313,8 +287,4 @@ func parseGitBoolean(output []byte, description string) (bool, error) {
 	default:
 		return false, fmt.Errorf("Git returned invalid %s %q", description, value)
 	}
-}
-
-func normalizePath(path string) string {
-	return strings.ReplaceAll(filepath.ToSlash(path), `\`, "/")
 }

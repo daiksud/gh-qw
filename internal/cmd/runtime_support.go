@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"io"
 	"os"
 
@@ -36,6 +37,17 @@ func (e *repositoryUsageError) Unwrap() error {
 
 func (*repositoryUsageError) Is(target error) bool {
 	return target == repospec.ErrUsage
+}
+
+func newRepositoryUsageError(err error) error {
+	if err == nil {
+		return nil
+	}
+	var usage *repositoryUsageError
+	if errors.As(err, &usage) {
+		return err
+	}
+	return &repositoryUsageError{err: err}
 }
 
 // commandWriteAll writes the full output or reports the underlying writer's

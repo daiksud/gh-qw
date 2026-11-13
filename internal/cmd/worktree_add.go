@@ -356,7 +356,7 @@ func worktreeAddSelectRepository(
 	if selectorSet {
 		repository, err := local.ResolveRepository(repositories, selector)
 		if err != nil {
-			return local.Repository{}, worktreeAddNewUsageError(
+			return local.Repository{}, newRepositoryUsageError(
 				fmt.Errorf("resolve repository %q: %w", selector, err),
 			)
 		}
@@ -378,7 +378,7 @@ func worktreeAddSelectRepository(
 		},
 	)
 	if err != nil {
-		return local.Repository{}, worktreeAddNewUsageError(
+		return local.Repository{}, newRepositoryUsageError(
 			fmt.Errorf(
 				"resolve repository from current directory (use -R outside a discovered repository): %w",
 				err,
@@ -387,7 +387,7 @@ func worktreeAddSelectRepository(
 	}
 
 	if err := local.ValidateRepository(current.Repository); err != nil {
-		return local.Repository{}, worktreeAddNewUsageError(
+		return local.Repository{}, newRepositoryUsageError(
 			fmt.Errorf(
 				"validate current repository for mutation: %w",
 				err,
@@ -572,8 +572,4 @@ func worktreeAddPathWithin(rootPath, destination string) bool {
 	}
 	return relative != ".." &&
 		!strings.HasPrefix(relative, ".."+string(filepath.Separator))
-}
-
-func worktreeAddNewUsageError(err error) error {
-	return &repositoryUsageError{err: err}
 }
