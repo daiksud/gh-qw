@@ -170,7 +170,7 @@ func TestExecuteMapsUsageAndRuntimeErrors(t *testing.T) {
 		{
 			name:       "success",
 			args:       []string{"root"},
-			resolver:   appRootResolver{result: rootpkg.Result{RepositoryRoots: []string{rootPath}}},
+			resolver:   appRootResolver{result: rootpkg.Result{RepositoryRoot: rootPath}},
 			wantStatus: 0,
 			wantOutput: filepath.ToSlash(rootPath) + "\n",
 		},
@@ -189,7 +189,7 @@ func TestExecuteMapsUsageAndRuntimeErrors(t *testing.T) {
 		{
 			name:       "unknown subcommand flag",
 			args:       []string{"list", "--unknown"},
-			resolver:   appRootResolver{result: rootpkg.Result{RepositoryRoots: []string{rootPath}}},
+			resolver:   appRootResolver{result: rootpkg.Result{RepositoryRoot: rootPath}},
 			wantStatus: 2,
 			wantError:  "gh-qw: unknown flag: --unknown",
 		},

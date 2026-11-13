@@ -106,7 +106,6 @@ func rootOptions(filesystem filesystem) rootpkg.Options {
 		Lstat:        filesystem.lstat,
 		Stat:         filesystem.stat,
 		EvalSymlinks: filesystem.evalSymlinks,
-		SameFile:     filesystem.sameFile,
 	}
 }
 

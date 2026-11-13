@@ -2,13 +2,12 @@ package local
 
 // Repository is one registered main checkout and its filesystem boundary.
 type Repository struct {
-	Identity  string
-	Host      string
-	Owner     string
-	Repo      string
-	Path      string
-	Root      string
-	RootIndex int
+	Identity string
+	Host     string
+	Owner    string
+	Repo     string
+	Path     string
+	Root     string
 }
 
 // Worktree is one worktree registered with a Repository.

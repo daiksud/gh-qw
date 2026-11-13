@@ -3,6 +3,7 @@ package cmd_test
 import (
 	"bytes"
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,11 +11,85 @@ import (
 	"testing"
 
 	"github.com/daiksud/gh-qw/internal/cmd"
+	"github.com/daiksud/gh-qw/internal/gitcmd"
 	"github.com/daiksud/gh-qw/internal/registry"
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
 	"github.com/daiksud/gh-qw/internal/testenv"
 	"github.com/daiksud/gh-qw/internal/testregistry"
 )
+
+func TestRemovePreservesArbitraryRegistrationParent(t *testing.T) {
+	for _, location := range []string{"inside placement root", "outside placement root"} {
+		t.Run(location, func(t *testing.T) {
+			base, err := filepath.EvalSymlinks(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			placement := filepath.Join(base, "repositories")
+			worktrees := filepath.Join(placement, "worktrees")
+			parent := filepath.Join(placement, "personal", "config")
+			if location == "outside placement root" {
+				parent = filepath.Join(base, "home", "config")
+			}
+			repository := filepath.Join(parent, ".dotfiles")
+			for _, path := range []string{repository, worktrees} {
+				if err := os.MkdirAll(path, 0o700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			sibling := filepath.Join(filepath.Dir(parent), "keep")
+			if err := os.WriteFile(sibling, []byte("unrelated data"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			testenv.Git(t, repository, "init", "--initial-branch=main")
+			testenv.Git(t, repository, "commit", "--allow-empty", "-m", "initial")
+			store, err := registry.NewStoreAt(filepath.Join(base, "data", "repositories.toml"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := store.Register("github.com/acme/dotfiles", repository); err != nil {
+				t.Fatal(err)
+			}
+			var stdout, stderr lockedBuffer
+			git := gitcmd.NewRunner()
+			git.Env = testenv.Environment(t.TempDir())
+			git.Stdout, git.Stderr = &stdout, &stderr
+			prompts := 0
+			command := cmd.NewRemoveCommand(cmd.RemoveDependencies{
+				Resolver: managedRootResolver{result: rootpkg.Result{RepositoryRoot: placement, WorktreeRoot: worktrees}},
+				Registry: store,
+				Git:      git,
+				Prompt: func(context.Context, io.Writer, string) (bool, error) {
+					prompts++
+					return true, nil
+				},
+				Stdout: &stdout,
+				Stderr: &stderr,
+			})
+			command.SetArgs([]string{"acme/dotfiles"})
+			if err := command.Execute(); err != nil {
+				t.Fatalf("remove: %v\n%s", err, stderr.String())
+			}
+			if _, err := os.Lstat(repository); !os.IsNotExist(err) {
+				t.Fatalf("removed repository still exists: %v", err)
+			}
+			entries, err := os.ReadDir(parent)
+			if err != nil || len(entries) != 0 {
+				t.Fatalf("empty immediate parent was not preserved: %v, %v", entries, err)
+			}
+			if data, err := os.ReadFile(sibling); err != nil || string(data) != "unrelated data" {
+				t.Fatalf("unrelated sibling changed: %q, %v", data, err)
+			}
+			registered, err := store.List()
+			if err != nil || len(registered) != 0 {
+				t.Fatalf("removed repository remains registered: %v, %v", registered, err)
+			}
+			if prompts != 1 || stdout.String() != "" {
+				t.Fatalf("remove prompts = %d, stdout = %q", prompts, stdout.String())
+			}
+		})
+	}
+}
 
 func TestManagedRepositoryLifecycle(t *testing.T) {
 	base, err := filepath.EvalSymlinks(t.TempDir())
@@ -37,7 +112,7 @@ func TestManagedRepositoryLifecycle(t *testing.T) {
 	if err := os.MkdirAll(root, 0700); err != nil {
 		t.Fatal(err)
 	}
-	roots := rootpkg.Result{RepositoryRoots: []string{root}, WorktreeRoot: filepath.Join(root, "worktrees")}
+	roots := rootpkg.Result{RepositoryRoot: root, WorktreeRoot: filepath.Join(root, "worktrees")}
 
 	run := func(args ...string) (int, string, string) {
 		t.Helper()
@@ -155,8 +230,8 @@ func TestCloneRejectsRegisteredLocationWithoutReuse(t *testing.T) {
 	var stdout, stderr lockedBuffer
 	code := cmd.Execute(context.Background(), []string{"clone", "acme/api"}, cmd.ApplicationDependencies{
 		Resolver: managedRootResolver{result: rootpkg.Result{
-			RepositoryRoots: []string{filepath.Join(base, "root")},
-			WorktreeRoot:    filepath.Join(base, "root", "worktrees"),
+			RepositoryRoot: filepath.Join(base, "root"),
+			WorktreeRoot:   filepath.Join(base, "root", "worktrees"),
 		}},
 		Registry: store,
 		Stdout:   &stdout,

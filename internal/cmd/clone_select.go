@@ -20,7 +20,7 @@ type clonePreparation struct {
 	deps           CloneDependencies
 	ssh            bool
 	stdout, stderr io.Writer
-	roots          []string
+	root           string
 	states         map[string]*cloneTarget
 	fatalError     error
 }
@@ -46,14 +46,14 @@ func (p *clonePreparation) prepare(ctx context.Context, input string) (*clonePar
 	if err != nil {
 		return nil, nil, cloneUsageError(err)
 	}
-	if p.roots == nil {
-		p.roots, err = cloneResolveRoots(p.deps.RootResolver)
+	if p.root == "" {
+		p.root, err = cloneResolveRoot(p.deps.RootResolver)
 		if err != nil {
 			p.fatalError = err
 			return nil, nil, err
 		}
 	}
-	spec, err := cloneResolveRepository(ctx, parsed, p.roots, p.ssh, p.deps)
+	spec, err := cloneResolveRepository(ctx, parsed, p.root, p.ssh, p.deps)
 	if err != nil {
 		if errors.Is(err, repospec.ErrUsage) {
 			err = cloneUsageError(err)
@@ -61,14 +61,14 @@ func (p *clonePreparation) prepare(ctx context.Context, input string) (*clonePar
 		return nil, nil, err
 	}
 	if p.states == nil {
-		repositories, err := registeredRepositories(ctx, p.deps.Registry, p.roots)
+		repositories, err := registeredRepositories(ctx, p.deps.Registry, p.root)
 		if err != nil {
 			p.fatalError = fmt.Errorf("read registered repositories: %w", err)
 			return nil, nil, p.fatalError
 		}
 		p.states = cloneInitialTargetStates(repositories)
 	}
-	state, err := cloneResolveTarget(p.states, spec, p.roots[0])
+	state, err := cloneResolveTarget(p.states, spec, p.root)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -96,12 +96,12 @@ func (p *clonePreparation) prepare(ctx context.Context, input string) (*clonePar
 				return nil, nil, fmt.Errorf("invalid selected repository: %w", err)
 			}
 			branch := spec.Branch
-			spec, err = cloneResolveRepository(ctx, selection, p.roots, p.ssh, p.deps)
+			spec, err = cloneResolveRepository(ctx, selection, p.root, p.ssh, p.deps)
 			if err != nil {
 				return nil, nil, err
 			}
 			spec.Branch = branch
-			state, err = cloneResolveTarget(p.states, spec, p.roots[0])
+			state, err = cloneResolveTarget(p.states, spec, p.root)
 			if err != nil {
 				return nil, nil, err
 			}

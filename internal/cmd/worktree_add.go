@@ -163,7 +163,7 @@ func worktreeAddRun(
 		return fmt.Errorf("resolve roots: %w", err)
 	}
 
-	repositories, err := registeredRepositories(ctx, runtime.Registry, roots.RepositoryRoots)
+	repositories, err := registeredRepositories(ctx, runtime.Registry, roots.RepositoryRoot)
 	if err != nil {
 		return fmt.Errorf("read registered repositories: %w", err)
 	}

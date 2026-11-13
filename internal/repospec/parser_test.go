@@ -184,7 +184,7 @@ func TestResolveRelativeRepository(t *testing.T) {
 	}
 
 	got, err := parseAndResolve("../Target.git@feature/parser", Options{
-		Roots:      []string{root},
+		Root:       root,
 		WorkingDir: workingDir,
 	})
 	if err != nil {
@@ -201,7 +201,7 @@ func TestResolveRelativeRepository(t *testing.T) {
 
 	got, err = parseAndResolve(".", Options{
 		SSH:        true,
-		Roots:      []string{root},
+		Root:       root,
 		WorkingDir: workingDir,
 	})
 	if err != nil {
@@ -226,7 +226,7 @@ func TestResolveLocalFileURL(t *testing.T) {
 		inputPath = "/" + inputPath
 	}
 	input := (&url.URL{Scheme: "file", Path: inputPath}).String()
-	got, err := parseAndResolve(input, Options{Roots: []string{root}})
+	got, err := parseAndResolve(input, Options{Root: root})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -253,15 +253,15 @@ func TestRelativePathContainment(t *testing.T) {
 	}
 
 	assertUsageError(t, "../Target", Options{
-		Roots:      []string{root},
+		Root:       root,
 		WorkingDir: outsideWorkingDir,
 	})
 	assertUsageError(t, "./github.com//Acme/Repo", Options{
-		Roots:      []string{root},
+		Root:       root,
 		WorkingDir: root,
 	})
 	assertUsageError(t, "./github.com/Other/../Acme/Repo", Options{
-		Roots:      []string{root},
+		Root:       root,
 		WorkingDir: root,
 	})
 
@@ -279,7 +279,7 @@ func TestRelativePathContainment(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertUsageError(t, "./github.com/Acme/Repo", Options{
-		Roots:      []string{root},
+		Root:       root,
 		WorkingDir: root,
 	})
 }
@@ -334,7 +334,7 @@ func TestResolveRejectsInvalidSpecifications(t *testing.T) {
 		{name: "URL empty branch", input: "https://example.com/Org/Repo@"},
 		{name: "file URL has user", input: "file://user@example.com/Org/Repo"},
 		{name: "file URL has port", input: "file://example.com:1234/Org/Repo"},
-		{name: "relative without roots", input: "../Repo"},
+		{name: "relative without a root", input: "../Repo"},
 	}
 
 	for _, test := range tests {
@@ -353,7 +353,7 @@ func TestLocalFileURLMustBeUnderRoot(t *testing.T) {
 		inputPath = "/" + inputPath
 	}
 	input := (&url.URL{Scheme: "file", Path: inputPath}).String()
-	assertUsageError(t, input, Options{Roots: []string{root}})
+	assertUsageError(t, input, Options{Root: root})
 
 	traversalPath := filepath.ToSlash(filepath.Join(root, "github.com", "Other")) +
 		"/../Org/Repo"
@@ -361,7 +361,7 @@ func TestLocalFileURLMustBeUnderRoot(t *testing.T) {
 		traversalPath = "/" + traversalPath
 	}
 	traversalURL := "file://" + traversalPath
-	assertUsageError(t, traversalURL, Options{Roots: []string{root}})
+	assertUsageError(t, traversalURL, Options{Root: root})
 }
 
 func assertUsageError(t *testing.T, input string, options Options) {
@@ -403,7 +403,7 @@ func TestResolveRejectsFileSchemeWhenConfigured(t *testing.T) {
 	}
 	for _, input := range tests {
 		t.Run(input, func(t *testing.T) {
-			assertUsageError(t, input, Options{Roots: []string{root}, RejectFileScheme: true})
+			assertUsageError(t, input, Options{Root: root, RejectFileScheme: true})
 		})
 	}
 }

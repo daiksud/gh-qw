@@ -222,7 +222,7 @@ func worktreeRemoveRun(
 		return fmt.Errorf("resolve roots: %w", err)
 	}
 
-	repositories, registryErr := registeredRepositories(ctx, commandRuntime.registry, roots.RepositoryRoots)
+	repositories, registryErr := registeredRepositories(ctx, commandRuntime.registry, roots.RepositoryRoot)
 	if registryErr != nil {
 		return fmt.Errorf("read registered repositories: %w", registryErr)
 	}
@@ -303,7 +303,7 @@ func worktreeRemoveRun(
 	// Re-read the managed inventory immediately before mutation. A repository
 	// registered after the initial observation must not be deleted with the
 	// linked worktree that now contains it.
-	latest, registryErr := registeredRepositories(ctx, commandRuntime.registry, roots.RepositoryRoots)
+	latest, registryErr := registeredRepositories(ctx, commandRuntime.registry, roots.RepositoryRoot)
 	if registryErr != nil {
 		return fmt.Errorf("revalidate registered repositories: %w", registryErr)
 	}

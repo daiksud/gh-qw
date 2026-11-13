@@ -162,7 +162,7 @@ func TestPhysicalizeTargetRejectsSymlinkEscapes(t *testing.T) {
 		mustMkdirAll(t, configuredRoot)
 		mustMkdirAll(t, outside)
 		resolver, _ := newTestResolver(home, config.Config{
-			Roots: []string{configuredRoot},
+			Root: configuredRoot,
 		}, nil)
 		resolved, err := resolver.Resolve()
 		if err != nil {
@@ -175,8 +175,8 @@ func TestPhysicalizeTargetRejectsSymlinkEscapes(t *testing.T) {
 		mustSymlink(t, outside, configuredRoot)
 
 		_, err = resolver.PhysicalizeTarget(
-			resolved.Primary(),
-			filepath.Join(resolved.Primary(), "future"),
+			resolved.RepositoryRoot,
+			filepath.Join(resolved.RepositoryRoot, "future"),
 			StrictlyUnder,
 		)
 		assertSafetyError(t, err)
@@ -306,7 +306,6 @@ func TestPackagePhysicalizeTarget(t *testing.T) {
 }
 
 func TestLexicalRelationshipUsesComponentsAndVolumes(t *testing.T) {
-	resolver := NewResolver()
 	base := filepath.Clean(string(filepath.Separator) + filepath.Join("base", "repos"))
 
 	tests := []struct {
@@ -343,17 +342,17 @@ func TestLexicalRelationshipUsesComponentsAndVolumes(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := resolver.lexicalRelationship(test.first, test.second); got != test.want {
+			if got := trustedBoundaryRelationship(test.first, test.second); got != test.want {
 				t.Fatalf("lexicalRelationship(%q, %q) = %v, want %v", test.first, test.second, got, test.want)
 			}
 		})
 	}
 
 	if runtime.GOOS == "windows" {
-		if got := resolver.lexicalRelationship(`C:\repos`, `D:\repos\child`); got != relationDisjoint {
+		if got := trustedBoundaryRelationship(`C:\repos`, `D:\repos\child`); got != relationDisjoint {
 			t.Fatalf("cross-volume relationship = %v, want disjoint", got)
 		}
-		if got := resolver.lexicalRelationship(`C:\Repos`, `c:\repos\child`); got != relationContains {
+		if got := trustedBoundaryRelationship(`C:\Repos`, `c:\repos\child`); got != relationContains {
 			t.Fatalf("case-folded Windows relationship = %v, want contains", got)
 		}
 	}

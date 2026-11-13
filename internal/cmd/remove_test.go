@@ -531,7 +531,6 @@ func TestNewRemoveCommandSafelyRemovesRegisteredExternalRepository(t *testing.T)
 	}
 	fixture.repository.Path = externalPath
 	fixture.repository.Root = externalParent
-	fixture.repository.RootIndex = len(fixture.resolver.result.RepositoryRoots)
 	fixture.repositories = []local.Repository{fixture.repository}
 	fixture.worktrees[0].Repository = fixture.repository
 	fixture.worktrees[0].Path = externalPath
@@ -557,7 +556,6 @@ func TestNewRemoveCommandAllowsNoncanonicalRegistrationInsideConfiguredRoot(t *t
 	}
 	fixture.repository.Path = registeredPath
 	fixture.repository.Root = fixture.repositoryRoot
-	fixture.repository.RootIndex = len(fixture.resolver.result.RepositoryRoots)
 	fixture.repositories = []local.Repository{fixture.repository}
 	fixture.worktrees[0].Repository = fixture.repository
 	fixture.worktrees[0].Path = registeredPath
@@ -584,13 +582,12 @@ func TestNewRemoveCommandRejectsNestedRegisteredRepository(t *testing.T) {
 		t.Fatal(err)
 	}
 	fixture.repositories = append(fixture.repositories, local.Repository{
-		Identity:  "github.com/acme/child",
-		Host:      "github.com",
-		Owner:     "acme",
-		Repo:      "child",
-		Path:      childPath,
-		Root:      fixture.repository.Path,
-		RootIndex: len(fixture.resolver.result.RepositoryRoots),
+		Identity: "github.com/acme/child",
+		Host:     "github.com",
+		Owner:    "acme",
+		Repo:     "child",
+		Path:     childPath,
+		Root:     fixture.repository.Path,
 	})
 
 	err := fixture.execute("widget")
@@ -615,13 +612,12 @@ func TestNewRemoveCommandRevalidatesNestedRegistrationsAfterConfirmation(t *test
 			return false, err
 		}
 		fixture.repositories = append(fixture.repositories, local.Repository{
-			Identity:  "github.com/acme/child",
-			Host:      "github.com",
-			Owner:     "acme",
-			Repo:      "child",
-			Path:      childPath,
-			Root:      fixture.repository.Path,
-			RootIndex: len(fixture.resolver.result.RepositoryRoots),
+			Identity: "github.com/acme/child",
+			Host:     "github.com",
+			Owner:    "acme",
+			Repo:     "child",
+			Path:     childPath,
+			Root:     fixture.repository.Path,
 		})
 		return true, nil
 	}
@@ -648,13 +644,12 @@ func TestNewRemoveCommandRejectsRegistrationInsideLinkedRemovalTarget(t *testing
 		t.Fatal(err)
 	}
 	fixture.repositories = append(fixture.repositories, local.Repository{
-		Identity:  "github.com/acme/child",
-		Host:      "github.com",
-		Owner:     "acme",
-		Repo:      "child",
-		Path:      childPath,
-		Root:      fixture.linkedPath("feature-nested"),
-		RootIndex: len(fixture.resolver.result.RepositoryRoots),
+		Identity: "github.com/acme/child",
+		Host:     "github.com",
+		Owner:    "acme",
+		Repo:     "child",
+		Path:     childPath,
+		Root:     fixture.linkedPath("feature-nested"),
 	})
 
 	err := fixture.execute("widget")
@@ -679,13 +674,12 @@ func TestNewRemoveCommandRevalidatesRegistrationInsideLinkedTarget(t *testing.T)
 			return false, err
 		}
 		fixture.repositories = append(fixture.repositories, local.Repository{
-			Identity:  "github.com/acme/child",
-			Host:      "github.com",
-			Owner:     "acme",
-			Repo:      "child",
-			Path:      childPath,
-			Root:      fixture.linkedPath("feature-nested"),
-			RootIndex: len(fixture.resolver.result.RepositoryRoots),
+			Identity: "github.com/acme/child",
+			Host:     "github.com",
+			Owner:    "acme",
+			Repo:     "child",
+			Path:     childPath,
+			Root:     fixture.linkedPath("feature-nested"),
 		})
 		return true, nil
 	}
@@ -877,8 +871,8 @@ func TestNewRemoveCommandRealGitWholeLifecycle(t *testing.T) {
 	command := NewRemoveCommand(RemoveDependencies{
 		Registry: testregistry.New(t, local.Repository{Identity: "github.com/acme/widget", Path: repositoryPath}),
 		Resolver: &removeTestResolver{result: rootpkg.Result{
-			RepositoryRoots: []string{repositoryRoot},
-			WorktreeRoot:    worktreeRoot,
+			RepositoryRoot: repositoryRoot,
+			WorktreeRoot:   worktreeRoot,
 		}},
 		Prompt: func(context.Context, io.Writer, string) (bool, error) {
 			return true, nil
@@ -1045,13 +1039,12 @@ func newRemoveTestFixture(t *testing.T, slots ...string) *removeTestFixture {
 	}
 
 	repository := local.Repository{
-		Identity:  "github.com/acme/widget",
-		Host:      "github.com",
-		Owner:     "acme",
-		Repo:      "widget",
-		Path:      repositoryPath,
-		Root:      repositoryRoot,
-		RootIndex: 0,
+		Identity: "github.com/acme/widget",
+		Host:     "github.com",
+		Owner:    "acme",
+		Repo:     "widget",
+		Path:     repositoryPath,
+		Root:     repositoryRoot,
 	}
 	main := &local.Worktree{
 		Repository: repository,
@@ -1072,8 +1065,8 @@ func newRemoveTestFixture(t *testing.T, slots ...string) *removeTestFixture {
 		worktrees:      []*local.Worktree{main},
 	}
 	fixture.resolver = &removeTestResolver{result: rootpkg.Result{
-		RepositoryRoots: []string{repositoryRoot},
-		WorktreeRoot:    worktreeRoot,
+		RepositoryRoot: repositoryRoot,
+		WorktreeRoot:   worktreeRoot,
 	}}
 	fixture.git = &removeTestGit{
 		repositoryPath: repositoryPath,

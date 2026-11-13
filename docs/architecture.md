@@ -53,15 +53,15 @@ separate from host and filesystem-based input resolution.
 ## Filesystem and failure boundaries
 
 Repository identity is `<host>/<owner>/<repo>` and excludes transport details.
-Linked worktrees live at `<primary-root>/worktrees/<unique-slot>/<repo>`,
+Linked worktrees live at `<root>/worktrees/<unique-slot>/<repo>`,
 independent of their current branch. Build slot names from the canonical
 repository identity and branch, normalize punctuation to hyphens, and select
 the first unoccupied numeric suffix. Atomically reserve the directory; Git
 remains authoritative for the registration and current branch.
 The explicit XDG location registry owns gh-qw's managed main-repository set.
 Git remains the source of truth for actual worktree registrations, and the
-filesystem for existing files. Configured roots determine default placement;
-their contents are never scanned or imported into the managed set. Commands read
+filesystem for existing files. The configured root determines default placement;
+its contents are never scanned or imported into the managed set. Commands read
 the registry directly; each picker, confirmation, and mutation revalidation
 phase reads a fresh inventory.
 
@@ -81,11 +81,10 @@ selection and continuation decisions.
 Git removes linked worktrees; gh-qw verifies path and registration absence
 before empty-parent cleanup. gh-qw deletes the main directory only after its
 linked worktrees and boundary checks. An explicitly registered repository
-outside configured roots uses its immediate parent only as a non-removable
-boundary. After confirmed main-directory deletion, unregister it even when a
-later cleanup or output step fails, provided the mapping still names the removed
-path. A checkout registered at an arbitrary path inside a configured root uses
-the same exact-path boundary; configured layout is not inferred from containment.
+outside the standard configured layout uses its immediate parent only as a
+non-removable boundary, including an arbitrary path inside the configured root.
+After confirmed main-directory deletion, unregister it even when a later cleanup
+or output step fails, provided the mapping still names the removed path.
 Whole-repository removal and `add --move` refuse a source that physically contains
 another registered repository, including registrations observed during removal
 revalidation after confirmation. Removal applies the same inventory protection

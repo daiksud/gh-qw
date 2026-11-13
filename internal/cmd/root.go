@@ -10,12 +10,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// RootResolver resolves configured repository roots.
+// RootResolver resolves the configured repository root.
 type RootResolver interface {
 	Resolve() (rootpkg.Result, error)
 }
 
-// NewRootCommand returns the command that prints configured repository roots.
+// NewRootCommand returns the command that prints the configured repository root.
 func NewRootCommand(resolver RootResolver, output io.Writer) *cobra.Command {
 	if resolver == nil {
 		resolver = rootpkg.NewResolver()
@@ -24,10 +24,9 @@ func NewRootCommand(resolver RootResolver, output io.Writer) *cobra.Command {
 		output = os.Stdout
 	}
 
-	var all bool
 	command := &cobra.Command{
 		Use:           "root",
-		Short:         "Print configured repository roots",
+		Short:         "Print the configured repository root",
 		Args:          cobra.NoArgs,
 		SilenceErrors: true,
 		SilenceUsage:  true,
@@ -37,19 +36,10 @@ func NewRootCommand(resolver RootResolver, output io.Writer) *cobra.Command {
 				return err
 			}
 
-			roots := result.RepositoryRoots
-			if !all {
-				roots = []string{result.Primary()}
-			}
-			for _, root := range roots {
-				if _, err := fmt.Fprintln(command.OutOrStdout(), filepath.ToSlash(root)); err != nil {
-					return err
-				}
-			}
-			return nil
+			_, err = fmt.Fprintln(command.OutOrStdout(), filepath.ToSlash(result.RepositoryRoot))
+			return err
 		},
 	}
-	command.Flags().BoolVar(&all, "all", false, "Print all configured repository roots")
 	command.SetOut(output)
 
 	return command

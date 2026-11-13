@@ -93,22 +93,12 @@ type Options struct {
 	Lstat        func(string) (fs.FileInfo, error)
 	Stat         func(string) (fs.FileInfo, error)
 	EvalSymlinks func(string) (string, error)
-	SameFile     func(fs.FileInfo, fs.FileInfo) bool
 }
 
 // Result is the normalized, physical root configuration.
 type Result struct {
-	RepositoryRoots []string
-	WorktreeRoot    string
-}
-
-// Primary returns the first repository root, or an empty string when the
-// result has no repository roots.
-func (r Result) Primary() string {
-	if len(r.RepositoryRoots) == 0 {
-		return ""
-	}
-	return r.RepositoryRoots[0]
+	RepositoryRoot string
+	WorktreeRoot   string
 }
 
 // Resolver resolves and caches repository and worktree roots.
@@ -121,7 +111,6 @@ type Resolver struct {
 	lstat        func(string) (fs.FileInfo, error)
 	stat         func(string) (fs.FileInfo, error)
 	evalSymlinks func(string) (string, error)
-	sameFile     func(fs.FileInfo, fs.FileInfo) bool
 
 	result Result
 	err    error
@@ -166,10 +155,6 @@ func NewResolverWithOptions(options Options) *Resolver {
 	if evalSymlinks == nil {
 		evalSymlinks = filepath.EvalSymlinks
 	}
-	sameFile := options.SameFile
-	if sameFile == nil {
-		sameFile = os.SameFile
-	}
 
 	return &Resolver{
 		configLoader: configLoader,
@@ -178,11 +163,10 @@ func NewResolverWithOptions(options Options) *Resolver {
 		lstat:        lstat,
 		stat:         stat,
 		evalSymlinks: evalSymlinks,
-		sameFile:     sameFile,
 	}
 }
 
-// Resolve resolves roots at most once and returns a defensive copy.
+// Resolve resolves roots at most once and returns the result by value.
 func (r *Resolver) Resolve() (Result, error) {
 	if r == nil {
 		return Result{}, errors.New("resolve roots: nil resolver")
@@ -192,7 +176,7 @@ func (r *Resolver) Resolve() (Result, error) {
 		r.result, r.err = r.resolve()
 	})
 
-	return cloneResult(r.result), r.err
+	return r.result, r.err
 }
 
 func (r *Resolver) resolve() (Result, error) {
@@ -206,87 +190,34 @@ func (r *Resolver) resolve() (Result, error) {
 		return Result{}, fmt.Errorf("resolve roots: load configuration: %w", err)
 	}
 
-	rawRepositoryRoots, err := r.selectRepositoryRoots(fileConfig)
+	repositoryRoot, err := r.physicalizeConfiguredPath(Repository, r.selectRepositoryRoot(fileConfig))
 	if err != nil {
 		return Result{}, err
 	}
-	repositoryRoots := make([]string, 0, len(rawRepositoryRoots))
-	for _, rawRoot := range rawRepositoryRoots {
-		physicalRoot, err := r.physicalizeConfiguredPath(Repository, rawRoot)
-		if err != nil {
-			return Result{}, err
-		}
-
-		duplicate, err := r.containsEquivalent(repositoryRoots, physicalRoot)
-		if err != nil {
-			return Result{}, fmt.Errorf("deduplicate repository roots: %w", err)
-		}
-		if !duplicate {
-			repositoryRoots = append(repositoryRoots, physicalRoot)
-		}
-	}
-
-	worktreeRoot, err := r.physicalizeConfiguredPath(Worktree, filepath.Join(repositoryRoots[0], "worktrees"))
+	worktreeRoot, err := r.physicalizeConfiguredPath(Worktree, filepath.Join(repositoryRoot, "worktrees"))
 	if err != nil {
 		return Result{}, err
 	}
-
-	// The worktree root is a reserved direct child of the primary root.
+	// The worktree root is a reserved direct child of the repository root.
 	// Refuse a symlink that redirects this boundary, even within that root.
-	if !sameLexicalRoot(worktreeRoot, filepath.Join(repositoryRoots[0], "worktrees")) {
+	if !sameLexicalRoot(worktreeRoot, filepath.Join(repositoryRoot, "worktrees")) {
 		return Result{}, newInvalidError(Worktree, worktreeRoot, "worktrees directory redirects outside its reserved path")
 	}
-	for _, repositoryRoot := range repositoryRoots[1:] {
-		relation, err := r.relationship(repositoryRoot, worktreeRoot)
-		if err != nil {
-			return Result{}, fmt.Errorf("validate root separation: %w", err)
-		}
-		if relation != relationDisjoint {
-			return Result{}, newInvalidError(
-				Worktree,
-				worktreeRoot,
-				fmt.Sprintf("must be disjoint from repository root %q", repositoryRoot),
-			)
-		}
-	}
-
-	return Result{
-		RepositoryRoots: repositoryRoots,
-		WorktreeRoot:    worktreeRoot,
-	}, nil
+	return Result{RepositoryRoot: repositoryRoot, WorktreeRoot: worktreeRoot}, nil
 }
 
-func (r *Resolver) selectRepositoryRoots(fileConfig config.Config) ([]string, error) {
+func (r *Resolver) selectRepositoryRoot(fileConfig config.Config) string {
 	lookupEnv := r.lookupEnv
 	if lookupEnv == nil {
 		lookupEnv = os.LookupEnv
 	}
-
 	if value, ok := lookupEnv(repositoryRootEnvironment); ok && value != "" {
-		roots := filepath.SplitList(value)
-		for index, root := range roots {
-			if root == "" {
-				return nil, newInvalidError(
-					Repository,
-					"",
-					fmt.Sprintf("%s contains an empty path-list entry at index %d", repositoryRootEnvironment, index),
-				)
-			}
-		}
-		if len(roots) == 0 {
-			return nil, newInvalidError(
-				Repository,
-				"",
-				fmt.Sprintf("%s does not contain a path", repositoryRootEnvironment),
-			)
-		}
-		return roots, nil
+		return value
 	}
-
-	if len(fileConfig.Roots) != 0 {
-		return append([]string(nil), fileConfig.Roots...), nil
+	if fileConfig.Root != "" {
+		return fileConfig.Root
 	}
-	return []string{defaultRepositoryRoot}, nil
+	return defaultRepositoryRoot
 }
 
 func (r *Resolver) physicalizeConfiguredPath(kind Kind, rawPath string) (string, error) {
@@ -370,24 +301,6 @@ func (r *Resolver) expandHome(rawPath string) (string, error) {
 
 func sameLexicalRoot(first, second string) bool {
 	return filepath.Clean(first) == filepath.Clean(second)
-}
-
-func (r *Resolver) containsEquivalent(paths []string, candidate string) (bool, error) {
-	for _, path := range paths {
-		equal, err := r.pathsEqual(path, candidate)
-		if err != nil {
-			return false, err
-		}
-		if equal {
-			return true, nil
-		}
-	}
-	return false, nil
-}
-
-func cloneResult(result Result) Result {
-	result.RepositoryRoots = append([]string(nil), result.RepositoryRoots...)
-	return result
 }
 
 func newInvalidError(kind Kind, path, reason string) *InvalidError {

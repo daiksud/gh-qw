@@ -92,7 +92,7 @@ func NewListCommand(deps ListDependencies) *cobra.Command {
 				return err
 			}
 
-			repositories, err := registeredRepositories(command.Context(), deps.Registry, roots.RepositoryRoots)
+			repositories, err := registeredRepositories(command.Context(), deps.Registry, roots.RepositoryRoot)
 			if err != nil {
 				return err
 			}
@@ -122,7 +122,7 @@ func NewListCommand(deps ListDependencies) *cobra.Command {
 
 			query := ""
 			if len(args) == 1 {
-				query, err = listCanonicalizeQuery(command.Context(), args[0], roots.RepositoryRoots)
+				query, err = listCanonicalizeQuery(command.Context(), args[0], roots.RepositoryRoot)
 				if err != nil {
 					return err
 				}
@@ -360,7 +360,7 @@ func listWorktreeEntry(
 	return entry, false, nil
 }
 
-func listCanonicalizeQuery(ctx context.Context, query string, roots []string) (string, error) {
+func listCanonicalizeQuery(ctx context.Context, query string, root string) (string, error) {
 	if !listSchemePattern.MatchString(query) && !listSCPLikePattern.MatchString(query) {
 		return query, nil
 	}
@@ -369,7 +369,7 @@ func listCanonicalizeQuery(ctx context.Context, query string, roots []string) (s
 	if err != nil {
 		return query, nil
 	}
-	spec, err := parsed.Resolve(ctx, repospec.Options{Roots: roots})
+	spec, err := parsed.Resolve(ctx, repospec.Options{Root: root})
 	if err != nil {
 		if errors.Is(err, repospec.ErrUsage) {
 			return query, nil

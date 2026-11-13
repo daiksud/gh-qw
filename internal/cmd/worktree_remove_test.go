@@ -574,8 +574,8 @@ func TestNewRemoveCommandWorktreeRealGitLifecycle(t *testing.T) {
 	command := newWorktreeRemoveTestCommand(WorktreeRemoveDependencies{
 		Registry: testregistry.New(t, local.Repository{Identity: "github.com/acme/widget", Path: repositoryPath}),
 		Resolver: worktreeRemoveStaticResolver{result: rootpkg.Result{
-			RepositoryRoots: []string{repositoryRoot},
-			WorktreeRoot:    worktreeRoot,
+			RepositoryRoot: repositoryRoot,
+			WorktreeRoot:   worktreeRoot,
 		}},
 		Stdout: &stdout,
 		Stderr: &stderr,
@@ -681,8 +681,8 @@ func TestNewRemoveCommandWorktreeGoneRealGitLifecycle(t *testing.T) {
 	list := NewListCommand(ListDependencies{
 		Registry: testregistry.New(t, local.Repository{Identity: "github.com/acme/widget", Path: repositoryPath}),
 		Resolver: worktreeRemoveStaticResolver{result: rootpkg.Result{
-			RepositoryRoots: []string{repositoryRoot},
-			WorktreeRoot:    worktreeRoot,
+			RepositoryRoot: repositoryRoot,
+			WorktreeRoot:   worktreeRoot,
 		}},
 		Stdout: &listed,
 		Stderr: io.Discard,
@@ -700,8 +700,8 @@ func TestNewRemoveCommandWorktreeGoneRealGitLifecycle(t *testing.T) {
 	command := newWorktreeRemoveTestCommand(WorktreeRemoveDependencies{
 		Registry: testregistry.New(t, local.Repository{Identity: "github.com/acme/widget", Path: repositoryPath}),
 		Resolver: worktreeRemoveStaticResolver{result: rootpkg.Result{
-			RepositoryRoots: []string{repositoryRoot},
-			WorktreeRoot:    worktreeRoot,
+			RepositoryRoot: repositoryRoot,
+			WorktreeRoot:   worktreeRoot,
 		}},
 		Getwd: func() (string, error) { return root, nil },
 		Prompt: func(context.Context, io.Writer, string) (bool, error) {
@@ -757,8 +757,8 @@ func TestNewRemoveCommandWorktreeGoneRealGitLifecycle(t *testing.T) {
 	command = newWorktreeRemoveTestCommand(WorktreeRemoveDependencies{
 		Registry: testregistry.New(t, local.Repository{Identity: "github.com/acme/widget", Path: repositoryPath}),
 		Resolver: worktreeRemoveStaticResolver{result: rootpkg.Result{
-			RepositoryRoots: []string{repositoryRoot},
-			WorktreeRoot:    worktreeRoot,
+			RepositoryRoot: repositoryRoot,
+			WorktreeRoot:   worktreeRoot,
 		}},
 		Getwd:  func() (string, error) { return root, nil },
 		Stdout: &stdout,
@@ -780,8 +780,8 @@ func TestNewRemoveCommandWorktreeGoneRealGitLifecycle(t *testing.T) {
 	command = newWorktreeRemoveTestCommand(WorktreeRemoveDependencies{
 		Registry: testregistry.New(t, local.Repository{Identity: "github.com/acme/widget", Path: repositoryPath}),
 		Resolver: worktreeRemoveStaticResolver{result: rootpkg.Result{
-			RepositoryRoots: []string{repositoryRoot},
-			WorktreeRoot:    worktreeRoot,
+			RepositoryRoot: repositoryRoot,
+			WorktreeRoot:   worktreeRoot,
 		}},
 		Getwd: func() (string, error) {
 			return "", errors.New("must not inspect cwd without candidates")
@@ -841,8 +841,8 @@ func TestNewRemoveCommandWorktreeGoneDryRunAndForceDirty(t *testing.T) {
 		return newWorktreeRemoveTestCommand(WorktreeRemoveDependencies{
 			Registry: testregistry.New(t, local.Repository{Identity: "github.com/acme/widget", Path: repositoryPath}),
 			Resolver: worktreeRemoveStaticResolver{result: rootpkg.Result{
-				RepositoryRoots: []string{repositoryRoot},
-				WorktreeRoot:    worktreeRoot,
+				RepositoryRoot: repositoryRoot,
+				WorktreeRoot:   worktreeRoot,
 			}},
 			Getwd:  func() (string, error) { return root, nil },
 			Prompt: prompt,
@@ -974,8 +974,8 @@ func TestNewRemoveCommandWorktreeGoneKeepsParentOfRegisteredWorktree(t *testing.
 	command := newWorktreeRemoveTestCommand(WorktreeRemoveDependencies{
 		Registry: testregistry.New(t, local.Repository{Identity: "github.com/acme/widget", Path: repositoryPath}),
 		Resolver: worktreeRemoveStaticResolver{result: rootpkg.Result{
-			RepositoryRoots: []string{repositoryRoot},
-			WorktreeRoot:    worktreeRoot,
+			RepositoryRoot: repositoryRoot,
+			WorktreeRoot:   worktreeRoot,
 		}},
 		Getwd:  func() (string, error) { return root, nil },
 		Stdout: &stdout,
@@ -1056,8 +1056,8 @@ func TestNewRemoveCommandWorktreeGoneKeepsParentOfOtherRepositoryWorktree(t *tes
 	command := newWorktreeRemoveTestCommand(WorktreeRemoveDependencies{
 		Registry: testregistry.New(t, local.Repository{Identity: "github.com/acme/widget", Path: repositoryPath}, local.Repository{Identity: "github.com/other/tool", Path: otherRepositoryPath}),
 		Resolver: worktreeRemoveStaticResolver{result: rootpkg.Result{
-			RepositoryRoots: []string{repositoryRoot},
-			WorktreeRoot:    worktreeRoot,
+			RepositoryRoot: repositoryRoot,
+			WorktreeRoot:   worktreeRoot,
 		}},
 		Getwd:  func() (string, error) { return root, nil },
 		Stdout: &stdout,
@@ -1090,8 +1090,8 @@ func TestNewRemoveCommandWorktreeGoneKeepsParentOfOtherRepositoryWorktree(t *tes
 	command = newWorktreeRemoveTestCommand(WorktreeRemoveDependencies{
 		Registry: testregistry.New(t, local.Repository{Identity: "github.com/acme/widget", Path: repositoryPath}, local.Repository{Identity: "github.com/other/tool", Path: otherRepositoryPath}),
 		Resolver: worktreeRemoveStaticResolver{result: rootpkg.Result{
-			RepositoryRoots: []string{repositoryRoot},
-			WorktreeRoot:    worktreeRoot,
+			RepositoryRoot: repositoryRoot,
+			WorktreeRoot:   worktreeRoot,
 		}},
 		Getwd:  func() (string, error) { return root, nil },
 		Stdout: &stdout,
@@ -1197,8 +1197,8 @@ func TestNewRemoveCommandWorktreeGoneKeepsNewNestedWorktreeBeforeRemoval(t *test
 			}
 			command := newWorktreeRemoveTestCommand(WorktreeRemoveDependencies{
 				Resolver: worktreeRemoveStaticResolver{result: rootpkg.Result{
-					RepositoryRoots: []string{repositoryRoot},
-					WorktreeRoot:    worktreeRoot,
+					RepositoryRoot: repositoryRoot,
+					WorktreeRoot:   worktreeRoot,
 				}},
 				Git:      git,
 				Registry: testregistry.From(readRegistry),
@@ -1291,8 +1291,8 @@ func TestNewRemoveCommandWorktreeGoneStopsWhenRegisteredRepositoryDisappears(t *
 	var stdout, stderr bytes.Buffer
 	command := newWorktreeRemoveTestCommand(WorktreeRemoveDependencies{
 		Resolver: worktreeRemoveStaticResolver{result: rootpkg.Result{
-			RepositoryRoots: []string{repositoryRoot},
-			WorktreeRoot:    worktreeRoot,
+			RepositoryRoot: repositoryRoot,
+			WorktreeRoot:   worktreeRoot,
 		}},
 		Registry: testregistry.From(readRegistry),
 		Git:      git,
@@ -1366,8 +1366,8 @@ func TestNewRemoveCommandWorktreeGoneContinuesAfterGitFailure(t *testing.T) {
 	command := newWorktreeRemoveTestCommand(WorktreeRemoveDependencies{
 		Registry: testregistry.New(t, local.Repository{Identity: "github.com/acme/widget", Path: repositoryPath}),
 		Resolver: worktreeRemoveStaticResolver{result: rootpkg.Result{
-			RepositoryRoots: []string{repositoryRoot},
-			WorktreeRoot:    worktreeRoot,
+			RepositoryRoot: repositoryRoot,
+			WorktreeRoot:   worktreeRoot,
 		}},
 		Git:    git,
 		Getwd:  func() (string, error) { return root, nil },
@@ -1542,13 +1542,12 @@ func worktreeRemoveNewFixture(t *testing.T, branch string) *worktreeRemoveFixtur
 	}
 
 	repository := local.Repository{
-		Identity:  "github.com/acme/widget",
-		Host:      "github.com",
-		Owner:     "acme",
-		Repo:      "widget",
-		Path:      repositoryPath,
-		Root:      repositoryRoot,
-		RootIndex: 0,
+		Identity: "github.com/acme/widget",
+		Host:     "github.com",
+		Owner:    "acme",
+		Repo:     "widget",
+		Path:     repositoryPath,
+		Root:     repositoryRoot,
 	}
 	managed := local.Worktree{
 		Repository: repository,
@@ -1595,8 +1594,8 @@ func (fixture *worktreeRemoveFixture) worktreeRemoveDependencies() WorktreeRemov
 	}
 	return WorktreeRemoveDependencies{
 		Resolver: worktreeRemoveStaticResolver{result: rootpkg.Result{
-			RepositoryRoots: []string{fixture.repositoryRoot},
-			WorktreeRoot:    fixture.worktreeRoot,
+			RepositoryRoot: fixture.repositoryRoot,
+			WorktreeRoot:   fixture.worktreeRoot,
 		}},
 		Registry: testregistry.From(func() (map[string]string, error) {
 			fixture.registryReads++

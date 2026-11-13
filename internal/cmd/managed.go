@@ -27,7 +27,7 @@ func defaultLocationRegistry() (LocationRegistry, error) {
 	return registry.NewStore()
 }
 
-func registeredRepositories(ctx context.Context, store LocationRegistry, roots []string) ([]local.Repository, error) {
+func registeredRepositories(ctx context.Context, store LocationRegistry, configuredRoot string) ([]local.Repository, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -48,26 +48,23 @@ func registeredRepositories(ctx context.Context, store LocationRegistry, roots [
 		}
 		path := entries[identity]
 		root := filepath.Dir(path)
-		rootIndex := len(roots)
-		for index, configured := range roots {
-			expected := filepath.Join(configured, parts.Host, parts.Owner, parts.Repo)
+		if configuredRoot != "" {
+			expected := filepath.Join(configuredRoot, parts.Host, parts.Owner, parts.Repo)
 			equal, compareErr := (physicalpath.Filesystem{}).Equivalent(expected, path)
 			if compareErr != nil {
 				return nil, fmt.Errorf("compare registered location for %q with configured layout: %w", identity, compareErr)
 			}
 			if equal {
-				root, rootIndex = configured, index
-				break
+				root = configuredRoot
 			}
 		}
 		result = append(result, local.Repository{
-			Identity:  parts.String(),
-			Host:      parts.Host,
-			Owner:     parts.Owner,
-			Repo:      parts.Repo,
-			Path:      path,
-			Root:      root,
-			RootIndex: rootIndex,
+			Identity: parts.String(),
+			Host:     parts.Host,
+			Owner:    parts.Owner,
+			Repo:     parts.Repo,
+			Path:     path,
+			Root:     root,
 		})
 	}
 	return result, nil

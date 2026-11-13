@@ -194,8 +194,8 @@ func TestWorktreeRemoveGonePostRemovalFailurePolicies(t *testing.T) {
 // inject failures only at the subprocess and diagnostic boundaries.
 func removalExecutionRepositories(t *testing.T) (string, rootpkg.Result, string, []string) {
 	root := worktreeRemovePhysicalPath(t, t.TempDir())
-	roots := rootpkg.Result{RepositoryRoots: []string{filepath.Join(root, "repositories")}, WorktreeRoot: filepath.Join(root, "repositories", "worktrees")}
-	repository := filepath.Join(roots.RepositoryRoots[0], "github.com", "acme", "widget")
+	roots := rootpkg.Result{RepositoryRoot: filepath.Join(root, "repositories"), WorktreeRoot: filepath.Join(root, "repositories", "worktrees")}
+	repository := filepath.Join(roots.RepositoryRoot, "github.com", "acme", "widget")
 	if err := os.MkdirAll(repository, 0o700); err != nil {
 		t.Fatal(err)
 	}

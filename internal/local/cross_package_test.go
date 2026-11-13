@@ -80,7 +80,7 @@ func TestRepositorySpecificationsRoundTripThroughDeterministicMainPath(t *testin
 		t.Fatal(err)
 	}
 	roundTrip, err := parsed.Resolve(context.Background(), repospec.Options{
-		Roots:      []string{rootPath},
+		Root:       rootPath,
 		WorkingDir: wantPath,
 	})
 	if err != nil {
@@ -101,7 +101,7 @@ func TestResolvedWorktreeRootRejectsRuntimeSymlinkEscape(t *testing.T) {
 
 	resolver := root.NewResolverWithOptions(root.Options{
 		ConfigLoader: staticConfigLoader{config: config.Config{
-			Roots: []string{repositoryRoot},
+			Root: repositoryRoot,
 		}},
 		LookupEnv: func(string) (string, bool) { return "", false },
 	})

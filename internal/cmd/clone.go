@@ -497,28 +497,28 @@ func cloneRunParallel(
 	return nil
 }
 
-func cloneResolveRoots(resolver RootResolver) ([]string, error) {
+func cloneResolveRoot(resolver RootResolver) (string, error) {
 	roots, err := resolver.Resolve()
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	if len(roots.RepositoryRoots) == 0 || roots.Primary() == "" {
-		return nil, cloneUsageError(errors.New("no repository root is configured"))
+	if roots.RepositoryRoot == "" {
+		return "", cloneUsageError(errors.New("no repository root is configured"))
 	}
-	return roots.RepositoryRoots, nil
+	return roots.RepositoryRoot, nil
 }
 
 func cloneResolveRepository(
 	ctx context.Context,
 	parsed repospec.Input,
-	roots []string,
+	root string,
 	ssh bool,
 	deps CloneDependencies,
 ) (repospec.Spec, error) {
 	return parsed.Resolve(ctx, repospec.Options{
 		DefaultHost: os.Getenv("GH_HOST"),
 		SSH:         ssh,
-		Roots:       roots,
+		Root:        root,
 		WorkingDir:  deps.WorkingDir,
 		// clone clones through `gh repo clone`, which never accepts a file://
 		// URL, so file:// input is rejected here rather than failing later
@@ -543,25 +543,24 @@ func cloneInitialTargetStates(repositories []local.Repository) map[string]*clone
 func cloneResolveTarget(
 	states map[string]*cloneTarget,
 	spec repospec.Spec,
-	primaryRoot string,
+	repositoryRoot string,
 ) (*cloneTarget, error) {
 	if state, found := states[spec.Identity.String()]; found {
 		return state, nil
 	}
 
-	path, err := local.MainPath(primaryRoot, spec.Host, spec.Owner, spec.Repo)
+	path, err := local.MainPath(repositoryRoot, spec.Host, spec.Owner, spec.Repo)
 	if err != nil {
 		return nil, err
 	}
 	state := &cloneTarget{
 		repository: local.Repository{
-			Identity:  spec.Identity.String(),
-			Host:      spec.Host,
-			Owner:     spec.Owner,
-			Repo:      spec.Repo,
-			Path:      path,
-			Root:      primaryRoot,
-			RootIndex: 0,
+			Identity: spec.Identity.String(),
+			Host:     spec.Host,
+			Owner:    spec.Owner,
+			Repo:     spec.Repo,
+			Path:     path,
+			Root:     repositoryRoot,
 		},
 	}
 	states[spec.Identity.String()] = state

@@ -23,13 +23,13 @@ func TestNewListCommandMatchesQueries(t *testing.T) {
 	t.Parallel()
 
 	repositories := []local.Repository{
-		listRepository("github.com/motemen/gore", listAbsolutePath("roots", "github.com", "motemen", "gore"), 0),
-		listRepository("golang.org/x/image", listAbsolutePath("roots", "golang.org", "x", "image"), 0),
-		listRepository("github.com/test/Awesome", listAbsolutePath("roots", "github.com", "test", "Awesome"), 0),
-		listRepository("github.com/motemen/ghq", listAbsolutePath("roots", "github.com", "motemen", "ghq"), 0),
-		listRepository("github.com/Songmu/gobump", listAbsolutePath("roots", "github.com", "Songmu", "gobump"), 0),
-		listRepository("golang.org/x/crypt", listAbsolutePath("roots", "golang.org", "x", "crypt"), 0),
-		listRepository("github.com/motemen/gobump", listAbsolutePath("roots", "github.com", "motemen", "gobump"), 0),
+		listRepository("github.com/motemen/gore", listAbsolutePath("roots", "github.com", "motemen", "gore")),
+		listRepository("golang.org/x/image", listAbsolutePath("roots", "golang.org", "x", "image")),
+		listRepository("github.com/test/Awesome", listAbsolutePath("roots", "github.com", "test", "Awesome")),
+		listRepository("github.com/motemen/ghq", listAbsolutePath("roots", "github.com", "motemen", "ghq")),
+		listRepository("github.com/Songmu/gobump", listAbsolutePath("roots", "github.com", "Songmu", "gobump")),
+		listRepository("golang.org/x/crypt", listAbsolutePath("roots", "golang.org", "x", "crypt")),
+		listRepository("github.com/motemen/gobump", listAbsolutePath("roots", "github.com", "motemen", "gobump")),
 	}
 
 	tests := []struct {
@@ -99,8 +99,8 @@ func TestNewListCommandMatchesQueries(t *testing.T) {
 
 			resolver := &listRootResolver{
 				result: rootpkg.Result{
-					RepositoryRoots: []string{listAbsolutePath("roots")},
-					WorktreeRoot:    listAbsolutePath("worktrees"),
+					RepositoryRoot: listAbsolutePath("roots"),
+					WorktreeRoot:   listAbsolutePath("worktrees"),
 				},
 			}
 			registry := &listRegistryRecorder{
@@ -139,9 +139,9 @@ func TestNewListCommandExactMatching(t *testing.T) {
 	t.Parallel()
 
 	repositories := []local.Repository{
-		listRepository("github.com/acme/widget", listAbsolutePath("roots", "github.com", "acme", "widget"), 0),
-		listRepository("git.example.com/acme/widget", listAbsolutePath("roots", "git.example.com", "acme", "widget"), 0),
-		listRepository("github.com/other/Widget", listAbsolutePath("roots", "github.com", "other", "Widget"), 0),
+		listRepository("github.com/acme/widget", listAbsolutePath("roots", "github.com", "acme", "widget")),
+		listRepository("git.example.com/acme/widget", listAbsolutePath("roots", "git.example.com", "acme", "widget")),
+		listRepository("github.com/other/Widget", listAbsolutePath("roots", "github.com", "other", "Widget")),
 	}
 	tests := []struct {
 		name string
@@ -181,8 +181,8 @@ func TestNewListCommandExactMatching(t *testing.T) {
 			var stdout bytes.Buffer
 			command := cmd.NewListCommand(cmd.ListDependencies{
 				Resolver: &listRootResolver{result: rootpkg.Result{
-					RepositoryRoots: []string{listAbsolutePath("roots")},
-					WorktreeRoot:    listAbsolutePath("worktrees"),
+					RepositoryRoot: listAbsolutePath("roots"),
+					WorktreeRoot:   listAbsolutePath("worktrees"),
 				}},
 				Registry: testregistry.From(func() (map[string]string, error) {
 					return testregistry.Locations(repositories...), nil
@@ -206,11 +206,11 @@ func TestNewListCommandUniqueSuffixesUseSelectedEntries(t *testing.T) {
 	t.Parallel()
 
 	repositories := []local.Repository{
-		listRepository("github.com/acme/widget", listAbsolutePath("roots", "github.com", "acme", "widget"), 0),
-		listRepository("gitlab.com/acme/widget", listAbsolutePath("roots", "gitlab.com", "acme", "widget"), 0),
-		listRepository("github.com/other/widget", listAbsolutePath("roots", "github.com", "other", "widget"), 0),
-		listRepository("github.com/acme/gadget", listAbsolutePath("roots", "github.com", "acme", "gadget"), 0),
-		listRepository("gitlab.com/else/api", listAbsolutePath("roots", "gitlab.com", "else", "api"), 0),
+		listRepository("github.com/acme/widget", listAbsolutePath("roots", "github.com", "acme", "widget")),
+		listRepository("gitlab.com/acme/widget", listAbsolutePath("roots", "gitlab.com", "acme", "widget")),
+		listRepository("github.com/other/widget", listAbsolutePath("roots", "github.com", "other", "widget")),
+		listRepository("github.com/acme/gadget", listAbsolutePath("roots", "github.com", "acme", "gadget")),
+		listRepository("gitlab.com/else/api", listAbsolutePath("roots", "gitlab.com", "else", "api")),
 	}
 	tests := []struct {
 		name string
@@ -248,8 +248,8 @@ func TestNewListCommandUniqueSuffixesUseSelectedEntries(t *testing.T) {
 			var stdout bytes.Buffer
 			command := cmd.NewListCommand(cmd.ListDependencies{
 				Resolver: &listRootResolver{result: rootpkg.Result{
-					RepositoryRoots: []string{listAbsolutePath("roots")},
-					WorktreeRoot:    listAbsolutePath("worktrees"),
+					RepositoryRoot: listAbsolutePath("roots"),
+					WorktreeRoot:   listAbsolutePath("worktrees"),
 				}},
 				Registry: testregistry.From(func() (map[string]string, error) {
 					return testregistry.Locations(repositories...), nil
@@ -275,7 +275,6 @@ func TestNewListCommandWorktreesAndWorktreeQueries(t *testing.T) {
 	repository := listRepository(
 		"github.com/acme/widget",
 		listAbsolutePath("roots", "github.com", "acme", "widget"),
-		0,
 	)
 	mainPath := repository.Path
 	featurePath := listAbsolutePath("worktrees", "github.com", "acme", "widget", "feature", "x")
@@ -365,8 +364,8 @@ func TestNewListCommandWorktreesAndWorktreeQueries(t *testing.T) {
 			worktreeRoot := listAbsolutePath("worktrees")
 			command := cmd.NewListCommand(cmd.ListDependencies{
 				Resolver: &listRootResolver{result: rootpkg.Result{
-					RepositoryRoots: []string{listAbsolutePath("roots")},
-					WorktreeRoot:    worktreeRoot,
+					RepositoryRoot: listAbsolutePath("roots"),
+					WorktreeRoot:   worktreeRoot,
 				}},
 				Registry: testregistry.From(func() (map[string]string, error) {
 					return testregistry.Locations(repository), nil
@@ -399,7 +398,6 @@ func TestNewListCommandDisambiguatesCollidingWorktreeLabels(t *testing.T) {
 	repository := listRepository(
 		"github.com/acme/widget",
 		listAbsolutePath("roots", "github.com", "acme", "widget"),
-		0,
 	)
 	worktrees := []local.Worktree{
 		{Main: true, Path: repository.Path, Branch: "main"},
@@ -435,8 +433,8 @@ func TestNewListCommandDisambiguatesCollidingWorktreeLabels(t *testing.T) {
 			var stdout bytes.Buffer
 			command := cmd.NewListCommand(cmd.ListDependencies{
 				Resolver: &listRootResolver{result: rootpkg.Result{
-					RepositoryRoots: []string{listAbsolutePath("roots")},
-					WorktreeRoot:    listAbsolutePath("worktrees"),
+					RepositoryRoot: listAbsolutePath("roots"),
+					WorktreeRoot:   listAbsolutePath("worktrees"),
 				}},
 				Registry: testregistry.From(func() (map[string]string, error) {
 					return testregistry.Locations(repository), nil
@@ -464,7 +462,6 @@ func TestNewListCommandGoneWorktrees(t *testing.T) {
 	repository := listRepository(
 		"github.com/acme/widget",
 		listAbsolutePath("roots", "github.com", "acme", "widget"),
-		0,
 	)
 	gonePath := listAbsolutePath("worktrees", "github.com", "acme", "widget", "gone")
 	livePath := listAbsolutePath("worktrees", "github.com", "acme", "widget", "live")
@@ -509,8 +506,8 @@ func TestNewListCommandGoneWorktrees(t *testing.T) {
 			var stdout bytes.Buffer
 			command := cmd.NewListCommand(cmd.ListDependencies{
 				Resolver: &listRootResolver{result: rootpkg.Result{
-					RepositoryRoots: []string{listAbsolutePath("roots")},
-					WorktreeRoot:    listAbsolutePath("worktrees"),
+					RepositoryRoot: listAbsolutePath("roots"),
+					WorktreeRoot:   listAbsolutePath("worktrees"),
 				}},
 				Registry: testregistry.From(func() (map[string]string, error) {
 					return testregistry.Locations(repository), nil
@@ -538,9 +535,9 @@ func TestNewListCommandUniqueWorktreeSuffixCollisions(t *testing.T) {
 	t.Parallel()
 
 	repositories := []local.Repository{
-		listRepository("github.com/acme/widget", listAbsolutePath("roots", "github.com", "acme", "widget"), 0),
-		listRepository("gitlab.com/acme/widget", listAbsolutePath("roots", "gitlab.com", "acme", "widget"), 0),
-		listRepository("github.com/other/widget", listAbsolutePath("roots", "github.com", "other", "widget"), 0),
+		listRepository("github.com/acme/widget", listAbsolutePath("roots", "github.com", "acme", "widget")),
+		listRepository("gitlab.com/acme/widget", listAbsolutePath("roots", "gitlab.com", "acme", "widget")),
+		listRepository("github.com/other/widget", listAbsolutePath("roots", "github.com", "other", "widget")),
 	}
 	enumeration := &listEnumerationRecorder{byIdentity: make(map[string][]local.Worktree)}
 	for _, repository := range repositories {
@@ -564,8 +561,8 @@ func TestNewListCommandUniqueWorktreeSuffixCollisions(t *testing.T) {
 	var stdout bytes.Buffer
 	command := cmd.NewListCommand(cmd.ListDependencies{
 		Resolver: &listRootResolver{result: rootpkg.Result{
-			RepositoryRoots: []string{listAbsolutePath("roots")},
-			WorktreeRoot:    listAbsolutePath("worktrees"),
+			RepositoryRoot: listAbsolutePath("roots"),
+			WorktreeRoot:   listAbsolutePath("worktrees"),
 		}},
 		Registry: testregistry.From(func() (map[string]string, error) {
 			return testregistry.Locations(repositories...), nil
@@ -624,7 +621,7 @@ func TestNewListCommandSurfacesErrorsWithoutPartialOutput(t *testing.T) {
 		var stderr bytes.Buffer
 		command := cmd.NewListCommand(cmd.ListDependencies{
 			Resolver: &listRootResolver{result: rootpkg.Result{
-				RepositoryRoots: []string{listAbsolutePath("roots")},
+				RepositoryRoot: listAbsolutePath("roots"),
 			}},
 			Registry: testregistry.From(func() (map[string]string, error) {
 				return map[string]string{}, wantErr
@@ -644,8 +641,8 @@ func TestNewListCommandSurfacesErrorsWithoutPartialOutput(t *testing.T) {
 	t.Run("worktree enumeration", func(t *testing.T) {
 		t.Parallel()
 
-		first := listRepository("github.com/acme/first", listAbsolutePath("roots", "github.com", "acme", "first"), 0)
-		second := listRepository("github.com/acme/second", listAbsolutePath("roots", "github.com", "acme", "second"), 0)
+		first := listRepository("github.com/acme/first", listAbsolutePath("roots", "github.com", "acme", "first"))
+		second := listRepository("github.com/acme/second", listAbsolutePath("roots", "github.com", "acme", "second"))
 		wantErr := errors.New("git worktree list failed")
 		enumeration := &listEnumerationRecorder{
 			byIdentity: map[string][]local.Worktree{
@@ -656,8 +653,8 @@ func TestNewListCommandSurfacesErrorsWithoutPartialOutput(t *testing.T) {
 		var stdout bytes.Buffer
 		command := cmd.NewListCommand(cmd.ListDependencies{
 			Resolver: &listRootResolver{result: rootpkg.Result{
-				RepositoryRoots: []string{listAbsolutePath("roots")},
-				WorktreeRoot:    listAbsolutePath("worktrees"),
+				RepositoryRoot: listAbsolutePath("roots"),
+				WorktreeRoot:   listAbsolutePath("worktrees"),
 			}},
 			Registry: testregistry.From(func() (map[string]string, error) {
 				return testregistry.Locations(first, second), nil
@@ -707,13 +704,12 @@ func TestNewListCommandSurfacesErrorsWithoutPartialOutput(t *testing.T) {
 			repository := listRepository(
 				"github.com/acme/widget",
 				listAbsolutePath("roots", "github.com", "acme", "widget"),
-				0,
 			)
 			var stdout bytes.Buffer
 			command := cmd.NewListCommand(cmd.ListDependencies{
 				Resolver: &listRootResolver{result: rootpkg.Result{
-					RepositoryRoots: []string{listAbsolutePath("roots")},
-					WorktreeRoot:    listAbsolutePath("worktrees"),
+					RepositoryRoot: listAbsolutePath("roots"),
+					WorktreeRoot:   listAbsolutePath("worktrees"),
 				}},
 				Registry: testregistry.From(func() (map[string]string, error) {
 					return testregistry.Locations(repository), nil
@@ -791,13 +787,12 @@ func TestNewListCommandHandlesWriterAndPathErrors(t *testing.T) {
 	repository := listRepository(
 		"github.com/acme/widget",
 		listAbsolutePath("roots", "github.com", "acme", "widget"),
-		0,
 	)
 	listDeps := func(stdout, stderr io.Writer) cmd.ListDependencies {
 		return cmd.ListDependencies{
 			Resolver: &listRootResolver{result: rootpkg.Result{
-				RepositoryRoots: []string{listAbsolutePath("roots")},
-				WorktreeRoot:    listAbsolutePath("worktrees"),
+				RepositoryRoot: listAbsolutePath("roots"),
+				WorktreeRoot:   listAbsolutePath("worktrees"),
 			}},
 			Registry: testregistry.From(func() (map[string]string, error) {
 				return testregistry.Locations(repository), nil
@@ -826,7 +821,7 @@ func TestNewListCommandHandlesWriterAndPathErrors(t *testing.T) {
 		var stdout bytes.Buffer
 		command := cmd.NewListCommand(cmd.ListDependencies{
 			Resolver: &listRootResolver{result: rootpkg.Result{
-				RepositoryRoots: []string{listAbsolutePath("roots")},
+				RepositoryRoot: listAbsolutePath("roots"),
 			}},
 			Registry: testregistry.From(func() (map[string]string, error) {
 				return testregistry.Locations(relative), nil
@@ -915,19 +910,18 @@ func (writer listErrorWriter) Write([]byte) (int, error) {
 	return 0, writer.err
 }
 
-func listRepository(identity, path string, rootIndex int) local.Repository {
+func listRepository(identity, path string) local.Repository {
 	parts := strings.Split(identity, "/")
 	if len(parts) != 3 {
 		panic("test repository identity must have three components")
 	}
 	return local.Repository{
-		Identity:  identity,
-		Host:      parts[0],
-		Owner:     parts[1],
-		Repo:      parts[2],
-		Path:      path,
-		Root:      listAbsolutePath("roots"),
-		RootIndex: rootIndex,
+		Identity: identity,
+		Host:     parts[0],
+		Owner:    parts[1],
+		Repo:     parts[2],
+		Path:     path,
+		Root:     listAbsolutePath("roots"),
 	}
 }
 

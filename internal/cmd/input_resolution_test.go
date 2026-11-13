@@ -86,7 +86,7 @@ func TestNativeRefFailuresRemainRuntimeErrors(t *testing.T) {
 				}
 				var stdout bytes.Buffer
 				command := cmd.NewCommand(cmd.ApplicationDependencies{
-					Resolver: &cloneRootResolver{result: rootpkg.Result{RepositoryRoots: []string{t.TempDir()}}},
+					Resolver: &cloneRootResolver{result: rootpkg.Result{RepositoryRoot: t.TempDir()}},
 					Registry: testregistry.From(func() (map[string]string, error) {
 						return map[string]string{}, nil
 					}),
@@ -215,7 +215,7 @@ func TestClonePassesLiteralGitValidCloneRefs(t *testing.T) {
 
 func TestExistingCloneTargetRejectsWithoutExternalCommands(t *testing.T) {
 	root := cloneTempRoot(t)
-	repository := listRepository("github.com/owner/widget", filepath.Join(root, "github.com", "owner", "widget"), 0)
+	repository := listRepository("github.com/owner/widget", filepath.Join(root, "github.com", "owner", "widget"))
 	if err := os.MkdirAll(repository.Path, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -252,10 +252,10 @@ func TestExistingCloneTargetRejectsWithoutExternalCommands(t *testing.T) {
 
 func TestListCanonicalizationNeedsNoExternalCommands(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
-	repository := listRepository("github.com/owner/widget", listAbsolutePath("roots", "github.com", "owner", "widget"), 0)
+	repository := listRepository("github.com/owner/widget", listAbsolutePath("roots", "github.com", "owner", "widget"))
 	var stdout bytes.Buffer
 	command := cmd.NewListCommand(cmd.ListDependencies{
-		Resolver: &listRootResolver{result: rootpkg.Result{RepositoryRoots: []string{listAbsolutePath("roots")}}},
+		Resolver: &listRootResolver{result: rootpkg.Result{RepositoryRoot: listAbsolutePath("roots")}},
 		Registry: testregistry.From(func() (map[string]string, error) {
 			return testregistry.Locations(repository), nil
 		}),
@@ -287,7 +287,7 @@ func TestAddMoveRemoteResolutionNeedsNoGh(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	var stdout, stderr bytes.Buffer
 	command := newAddMoveCommand(t, cmd.RepositoryMoveDependencies{
-		Resolver: &moveRootResolver{result: rootpkg.Result{RepositoryRoots: []string{primary}}},
+		Resolver: &moveRootResolver{result: rootpkg.Result{RepositoryRoot: primary}},
 		Git:      git,
 		Stdout:   &stdout,
 		Stderr:   &stderr,

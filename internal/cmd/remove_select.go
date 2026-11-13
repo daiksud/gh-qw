@@ -67,7 +67,7 @@ func removeCandidates(ctx context.Context, commandRuntime removeRuntime, filter 
 	if err != nil {
 		return nil, fmt.Errorf("resolve roots: %w", err)
 	}
-	repositories, registryErr := registeredRepositories(ctx, commandRuntime.registry, roots.RepositoryRoots)
+	repositories, registryErr := registeredRepositories(ctx, commandRuntime.registry, roots.RepositoryRoot)
 	if registryErr != nil {
 		return nil, fmt.Errorf("read registered repositories: %w", registryErr)
 	}

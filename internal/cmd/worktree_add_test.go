@@ -317,7 +317,6 @@ func TestAddWorktreeRepositorySelection(t *testing.T) {
 		second := worktreeAddRepository(
 			filepath.Join(fixture.base, "repositories-two"),
 			"github.com/other/second",
-			1,
 		)
 		if err := os.MkdirAll(second.Path, 0o755); err != nil {
 			t.Fatalf("MkdirAll(second) error = %v", err)
@@ -597,7 +596,6 @@ func TestAddWorktreeRealGitLifecycle(t *testing.T) {
 	repository := worktreeAddRepository(
 		repositoryRoot,
 		"github.com/acme/widget",
-		0,
 	)
 	for _, path := range []string{repository.Path, worktreeRoot} {
 		if err := os.MkdirAll(path, 0o755); err != nil {
@@ -620,8 +618,8 @@ func TestAddWorktreeRealGitLifecycle(t *testing.T) {
 	command := newWorktreeAddTestCommand(WorktreeAddDependencies{
 		Registry: testregistry.New(t, repository),
 		Resolver: &worktreeAddResolver{result: rootpkg.Result{
-			RepositoryRoots: []string{repositoryRoot},
-			WorktreeRoot:    worktreeRoot,
+			RepositoryRoot: repositoryRoot,
+			WorktreeRoot:   worktreeRoot,
 		}},
 		Getwd: func() (string, error) {
 			return repository.Path, nil
@@ -691,7 +689,6 @@ func worktreeAddNewFixture(t *testing.T, branch string) *worktreeAddFixture {
 	repository := worktreeAddRepository(
 		repositoryRoot,
 		"github.com/acme/widget",
-		0,
 	)
 	for _, path := range []string{repository.Path, worktreeRoot} {
 		if err := os.MkdirAll(path, 0o755); err != nil {
@@ -709,8 +706,8 @@ func worktreeAddNewFixture(t *testing.T, branch string) *worktreeAddFixture {
 		repositories:   []local.Repository{repository},
 		branch:         branch,
 		resolver: &worktreeAddResolver{result: rootpkg.Result{
-			RepositoryRoots: []string{repositoryRoot},
-			WorktreeRoot:    worktreeRoot,
+			RepositoryRoot: repositoryRoot,
+			WorktreeRoot:   worktreeRoot,
 		}},
 		git: git,
 		gh:  &worktreeAddGh{git: git},
@@ -970,16 +967,15 @@ func (writer worktreeAddFailingWriter) Write([]byte) (int, error) {
 	return 0, writer.err
 }
 
-func worktreeAddRepository(rootPath, identity string, rootIndex int) local.Repository {
+func worktreeAddRepository(rootPath, identity string) local.Repository {
 	parts := strings.Split(identity, "/")
 	return local.Repository{
-		Identity:  identity,
-		Host:      parts[0],
-		Owner:     parts[1],
-		Repo:      parts[2],
-		Path:      filepath.Join(rootPath, parts[0], parts[1], parts[2]),
-		Root:      rootPath,
-		RootIndex: rootIndex,
+		Identity: identity,
+		Host:     parts[0],
+		Owner:    parts[1],
+		Repo:     parts[2],
+		Path:     filepath.Join(rootPath, parts[0], parts[1], parts[2]),
+		Root:     rootPath,
 	}
 }
 

@@ -211,7 +211,7 @@ func TestAddMoveDelegatesWorktreeRepairToGit(t *testing.T) {
 				}
 			}
 			command := newAddMoveCommand(t, cmd.RepositoryMoveDependencies{
-				Resolver: &moveRootResolver{result: rootpkg.Result{RepositoryRoots: []string{primary}}},
+				Resolver: &moveRootResolver{result: rootpkg.Result{RepositoryRoot: primary}},
 				Git:      git, Filesystem: filesystem, Stdout: &stdout, Stderr: &stderr,
 			})
 			command.SetArgs([]string{"--move", source})
@@ -283,7 +283,7 @@ func TestAddMoveRejectsLinkedGitPointerCrossingSourceBoundary(t *testing.T) {
 	}
 	git := moveTestGitRunner(t, io.Discard)
 	command := newAddMoveCommand(t, cmd.RepositoryMoveDependencies{
-		Resolver: &moveRootResolver{result: rootpkg.Result{RepositoryRoots: []string{primary}}}, Git: git, Stdout: io.Discard, Stderr: io.Discard,
+		Resolver: &moveRootResolver{result: rootpkg.Result{RepositoryRoot: primary}}, Git: git, Stdout: io.Discard, Stderr: io.Discard,
 	})
 	command.SetArgs([]string{"--move", source})
 	if err := command.Execute(); err == nil {
@@ -332,7 +332,7 @@ func TestAddMoveRejectsExternalAdministrativeSymlinks(t *testing.T) {
 			}
 			git := moveTestGitRunner(t, io.Discard)
 			command := newAddMoveCommand(t, cmd.RepositoryMoveDependencies{
-				Resolver: &moveRootResolver{result: rootpkg.Result{RepositoryRoots: []string{primary}}},
+				Resolver: &moveRootResolver{result: rootpkg.Result{RepositoryRoot: primary}},
 				Git:      git, Stdout: io.Discard, Stderr: io.Discard,
 			})
 			command.SetArgs([]string{"--move", source})
@@ -368,7 +368,7 @@ func TestAddMoveRepairFailureIncludesMovedWorktreeArguments(t *testing.T) {
 	git := moveTestGitRunner(t, io.Discard)
 	git.repairErr = errors.New("repair failed before modifying metadata")
 	command := newAddMoveCommand(t, cmd.RepositoryMoveDependencies{
-		Resolver: &moveRootResolver{result: rootpkg.Result{RepositoryRoots: []string{primary}}},
+		Resolver: &moveRootResolver{result: rootpkg.Result{RepositoryRoot: primary}},
 		Git:      git, Stdout: io.Discard, Stderr: io.Discard,
 	})
 	command.SetArgs([]string{"--move", source})

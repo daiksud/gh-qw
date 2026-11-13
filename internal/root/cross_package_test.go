@@ -11,11 +11,11 @@ import (
 	"github.com/daiksud/gh-qw/internal/root"
 )
 
-func TestConfigRawValuesFlowThroughResolverWithoutSharedSlices(t *testing.T) {
+func TestConfigRawValueFlowsThroughResolver(t *testing.T) {
 	base := physicalTestDir(t)
 	home := filepath.Join(base, "home")
 	writeConfig(t, home, `
-root = ["~/repositories", "~/archive"]
+root = "~/repositories"
 `)
 
 	var reads atomic.Int32
@@ -35,14 +35,11 @@ root = ["~/repositories", "~/archive"]
 		t.Fatalf("Load() error = %v", err)
 	}
 	wantRaw := config.Config{
-		Roots: []string{"~/repositories", "~/archive"},
+		Root: "~/repositories",
 	}
 	if !reflect.DeepEqual(raw, wantRaw) {
 		t.Fatalf("Load() = %#v, want raw values %#v", raw, wantRaw)
 	}
-
-	raw.Roots[0] = "~/caller-mutated"
-	raw.Roots = append(raw.Roots, "~/caller-added")
 
 	resolver := root.NewResolverWithOptions(root.Options{
 		ConfigLoader: loader,
@@ -56,83 +53,43 @@ root = ["~/repositories", "~/archive"]
 		t.Fatalf("Resolve() error = %v", err)
 	}
 	want := root.Result{
-		RepositoryRoots: []string{
-			filepath.Join(home, "repositories"),
-			filepath.Join(home, "archive"),
-		},
-		WorktreeRoot: filepath.Join(home, "repositories", "worktrees"),
+		RepositoryRoot: filepath.Join(home, "repositories"),
+		WorktreeRoot:   filepath.Join(home, "repositories", "worktrees"),
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Resolve() = %#v, want %#v", got, want)
 	}
-
-	got.RepositoryRoots[0] = filepath.Join(base, "result-mutated")
-	got.RepositoryRoots = append(got.RepositoryRoots, filepath.Join(base, "result-added"))
 
 	again, err := resolver.Resolve()
 	if err != nil {
 		t.Fatalf("second Resolve() error = %v", err)
 	}
 	if !reflect.DeepEqual(again, want) {
-		t.Fatalf("second Resolve() = %#v after caller mutations, want %#v", again, want)
+		t.Fatalf("second Resolve() = %#v, want %#v", again, want)
 	}
 	if reads.Load() != 1 {
 		t.Fatalf("configuration reads = %d, want 1", reads.Load())
 	}
 }
 
-func TestResolverAppliesEachEnvironmentOverrideBeforeRawPathValidation(t *testing.T) {
-	t.Run("repository environment replaces file roots", func(t *testing.T) {
-		base := physicalTestDir(t)
-		home := filepath.Join(base, "home")
-		environmentOne := filepath.Join(base, "environment-one")
-		environmentTwo := filepath.Join(base, "environment-two")
-		resolver := integratedResolver(t, home, `
-root = "relative/file-root"
-`, map[string]string{
-			"GHQW_ROOT": environmentOne +
-				string(os.PathListSeparator) +
-				environmentTwo,
-		})
-
-		got, err := resolver.Resolve()
-		if err != nil {
-			t.Fatalf("Resolve() error = %v", err)
-		}
-		want := root.Result{
-			RepositoryRoots: []string{environmentOne, environmentTwo},
-			WorktreeRoot:    filepath.Join(environmentOne, "worktrees"),
-		}
-		if !reflect.DeepEqual(got, want) {
-			t.Fatalf("Resolve() = %#v, want %#v", got, want)
-		}
+func TestResolverAppliesEnvironmentOverrideBeforeRawPathValidation(t *testing.T) {
+	base := physicalTestDir(t)
+	home := filepath.Join(base, "home")
+	environmentRoot := filepath.Join(base, "environment-root")
+	resolver := integratedResolver(t, home, `root = "relative/file-root"`, map[string]string{
+		"GHQW_ROOT": environmentRoot,
 	})
-
-	t.Run("worktree environment no longer overrides primary root", func(t *testing.T) {
-		base := physicalTestDir(t)
-		home := filepath.Join(base, "home")
-		environmentWorktrees := filepath.Join(base, "environment-worktrees")
-		resolver := integratedResolver(t, home, `
-root = ["~/file-primary", "~/file-secondary"]
-`, map[string]string{
-			"GHQW_WORKTREE_ROOT": environmentWorktrees,
-		})
-
-		got, err := resolver.Resolve()
-		if err != nil {
-			t.Fatalf("Resolve() error = %v", err)
-		}
-		want := root.Result{
-			RepositoryRoots: []string{
-				filepath.Join(home, "file-primary"),
-				filepath.Join(home, "file-secondary"),
-			},
-			WorktreeRoot: filepath.Join(home, "file-primary", "worktrees"),
-		}
-		if !reflect.DeepEqual(got, want) {
-			t.Fatalf("Resolve() = %#v, want %#v", got, want)
-		}
-	})
+	got, err := resolver.Resolve()
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	want := root.Result{
+		RepositoryRoot: environmentRoot,
+		WorktreeRoot:   filepath.Join(environmentRoot, "worktrees"),
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("Resolve() = %#v, want %#v", got, want)
+	}
 }
 
 func integratedResolver(

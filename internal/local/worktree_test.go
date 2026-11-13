@@ -15,7 +15,7 @@ import (
 
 func TestManagedSlotSurvivesBranchSwitchAndDetachedCheckout(t *testing.T) {
 	base := physicalTempDir(t)
-	repository := testRepository(t, filepath.Join(base, "repositories"), "github.com/acme/widget", 0)
+	repository := testRepository(t, filepath.Join(base, "repositories"), "github.com/acme/widget")
 	initTestRepository(t, repository.Path)
 	worktreeRoot := filepath.Join(base, "worktrees")
 	const slot = "github-com-acme-widget-review-123-2"
@@ -54,7 +54,7 @@ func TestEnumerateWorktreesRealGitAndCurrentDirectory(t *testing.T) {
 		}
 	}
 
-	repository := testRepository(t, repositoryRoot, "github.com/acme/widget", 0)
+	repository := testRepository(t, repositoryRoot, "github.com/acme/widget")
 	initTestRepository(t, repository.Path)
 
 	managedPath, err := WorktreePath(
@@ -239,7 +239,7 @@ func TestEnumerateWorktreesRejectsUnsafeFallbacksDuplicatesAndBare(t *testing.T)
 	if err := os.MkdirAll(worktreeRoot, 0o755); err != nil {
 		t.Fatalf("MkdirAll(worktreeRoot) error = %v", err)
 	}
-	repository := testRepository(t, repositoryRoot, "github.com/acme/widget", 0)
+	repository := testRepository(t, repositoryRoot, "github.com/acme/widget")
 	if err := os.MkdirAll(repository.Path, 0o755); err != nil {
 		t.Fatalf("MkdirAll(main) error = %v", err)
 	}
@@ -382,7 +382,7 @@ func TestValidateWorktreeAssociationRejectsForeignCommonDirectory(t *testing.T) 
 		}
 	}
 
-	repository := testRepository(t, repositoryRoot, "github.com/acme/widget", 0)
+	repository := testRepository(t, repositoryRoot, "github.com/acme/widget")
 	initTestRepository(t, repository.Path)
 	foreignMain := filepath.Join(foreignRoot, "main")
 	initTestRepository(t, foreignMain)
