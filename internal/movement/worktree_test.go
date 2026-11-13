@@ -3,13 +3,13 @@ package movement
 import (
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"syscall"
 	"testing"
 
 	"github.com/daiksud/gh-qw/internal/gitcmd"
+	"github.com/daiksud/gh-qw/internal/testenv"
 )
 
 func TestRealGitWorktreeRepairAfterMainMove(t *testing.T) {
@@ -22,21 +22,21 @@ func TestRealGitWorktreeRepairAfterMainMove(t *testing.T) {
 	external := filepath.Join(base, "external")
 	internal := filepath.Join(source, "internal")
 
-	moveRunGit(t, "", "init", "-q", source)
-	moveRunGit(t, source, "config", "user.email", "test@example.com")
-	moveRunGit(t, source, "config", "user.name", "Test")
+	testenv.Git(t, "", "init", "-q", source)
+	testenv.Git(t, source, "config", "user.email", "test@example.com")
+	testenv.Git(t, source, "config", "user.name", "Test")
 	if err := os.WriteFile(filepath.Join(source, "README"), []byte("test"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	moveRunGit(t, source, "add", "README")
-	moveRunGit(t, source, "commit", "-qm", "initial")
-	moveRunGit(t, source, "worktree", "add", "-qb", "internal", internal)
-	moveRunGit(t, source, "worktree", "add", "-qb", "external", external)
+	testenv.Git(t, source, "add", "README")
+	testenv.Git(t, source, "commit", "-qm", "initial")
+	testenv.Git(t, source, "worktree", "add", "-qb", "internal", internal)
+	testenv.Git(t, source, "worktree", "add", "-qb", "external", external)
 	if err := os.Mkdir(destinationRoot, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
-	runner := &gitcmd.Runner{Executable: "git"}
+	runner := &gitcmd.Runner{Executable: "git", Env: testenv.Environment(t.TempDir())}
 	plan, err := PlanWorktreeRepair(context.Background(), source, destination, runner, Filesystem{})
 	if err != nil {
 		t.Fatalf("PlanWorktreeRepair() error = %v", err)
@@ -57,7 +57,7 @@ func TestRealGitWorktreeRepairAfterMainMove(t *testing.T) {
 
 	movedInternal := filepath.Join(destination, "internal")
 	for _, worktree := range []string{movedInternal, external} {
-		output := moveRunGit(t, worktree, "rev-parse", "--git-common-dir")
+		output := testenv.Git(t, worktree, "rev-parse", "--git-common-dir")
 		common := strings.TrimSpace(output)
 		if !filepath.IsAbs(common) {
 			common = filepath.Join(worktree, common)
@@ -74,17 +74,6 @@ func TestRealGitWorktreeRepairAfterMainMove(t *testing.T) {
 			t.Fatalf("common dir for %q = %q, want %q", worktree, resolved, want)
 		}
 	}
-}
-
-func moveRunGit(t *testing.T, dir string, arguments ...string) string {
-	t.Helper()
-	command := exec.Command("git", arguments...)
-	command.Dir = dir
-	output, err := command.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %v: %v\n%s", arguments, err, output)
-	}
-	return string(output)
 }
 
 func worktreeTestPhysical(t *testing.T, path string) string {
@@ -110,15 +99,15 @@ func TestWorktreeRepairPlanRevalidatesMissingPaths(t *testing.T) {
 		t.Run(scenario.name, func(t *testing.T) {
 			base := worktreeTestPhysical(t, t.TempDir())
 			source, external := filepath.Join(base, "source"), filepath.Join(base, "external")
-			moveRunGit(t, "", "init", "-q", source)
-			moveRunGit(t, source, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-qm", "initial")
-			moveRunGit(t, source, "worktree", "add", "-qb", "external", external)
+			testenv.Git(t, "", "init", "-q", source)
+			testenv.Git(t, source, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-qm", "initial")
+			testenv.Git(t, source, "worktree", "add", "-qb", "external", external)
 			if scenario.absentBefore {
 				if err := os.RemoveAll(external); err != nil {
 					t.Fatal(err)
 				}
 			}
-			runner := &gitcmd.Runner{Executable: "git"}
+			runner := &gitcmd.Runner{Executable: "git", Env: testenv.Environment(t.TempDir())}
 			plan, err := PlanWorktreeRepair(context.Background(), source, filepath.Join(base, "destination"), runner, Filesystem{})
 			if err != nil {
 				t.Fatalf("plan: %v", err)

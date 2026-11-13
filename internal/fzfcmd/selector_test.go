@@ -32,6 +32,9 @@ type commandRecorder struct {
 
 func newHelperSelector(t *testing.T, mode string) (*Selector, *commandRecorder) {
 	t.Helper()
+	// Each test opts into appearance defaults explicitly.
+	t.Setenv("FZF_DEFAULT_OPTS", "")
+	t.Setenv("FZF_DEFAULT_OPTS_FILE", "")
 	t.Setenv(helperProcessEnv, "1")
 	recorder := &commandRecorder{}
 	selector := &Selector{

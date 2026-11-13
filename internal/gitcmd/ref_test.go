@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/daiksud/gh-qw/internal/testenv"
 )
 
 func TestCheckRefFormatUsesLiteralOperandAndQuietStreams(t *testing.T) {
@@ -63,13 +65,13 @@ func TestCheckRefFormatDistinguishesInvalidRefFromExecutionFailure(t *testing.T)
 
 func TestCheckRefFormatUsesGitWithoutCheckoutHistoryExpansion(t *testing.T) {
 	dir := t.TempDir()
-	gitcmdRunRealGit(t, "", "init", "-q", "-b", "main", dir)
-	gitcmdRunRealGit(t, dir, "commit", "-q", "--allow-empty", "-m", "initial")
-	gitcmdRunRealGit(t, dir, "checkout", "-q", "-b", "previous")
-	gitcmdRunRealGit(t, dir, "checkout", "-q", "main")
+	testenv.Git(t, "", "init", "-q", "-b", "main", dir)
+	testenv.Git(t, dir, "commit", "-q", "--allow-empty", "-m", "initial")
+	testenv.Git(t, dir, "checkout", "-q", "-b", "previous")
+	testenv.Git(t, dir, "checkout", "-q", "main")
 	// Establish the regression condition: --branch would accept this input
 	// and replace it with a name determined by this checkout's reflog.
-	if got := strings.TrimSpace(gitcmdRunRealGit(t, dir, "check-ref-format", "--branch", "@{-1}")); got != "previous" {
+	if got := strings.TrimSpace(testenv.Git(t, dir, "check-ref-format", "--branch", "@{-1}")); got != "previous" {
 		t.Fatalf("history shorthand = %q, want previous", got)
 	}
 	t.Chdir(dir)

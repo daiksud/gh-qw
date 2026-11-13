@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -21,6 +20,7 @@ import (
 	movementpkg "github.com/daiksud/gh-qw/internal/movement"
 	"github.com/daiksud/gh-qw/internal/registry"
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
+	"github.com/daiksud/gh-qw/internal/testenv"
 )
 
 func newAddMoveCommand(t *testing.T, move cmd.RepositoryMoveDependencies) interface {
@@ -105,11 +105,12 @@ func (writer *moveLockedWriter) Write(data []byte) (int, error) {
 	return writer.writer.Write(data)
 }
 
-func moveTestGitRunner(stderr io.Writer) *moveTestGit {
+func moveTestGitRunner(t *testing.T, stderr io.Writer) *moveTestGit {
 	output := &moveLockedWriter{writer: stderr}
 	return &moveTestGit{
 		runner: &gitcmd.Runner{
 			Executable: "git",
+			Env:        testenv.Environment(t.TempDir()),
 			Stdout:     output,
 			Stderr:     output,
 		},
@@ -118,28 +119,17 @@ func moveTestGitRunner(stderr io.Writer) *moveTestGit {
 
 func moveTestInitRepository(t *testing.T, path, remote string) {
 	t.Helper()
-	moveTestRunGit(t, "", "init", "-q", path)
-	moveTestRunGit(t, path, "config", "user.email", "test@example.com")
-	moveTestRunGit(t, path, "config", "user.name", "Test")
+	testenv.Git(t, "", "init", "-q", path)
+	testenv.Git(t, path, "config", "user.email", "test@example.com")
+	testenv.Git(t, path, "config", "user.name", "Test")
 	if err := os.WriteFile(filepath.Join(path, "README"), []byte("test"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	moveTestRunGit(t, path, "add", "README")
-	moveTestRunGit(t, path, "commit", "-qm", "initial")
+	testenv.Git(t, path, "add", "README")
+	testenv.Git(t, path, "commit", "-qm", "initial")
 	if remote != "" {
-		moveTestRunGit(t, path, "remote", "add", "origin", remote)
+		testenv.Git(t, path, "remote", "add", "origin", remote)
 	}
-}
-
-func moveTestRunGit(t *testing.T, dir string, arguments ...string) string {
-	t.Helper()
-	command := exec.Command("git", arguments...)
-	command.Dir = dir
-	output, err := command.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %v: %v\n%s", arguments, err, output)
-	}
-	return string(output)
 }
 
 func moveTestPhysical(t *testing.T, path string) string {
@@ -180,8 +170,8 @@ func TestAddMoveDelegatesWorktreeRepairToGit(t *testing.T) {
 			originalPointers := map[string][]byte{}
 			for _, path := range before {
 				branch := filepath.Base(path)
-				moveTestRunGit(t, source, "worktree", "add", "-qb", branch, path)
-				admin := strings.TrimSpace(moveTestRunGit(t, path, "rev-parse", "--absolute-git-dir"))
+				testenv.Git(t, source, "worktree", "add", "-qb", branch, path)
+				admin := strings.TrimSpace(testenv.Git(t, path, "rev-parse", "--absolute-git-dir"))
 				rel, err := filepath.Rel(source, filepath.Join(admin, "gitdir"))
 				if err != nil {
 					t.Fatal(err)
@@ -193,7 +183,7 @@ func TestAddMoveDelegatesWorktreeRepairToGit(t *testing.T) {
 				originalPointers[rel] = content
 			}
 			var stdout, stderr bytes.Buffer
-			git := moveTestGitRunner(&stderr)
+			git := moveTestGitRunner(t, &stderr)
 			git.beforeRepair = func(dir string, paths []string) {
 				if dir != destination {
 					t.Fatalf("repair dir=%q, want %q", dir, destination)
@@ -253,11 +243,11 @@ func TestAddMoveDelegatesWorktreeRepairToGit(t *testing.T) {
 				if !reflect.DeepEqual(got, wantPaths) {
 					t.Fatalf("registered paths from %q=%q, want %q", path, got, wantPaths)
 				}
-				common := strings.TrimSpace(moveTestRunGit(t, path, "rev-parse", "--path-format=absolute", "--git-common-dir"))
+				common := strings.TrimSpace(testenv.Git(t, path, "rev-parse", "--path-format=absolute", "--git-common-dir"))
 				if moveTestPhysical(t, common) != filepath.Join(destination, ".git") {
 					t.Fatalf("common dir=%q, want destination .git", common)
 				}
-				moveTestRunGit(t, path, "status", "--porcelain")
+				testenv.Git(t, path, "status", "--porcelain")
 			}
 		})
 	}
@@ -275,7 +265,7 @@ func TestAddMoveRejectsLinkedGitPointerCrossingSourceBoundary(t *testing.T) {
 		t.Fatal(err)
 	}
 	moveTestInitRepository(t, source, "https://github.com/acme/widget")
-	moveTestRunGit(t, source, "worktree", "add", "-qb", "external", external)
+	testenv.Git(t, source, "worktree", "add", "-qb", "external", external)
 	pointer := filepath.Join(external, ".git")
 	content, err := os.ReadFile(pointer)
 	if err != nil {
@@ -291,7 +281,7 @@ func TestAddMoveRejectsLinkedGitPointerCrossingSourceBoundary(t *testing.T) {
 	if err := os.Symlink(inside, pointer); err != nil {
 		t.Skipf("symlink unavailable: %v", err)
 	}
-	git := moveTestGitRunner(io.Discard)
+	git := moveTestGitRunner(t, io.Discard)
 	command := newAddMoveCommand(t, cmd.RepositoryMoveDependencies{
 		Resolver: &moveRootResolver{result: rootpkg.Result{RepositoryRoots: []string{primary}}}, Git: git, Stdout: io.Discard, Stderr: io.Discard,
 	})
@@ -319,7 +309,7 @@ func TestAddMoveRejectsExternalAdministrativeSymlinks(t *testing.T) {
 				t.Fatal(err)
 			}
 			moveTestInitRepository(t, source, "https://github.com/acme/widget")
-			moveTestRunGit(t, source, "worktree", "add", "-qb", "linked", filepath.Join(source, "linked"))
+			testenv.Git(t, source, "worktree", "add", "-qb", "linked", filepath.Join(source, "linked"))
 			admin := filepath.Join(source, ".git", "worktrees")
 			path := admin
 			if target != "worktrees" {
@@ -340,7 +330,7 @@ func TestAddMoveRejectsExternalAdministrativeSymlinks(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			git := moveTestGitRunner(io.Discard)
+			git := moveTestGitRunner(t, io.Discard)
 			command := newAddMoveCommand(t, cmd.RepositoryMoveDependencies{
 				Resolver: &moveRootResolver{result: rootpkg.Result{RepositoryRoots: []string{primary}}},
 				Git:      git, Stdout: io.Discard, Stderr: io.Discard,
@@ -374,8 +364,8 @@ func TestAddMoveRepairFailureIncludesMovedWorktreeArguments(t *testing.T) {
 		t.Fatal(err)
 	}
 	moveTestInitRepository(t, source, "https://github.com/acme/widget")
-	moveTestRunGit(t, source, "worktree", "add", "-qb", "linked", filepath.Join(source, "linked space"))
-	git := moveTestGitRunner(io.Discard)
+	testenv.Git(t, source, "worktree", "add", "-qb", "linked", filepath.Join(source, "linked space"))
+	git := moveTestGitRunner(t, io.Discard)
 	git.repairErr = errors.New("repair failed before modifying metadata")
 	command := newAddMoveCommand(t, cmd.RepositoryMoveDependencies{
 		Resolver: &moveRootResolver{result: rootpkg.Result{RepositoryRoots: []string{primary}}},
@@ -394,5 +384,5 @@ func TestAddMoveRepairFailureIncludesMovedWorktreeArguments(t *testing.T) {
 	if err := git.runner.WorktreeRepair(context.Background(), destination, git.repairs[0].paths...); err != nil {
 		t.Fatal(err)
 	}
-	moveTestRunGit(t, moved, "status", "--porcelain")
+	testenv.Git(t, moved, "status", "--porcelain")
 }

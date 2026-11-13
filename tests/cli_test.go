@@ -15,6 +15,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/daiksud/gh-qw/internal/testenv"
 )
 
 const testIdentity = "github.com/acme/widget"
@@ -61,7 +63,7 @@ func TestMain(m *testing.M) {
 	os.Exit(status)
 }
 
-func sharedCLIExecutable(t *testing.T) string {
+func sharedCLIExecutable(t testing.TB) string {
 	t.Helper()
 	sharedCLIOnce.Do(func() {
 		sharedCLIDir, sharedCLIError = os.MkdirTemp("", "gh-qw-cli-tests-")
@@ -595,7 +597,7 @@ func TestCLICloneFailsClearlyWhenGhSubprocessFails(t *testing.T) {
 	assertPathMissing(t, wantPath)
 }
 
-func newCLIFixture(t *testing.T) *cliFixture {
+func newCLIFixture(t testing.TB) *cliFixture {
 	t.Helper()
 
 	rawBase := t.TempDir()
@@ -634,58 +636,17 @@ func newCLIFixture(t *testing.T) *cliFixture {
 // before installing fixture-scoped paths. Tests add explicit environment values
 // only when those values are part of the contract under test.
 func isolatedEnvironment(fixture *cliFixture) []string {
-	blocked := map[string]struct{}{
-		"EMAIL": {}, "HOME": {}, "USERPROFILE": {}, "APPDATA": {}, "LOCALAPPDATA": {},
-		"LANG": {}, "LC_ALL": {}, "NO_COLOR": {}, "SSH_AUTH_SOCK": {}, "SSH_AGENT_PID": {},
-		"XDG_CACHE_HOME": {}, "XDG_CONFIG_HOME": {}, "XDG_DATA_HOME": {},
-	}
-	environment := make([]string, 0, len(os.Environ())+28)
-	for _, entry := range os.Environ() {
-		key, _, _ := strings.Cut(entry, "=")
-		key = strings.ToUpper(key)
-		if _, remove := blocked[key]; remove {
-			continue
-		}
-		if strings.HasPrefix(key, "GIT_") || strings.HasPrefix(key, "GH_") ||
-			strings.HasPrefix(key, "GITHUB_") || strings.HasPrefix(key, "GHQ_") ||
-			strings.HasPrefix(key, "GHQW_") {
-			continue
-		}
-		environment = append(environment, entry)
-	}
-	environment = append(
-		environment,
-		"HOME="+fixture.home,
-		"USERPROFILE="+fixture.home,
-		"APPDATA="+filepath.Join(fixture.home, "xdg-config"),
-		"LOCALAPPDATA="+filepath.Join(fixture.home, "xdg-data"),
-		"XDG_CONFIG_HOME="+filepath.Join(fixture.home, "xdg-config"),
-		"XDG_DATA_HOME="+filepath.Join(fixture.home, "xdg-data"),
-		"XDG_CACHE_HOME="+filepath.Join(fixture.home, "xdg-cache"),
-		"GH_CONFIG_DIR="+filepath.Join(fixture.home, "gh"),
+	return append(testenv.Environment(fixture.home),
 		"GHQW_ROOT="+strings.Join(
 			[]string{fixture.repository, fixture.remoteRoot},
 			string(os.PathListSeparator),
 		),
-		"GIT_CONFIG_NOSYSTEM=1",
-		"GIT_CONFIG_SYSTEM="+os.DevNull,
-		"GIT_CONFIG_GLOBAL="+os.DevNull,
-		"GIT_TERMINAL_PROMPT=0",
-		"GIT_AUTHOR_NAME=gh-qw e2e",
-		"GIT_AUTHOR_EMAIL=gh-qw-e2e@example.invalid",
-		"GIT_COMMITTER_NAME=gh-qw e2e",
-		"GIT_COMMITTER_EMAIL=gh-qw-e2e@example.invalid",
-		"EMAIL=gh-qw-e2e@example.invalid",
 		"GIT_CONFIG_COUNT=2",
 		"GIT_CONFIG_KEY_0=protocol.file.allow",
 		"GIT_CONFIG_VALUE_0=always",
 		"GIT_CONFIG_KEY_1=init.defaultBranch",
 		"GIT_CONFIG_VALUE_1=main",
-		"LC_ALL=C",
-		"LANG=C",
-		"NO_COLOR=1",
 	)
-	return environment
 }
 
 func (fixture *cliFixture) createBareRemote(
@@ -971,7 +932,7 @@ func (fixture *cliFixture) initRepository(
 	}
 }
 
-func (fixture *cliFixture) runCLI(t *testing.T, arguments ...string) commandResult {
+func (fixture *cliFixture) runCLI(t testing.TB, arguments ...string) commandResult {
 	t.Helper()
 
 	return fixture.runCLIWithEnv(t, fixture.env, arguments...)
@@ -981,7 +942,7 @@ func (fixture *cliFixture) runCLI(t *testing.T, arguments ...string) commandResu
 // instead of fixture.env, so a test can exercise a deliberately modified
 // PATH (see envWithoutGh, envWithPathPrepended) without disturbing
 // fixture.env for other tests or callers.
-func (fixture *cliFixture) runCLIWithEnv(t *testing.T, env []string, arguments ...string) commandResult {
+func (fixture *cliFixture) runCLIWithEnv(t testing.TB, env []string, arguments ...string) commandResult {
 	t.Helper()
 
 	command := exec.Command(fixture.binary, arguments...)
@@ -1074,7 +1035,7 @@ func (fixture *cliFixture) runRemoveWithTTY(
 	}
 }
 
-func (fixture *cliFixture) runGit(t *testing.T, directory string, arguments ...string) string {
+func (fixture *cliFixture) runGit(t testing.TB, directory string, arguments ...string) string {
 	t.Helper()
 
 	command := exec.Command("git", arguments...)
@@ -1127,7 +1088,7 @@ func (capture *promptCapture) String() string {
 	return capture.output.String()
 }
 
-func exitStatus(t *testing.T, err error) int {
+func exitStatus(t testing.TB, err error) int {
 	t.Helper()
 	if err == nil {
 		return 0

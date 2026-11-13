@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -14,16 +13,8 @@ import (
 	"github.com/daiksud/gh-qw/internal/local"
 	"github.com/daiksud/gh-qw/internal/registry"
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
+	"github.com/daiksud/gh-qw/internal/testenv"
 )
-
-func runGit(t *testing.T, args ...string) {
-	t.Helper()
-	command := exec.Command("git", args...)
-	output, err := command.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %v: %v\n%s", args, err, output)
-	}
-}
 
 func TestManagedRepositoryLifecycle(t *testing.T) {
 	base, err := filepath.EvalSymlinks(t.TempDir())
@@ -35,9 +26,9 @@ func TestManagedRepositoryLifecycle(t *testing.T) {
 	if err := os.MkdirAll(repo, 0700); err != nil {
 		t.Fatal(err)
 	}
-	runGit(t, "init", repo)
-	runGit(t, "-C", repo, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-m", "initial")
-	runGit(t, "-C", repo, "remote", "add", "origin", "https://github.com/acme/api.git")
+	testenv.Git(t, "", "init", repo)
+	testenv.Git(t, "", "-C", repo, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-m", "initial")
+	testenv.Git(t, "", "-C", repo, "remote", "add", "origin", "https://github.com/acme/api.git")
 
 	store, err := registry.NewStoreAt(filepath.Join(base, "data", "ghqw", "repositories.toml"))
 	if err != nil {

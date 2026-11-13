@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/daiksud/gh-qw/internal/testenv"
 )
 
 func TestBranchUpstreamsUsesQualifiedStructuredRefs(t *testing.T) {
@@ -62,13 +64,13 @@ func TestBranchUpstreamsRejectsMalformedOutputAndGitFailures(t *testing.T) {
 
 func TestBranchUpstreamsAndExactRefExistenceInRealRepository(t *testing.T) {
 	dir := t.TempDir()
-	gitcmdRunRealGit(t, "", "init", "-q", "-b", "main", dir)
-	gitcmdRunRealGit(t, dir, "commit", "-q", "--allow-empty", "-m", "initial")
-	gitcmdRunRealGit(t, dir, "branch", "local", "main")
-	gitcmdRunRealGit(t, dir, "config", "branch.local.remote", ".")
-	gitcmdRunRealGit(t, dir, "config", "branch.local.merge", "refs/heads/main")
-	gitcmdRunRealGit(t, dir, "branch", "topic", "main")
-	gitcmdRunRealGit(
+	testenv.Git(t, "", "init", "-q", "-b", "main", dir)
+	testenv.Git(t, dir, "commit", "-q", "--allow-empty", "-m", "initial")
+	testenv.Git(t, dir, "branch", "local", "main")
+	testenv.Git(t, dir, "config", "branch.local.remote", ".")
+	testenv.Git(t, dir, "config", "branch.local.merge", "refs/heads/main")
+	testenv.Git(t, dir, "branch", "topic", "main")
+	testenv.Git(
 		t,
 		dir,
 		"config",
@@ -76,11 +78,11 @@ func TestBranchUpstreamsAndExactRefExistenceInRealRepository(t *testing.T) {
 		"+refs/pull/*:refs/remotes/review/pull/*",
 	)
 	remoteRef := "refs/remotes/review/pull/42"
-	gitcmdRunRealGit(t, dir, "update-ref", remoteRef, "HEAD")
-	gitcmdRunRealGit(t, dir, "config", "branch.topic.remote", "review")
-	gitcmdRunRealGit(t, dir, "config", "branch.topic.merge", "refs/pull/42")
+	testenv.Git(t, dir, "update-ref", remoteRef, "HEAD")
+	testenv.Git(t, dir, "config", "branch.topic.remote", "review")
+	testenv.Git(t, dir, "config", "branch.topic.merge", "refs/pull/42")
 
-	runner := &Runner{Executable: "git", Stderr: &bytes.Buffer{}}
+	runner := &Runner{Executable: "git", Env: testenv.Environment(t.TempDir()), Stderr: &bytes.Buffer{}}
 	upstreams, err := runner.BranchUpstreams(context.Background(), dir)
 	if err != nil {
 		t.Fatalf("BranchUpstreams() error = %v", err)
@@ -96,7 +98,7 @@ func TestBranchUpstreamsAndExactRefExistenceInRealRepository(t *testing.T) {
 	if exists, err := runner.RefExists(context.Background(), dir, remoteRef); err != nil || !exists {
 		t.Fatalf("RefExists(existing) = (%v, %v), want (true, nil)", exists, err)
 	}
-	gitcmdRunRealGit(t, dir, "update-ref", "-d", remoteRef)
+	testenv.Git(t, dir, "update-ref", "-d", remoteRef)
 	if exists, err := runner.RefExists(context.Background(), dir, remoteRef); err != nil || exists {
 		t.Fatalf("RefExists(gone) = (%v, %v), want (false, nil)", exists, err)
 	}
