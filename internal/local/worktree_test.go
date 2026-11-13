@@ -3,6 +3,7 @@ package local
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -136,9 +137,9 @@ func TestEnumerateWorktreesRealGitAndCurrentDirectory(t *testing.T) {
 		t.Fatalf("prunable record = %#v", bySlot["github-com-acme-widget-stale-slot"])
 	}
 
-	managed, err := FindRegisteredLinkedWorktree(context.Background(), worktrees, "github-com-acme-widget-feature-x")
+	managed, err := FindLinkedWorktree(context.Background(), worktrees, "github-com-acme-widget-feature-x")
 	if err != nil {
-		t.Fatalf("FindRegisteredLinkedWorktree() error = %v", err)
+		t.Fatalf("FindLinkedWorktree() error = %v", err)
 	}
 	if err := ValidateWorktreeAssociation(
 		context.Background(),
@@ -454,5 +455,94 @@ func TestLinkedWorktreesRemainSortedByIdentity(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("sorted identities = %#v", got)
+	}
+}
+
+func TestEnumerateWorktreesCapturesIdentitiesOncePerObservation(t *testing.T) {
+	base := physicalTempDir(t)
+	repository := testRepository(t, filepath.Join(base, "repositories"), "github.com/acme/widget")
+	paths := []string{repository.Path, filepath.Join(base, "one"), filepath.Join(base, "two")}
+	registered := make([]gitcmd.Worktree, len(paths))
+	for index, path := range paths {
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		registered[index] = gitcmd.Worktree{Path: path, HEAD: "head", Branch: filepath.Base(path)}
+	}
+
+	stats := make(map[string]int)
+	var pending fs.FileInfo
+	options := WorktreeOptions{
+		Lister: fakeWorktreeLister{worktrees: registered},
+		Filesystem: FilesystemOptions{
+			Stat: func(path string) (fs.FileInfo, error) {
+				if pending != nil {
+					t.Fatal("read another path before capturing the preceding object identity")
+				}
+				stats[path]++
+				info, err := os.Stat(path)
+				pending = info
+				return info, err
+			},
+			SameFile: func(first, second fs.FileInfo) bool {
+				if first == second && first == pending {
+					pending = nil
+				}
+				return os.SameFile(first, second)
+			},
+		},
+	}
+	for phase := 1; phase <= 2; phase++ {
+		worktrees, err := EnumerateWorktrees(context.Background(), repository, filepath.Join(base, "worktrees"), options)
+		if err != nil || len(worktrees) != len(paths) || pending != nil {
+			t.Fatalf("enumeration = %#v, %v; pending identity = %v", worktrees, err, pending)
+		}
+		for _, path := range paths {
+			if stats[path] != phase {
+				t.Fatalf("stat(%q) count = %d after %d observations", path, stats[path], phase)
+			}
+		}
+	}
+}
+
+func TestEnumerateWorktreesRejectsUnavailableObjectIdentity(t *testing.T) {
+	base := physicalTempDir(t)
+	repository := testRepository(t, base, "github.com/acme/widget")
+	if err := os.MkdirAll(repository.Path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_, err := EnumerateWorktrees(context.Background(), repository, filepath.Join(base, "worktrees"), WorktreeOptions{
+		Lister:     fakeWorktreeLister{worktrees: []gitcmd.Worktree{{Path: repository.Path, HEAD: "head", Branch: "main"}}},
+		Filesystem: FilesystemOptions{SameFile: func(fs.FileInfo, fs.FileInfo) bool { return false }},
+	})
+	if !errors.Is(err, ErrUnsafeWorktree) {
+		t.Fatalf("unavailable filesystem identity accepted: %v", err)
+	}
+}
+
+func TestEnumerateWorktreesRejectsDuplicateFilesystemIdentities(t *testing.T) {
+	base := physicalTempDir(t)
+	repository := testRepository(t, base, "github.com/acme/widget")
+	alias := filepath.Join(base, "alias")
+	for _, path := range []string{repository.Path, alias} {
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, err := EnumerateWorktrees(context.Background(), repository, filepath.Join(base, "worktrees"), WorktreeOptions{
+		Lister: fakeWorktreeLister{worktrees: []gitcmd.Worktree{
+			{Path: repository.Path, HEAD: "head", Branch: "main"},
+			{Path: alias, HEAD: "head", Branch: "topic"},
+		}},
+		Filesystem: FilesystemOptions{Stat: func(path string) (fs.FileInfo, error) {
+			// Distinct physical names can identify the same directory on a filesystem.
+			if path == alias {
+				path = repository.Path
+			}
+			return os.Stat(path)
+		}},
+	})
+	if !errors.Is(err, ErrWorktreeAmbiguous) {
+		t.Fatalf("duplicate filesystem identity accepted: %v", err)
 	}
 }

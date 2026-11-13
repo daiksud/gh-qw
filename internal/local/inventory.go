@@ -1,17 +1,16 @@
-package removal
+package local
 
 import (
 	"context"
 
 	"github.com/daiksud/gh-qw/internal/gitcmd"
-	"github.com/daiksud/gh-qw/internal/local"
 )
 
 // Inventory shares Git registrations within one sequential read-only phase.
-// Create a new inventory after confirmation, discovery, or any mutation boundary.
+// Create a new inventory after confirmation, registry refresh, or any mutation boundary.
 // Other Git observations are always delegated directly.
 type Inventory struct {
-	local.Git
+	Git
 	registrations map[string]registrationResult
 }
 
@@ -21,7 +20,7 @@ type registrationResult struct {
 }
 
 // NewInventory starts a fresh registration observation phase.
-func NewInventory(git local.Git) *Inventory {
+func NewInventory(git Git) *Inventory {
 	return &Inventory{Git: git, registrations: make(map[string]registrationResult)}
 }
 

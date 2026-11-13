@@ -945,10 +945,8 @@ func (git *removeTestGit) OutputDir(
 	args ...string,
 ) ([]byte, error) {
 	switch {
-	case reflect.DeepEqual(args, []string{"rev-parse", "--show-toplevel"}):
-		return []byte(git.repositoryPath + "\n"), nil
-	case reflect.DeepEqual(args, []string{"rev-parse", "--git-common-dir"}):
-		return []byte(filepath.Join(git.repositoryPath, ".git") + "\n"), nil
+	case reflect.DeepEqual(args, []string{"rev-parse", "--path-format=absolute", "--show-toplevel", "--git-common-dir"}):
+		return []byte(git.repositoryPath + "\n" + filepath.Join(git.repositoryPath, ".git") + "\n"), nil
 	case len(args) == 5 &&
 		args[0] == "status" &&
 		args[1] == "--porcelain=v1" &&

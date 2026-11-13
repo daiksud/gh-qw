@@ -165,9 +165,11 @@ func worktreeRemoveGonePreflightWithRoots(
 		return worktreeRemoveGonePlan{}, fmt.Errorf("read registered repositories: %w", registryErr)
 	}
 
+	inventory := local.NewInventory(commandRuntime.git)
 	repository, err := worktreeRemoveSelectRepository(
 		ctx,
 		commandRuntime,
+		inventory,
 		roots.WorktreeRoot,
 		repositories,
 		request.selector,
@@ -179,6 +181,7 @@ func worktreeRemoveGonePreflightWithRoots(
 	return worktreeRemoveGoneBuildPlan(
 		ctx,
 		commandRuntime,
+		inventory,
 		roots,
 		repositories,
 		repository,
@@ -189,13 +192,14 @@ func worktreeRemoveGonePreflightWithRoots(
 func worktreeRemoveGoneBuildPlan(
 	ctx context.Context,
 	commandRuntime worktreeRemoveRuntime,
+	inventory local.Git,
 	roots rootpkg.Result,
 	repositories []local.Repository,
 	repository local.Repository,
 	force bool,
 ) (worktreeRemoveGonePlan, error) {
 	observer := commandRuntime.observer()
-	observer.Git = removal.NewInventory(commandRuntime.git)
+	observer.Git = inventory
 	observation, err := observer.ObserveRepository(ctx, roots, repository)
 	if err != nil {
 		return worktreeRemoveGonePlan{}, err
@@ -603,7 +607,7 @@ func worktreeRemoveGoneRevalidateEntry(
 	if err != nil {
 		return worktreeRemoveGoneShared(fmt.Errorf("enumerate registered worktrees: %w", err))
 	}
-	worktree, err := local.FindRegisteredLinkedWorktree(ctx, worktrees, planned.worktree.Slot)
+	worktree, err := local.FindLinkedWorktree(ctx, worktrees, planned.worktree.Slot)
 	if err != nil {
 		return err
 	}

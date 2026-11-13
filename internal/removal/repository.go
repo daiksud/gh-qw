@@ -169,26 +169,10 @@ func (observer Observer) ObserveRepository(
 // validateMainGitAssociation asks Git for the main top-level and common directory.
 func validateMainGitAssociation(
 	ctx context.Context,
-	git local.GitOutputter,
+	git gitcmd.Outputter,
 	repositoryPath, gitPath string,
 ) error {
-	topOutput, err := git.OutputDir(ctx, repositoryPath, "rev-parse", "--show-toplevel")
-	if err != nil {
-		return fmt.Errorf("inspect main Git top-level: %w", err)
-	}
-	topLevel, err := parseGitPath(topOutput, repositoryPath, "top-level")
-	if err != nil {
-		return err
-	}
-	commonOutput, err := git.OutputDir(ctx, repositoryPath, "rev-parse", "--git-common-dir")
-	if err != nil {
-		return fmt.Errorf("inspect main Git common directory: %w", err)
-	}
-	commonDir, err := parseGitPath(
-		commonOutput,
-		repositoryPath,
-		"common Git directory",
-	)
+	topLevel, commonDir, err := gitcmd.RepositoryPaths(ctx, git, repositoryPath)
 	if err != nil {
 		return err
 	}
@@ -201,21 +185,6 @@ func validateMainGitAssociation(
 		)
 	}
 	return nil
-}
-
-func parseGitPath(
-	output []byte,
-	relativeTo, description string,
-) (string, error) {
-	path, err := gitcmd.ParseLine(output, description)
-	if err != nil {
-		return "", err
-	}
-
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(relativeTo, path)
-	}
-	return filepath.Clean(path), nil
 }
 
 // expectedWorktreeBase validates the deterministic managed worktree layout.

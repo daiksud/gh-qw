@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"github.com/daiksud/gh-qw/internal/gitcmd"
 	"github.com/daiksud/gh-qw/internal/local"
 	"github.com/daiksud/gh-qw/internal/physicalpath"
 )
@@ -192,7 +193,7 @@ func SameWorktree(first, second local.Worktree) bool {
 // InspectDirty observes tracked, untracked, and submodule changes through Git.
 func InspectDirty(
 	ctx context.Context,
-	git local.GitOutputter,
+	git gitcmd.Outputter,
 	path, description string,
 ) (bool, error) {
 	output, err := git.OutputDir(

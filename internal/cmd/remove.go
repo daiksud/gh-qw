@@ -821,7 +821,7 @@ func removeValidateLinkedRecord(
 
 func removeRequireClean(
 	ctx context.Context,
-	git local.GitOutputter,
+	git gitcmd.Outputter,
 	path, description string,
 ) error {
 	dirty, err := removal.InspectDirty(ctx, git, path, description)

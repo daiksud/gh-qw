@@ -198,7 +198,6 @@ func listCollectEntries(
 	}
 
 	entries := make([]listEntry, 0, len(repositories))
-	seen := make(map[string]struct{}, len(repositories))
 	for _, repository := range repositories {
 		worktrees, err := enumerate(ctx, repository, worktreeRoot)
 		if err != nil {
@@ -214,10 +213,8 @@ func listCollectEntries(
 
 		sawMain := false
 		for _, worktree := range worktrees {
-			entry, main, err := listWorktreeEntry(ctx, repository, worktree)
-			if err != nil {
-				return nil, err
-			}
+			entry := listWorktreeEntry(repository, worktree)
+			main := worktree.Main
 			sawMain = sawMain || main
 			if goneOnly {
 				if main {
@@ -227,10 +224,6 @@ func listCollectEntries(
 					continue
 				}
 			}
-			if _, exists := seen[entry.identity]; exists {
-				continue
-			}
-			seen[entry.identity] = struct{}{}
 			entries = append(entries, entry)
 		}
 		if !sawMain {
@@ -311,53 +304,16 @@ func listDisambiguateLabels(entries []listEntry) {
 	}
 }
 
-func listWorktreeEntry(
-	ctx context.Context,
-	repository local.Repository,
-	worktree local.Worktree,
-) (listEntry, bool, error) {
-	main := worktree.Main ||
-		(worktree.Slot == "" &&
-			(worktree.Identity == "" || worktree.Identity == repository.Identity))
-	if main {
-		if worktree.Slot != "" {
-			return listEntry{}, false, fmt.Errorf(
-				"enumerate worktrees for %q: main worktree has slot %q",
-				repository.Identity,
-				worktree.Slot,
-			)
-		}
-		return listRepositoryEntry(repository, worktree.Path), true, nil
-	}
-
-	slot := worktree.Slot
-	if slot == "" {
-		prefix := repository.Identity + "@"
-		if strings.HasPrefix(worktree.Identity, prefix) {
-			slot = strings.TrimPrefix(worktree.Identity, prefix)
-		}
-	}
-	if slot == "" {
-		return listEntry{}, false, fmt.Errorf(
-			"enumerate worktrees for %q: linked worktree has no slot",
-			repository.Identity,
-		)
-	}
-	if err := local.ValidateSlot(ctx, slot); err != nil {
-		return listEntry{}, false, fmt.Errorf(
-			"enumerate worktrees for %q: invalid slot %q: %w",
-			repository.Identity,
-			slot,
-			err,
-		)
-	}
-
+// listWorktreeEntry renders the canonical fields established by enumeration.
+func listWorktreeEntry(repository local.Repository, worktree local.Worktree) listEntry {
 	entry := listRepositoryEntry(repository, worktree.Path)
-	entry.slot = slot
-	entry.branch = worktree.Branch
-	entry.label = worktree.Branch
-	entry.identity += "@" + slot
-	return entry, false, nil
+	if !worktree.Main {
+		entry.slot = worktree.Slot
+		entry.branch = worktree.Branch
+		entry.label = worktree.Branch
+		entry.identity += "@" + worktree.Slot
+	}
+	return entry
 }
 
 func listCanonicalizeQuery(ctx context.Context, query string, root string) (string, error) {
