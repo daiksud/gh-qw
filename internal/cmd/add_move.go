@@ -18,7 +18,7 @@ import (
 
 // RepositoryMoveGit combines the Git operations used to move an existing repository.
 type RepositoryMoveGit interface {
-	movementpkg.RepositoryGit
+	gitcmd.Outputter
 	movementpkg.WorktreeLister
 	WorktreeRepair(context.Context, string, ...string) error
 }

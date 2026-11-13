@@ -139,9 +139,11 @@ func worktreeAddRun(
 		return fmt.Errorf("read registered repositories: %w", err)
 	}
 
+	inventory := local.NewInventory(runtime.Git)
 	repository, err := worktreeAddSelectRepository(
 		ctx,
 		runtime,
+		inventory,
 		roots.WorktreeRoot,
 		repositories,
 		request.selector,
@@ -156,7 +158,7 @@ func worktreeAddRun(
 		repository,
 		roots.WorktreeRoot,
 		local.WorktreeOptions{
-			Lister:     runtime.Git,
+			Lister:     inventory,
 			Filesystem: runtime.Filesystem,
 		},
 	)
@@ -208,7 +210,7 @@ func worktreeAddRun(
 			err,
 		))
 	}
-	added, err := local.FindRegisteredLinkedWorktree(ctx, registered, slot)
+	added, err := local.FindLinkedWorktree(ctx, registered, slot)
 	if err != nil {
 		return worktreeAddFailure(fmt.Errorf(
 			"worktree was added at %q but registration validation failed: %w",
@@ -345,6 +347,7 @@ func worktreeAddReserveSlot(
 func worktreeAddSelectRepository(
 	ctx context.Context,
 	runtime WorktreeAddDependencies,
+	inventory local.Git,
 	worktreeRoot string,
 	repositories []local.Repository,
 	selector string,
@@ -370,7 +373,7 @@ func worktreeAddSelectRepository(
 		worktreeRoot,
 		repositories,
 		local.CurrentOptions{
-			Git:        runtime.Git,
+			Git:        inventory,
 			Filesystem: runtime.Filesystem,
 		},
 	)

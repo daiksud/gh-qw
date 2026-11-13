@@ -1,4 +1,4 @@
-package removal
+package local
 
 import (
 	"context"

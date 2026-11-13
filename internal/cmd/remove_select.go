@@ -123,10 +123,7 @@ func removeCandidates(ctx context.Context, commandRuntime removeRuntime, filter 
 					continue
 				}
 			}
-			entry, _, err := listWorktreeEntry(ctx, repository, worktree)
-			if err != nil {
-				return nil, err
-			}
+			entry := listWorktreeEntry(repository, worktree)
 			nodes := append([]removal.Node(nil), mainNodes...)
 			if !worktree.Main {
 				linkedNodes, err := removeCaptureCandidateNodes(commandRuntime.fs.observations(), worktree.Path, removal.RegularFile)

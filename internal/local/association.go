@@ -14,7 +14,7 @@ import (
 // AssociationOptions supplies Git and filesystem seams for pre-mutation
 // validation.
 type AssociationOptions struct {
-	Git        GitOutputter
+	Git        gitcmd.Outputter
 	Filesystem FilesystemOptions
 }
 
@@ -112,7 +112,7 @@ func ValidateWorktreeAssociation(
 		}
 	}
 
-	topLevel, commonDir, err := gitTopLevelAndCommon(ctx, git, worktree.Path)
+	topLevel, commonDir, err := gitcmd.RepositoryPaths(ctx, git, worktree.Path)
 	if err != nil {
 		return &WorktreeError{
 			Kind:       ErrUnsafeWorktree,
@@ -182,7 +182,7 @@ func ResolveManagedWorktree(
 	if err != nil {
 		return Worktree{}, err
 	}
-	worktree, err := FindRegisteredLinkedWorktree(ctx, worktrees, slot)
+	worktree, err := FindLinkedWorktree(ctx, worktrees, slot)
 	if err != nil {
 		return Worktree{}, err
 	}

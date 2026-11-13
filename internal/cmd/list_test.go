@@ -280,10 +280,9 @@ func TestNewListCommandWorktreesAndWorktreeQueries(t *testing.T) {
 	featurePath := listAbsolutePath("worktrees", "github.com", "acme", "widget", "feature", "x")
 	reviewPath := listAbsolutePath("worktrees", "github.com", "acme", "widget", "review")
 	worktrees := []local.Worktree{
-		{Identity: "not-canonical", Main: true, Path: mainPath},
-		{Identity: "ignored", Slot: "review", Branch: "topic/review", Path: reviewPath},
-		{Identity: "ignored", Slot: "feature-x", Branch: "feature/login", Path: featurePath},
-		{Identity: "ignored", Slot: "feature-x", Branch: "feature/login", Path: listAbsolutePath("duplicate")},
+		{Identity: repository.Identity, Main: true, Path: mainPath},
+		{Identity: repository.Identity + "@review", Slot: "review", Branch: "topic/review", Path: reviewPath},
+		{Identity: repository.Identity + "@feature-x", Slot: "feature-x", Branch: "feature/login", Path: featurePath},
 	}
 
 	tests := []struct {

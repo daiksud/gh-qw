@@ -227,9 +227,11 @@ func worktreeRemoveRun(
 		return fmt.Errorf("read registered repositories: %w", registryErr)
 	}
 
+	inventory := local.NewInventory(commandRuntime.git)
 	repository, err := worktreeRemoveSelectRepository(
 		ctx,
 		commandRuntime,
+		inventory,
 		roots.WorktreeRoot,
 		repositories,
 		request.selector,
@@ -260,7 +262,9 @@ func worktreeRemoveRun(
 		return fmt.Errorf("derive worktree path: %w", err)
 	}
 
-	worktree, err := commandRuntime.observer().ResolveWorktree(
+	observer := commandRuntime.observer()
+	observer.Git = inventory
+	worktree, err := observer.ResolveWorktree(
 		ctx,
 		repository,
 		roots.WorktreeRoot,
@@ -367,6 +371,7 @@ func worktreeRemoveRun(
 func worktreeRemoveSelectRepository(
 	ctx context.Context,
 	commandRuntime worktreeRemoveRuntime,
+	inventory local.Git,
 	worktreeRoot string,
 	repositories []local.Repository,
 	selector string,
@@ -392,7 +397,7 @@ func worktreeRemoveSelectRepository(
 		worktreeRoot,
 		repositories,
 		local.CurrentOptions{
-			Git:        commandRuntime.git,
+			Git:        inventory,
 			Filesystem: commandRuntime.filesystem,
 		},
 	)

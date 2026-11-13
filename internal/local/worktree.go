@@ -5,12 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
 
+	"github.com/daiksud/gh-qw/internal/fsidentity"
 	"github.com/daiksud/gh-qw/internal/gitcmd"
 )
 
@@ -21,7 +23,7 @@ type WorktreeLister interface {
 
 // Git combines the read-only Git capabilities used by local discovery.
 type Git interface {
-	GitOutputter
+	gitcmd.Outputter
 	WorktreeLister
 }
 
@@ -75,7 +77,27 @@ func EnumerateWorktrees(
 	linked := make([]Worktree, 0, len(registered))
 	slots := make(map[string]string, len(registered))
 	slotNames := make(map[string]string, len(registered))
-	registeredPaths := make([]string, 0, len(registered))
+	// Each path and object identity is observed only once in this enumeration.
+	// A new enumeration creates fresh observations after any interaction or mutation.
+	observed := make(map[string]worktreePathObservation, len(registered))
+	observe := func(path string) (worktreePathObservation, error) {
+		if observation, exists := observed[path]; exists {
+			return observation, nil
+		}
+		observation, err := filesystem.observeWorktreePath(path)
+		if err == nil {
+			observed[path] = observation
+		}
+		return observation, err
+	}
+	mainPath, err := observe(repository.Path)
+	if err != nil {
+		return nil, &WorktreeError{
+			Kind: ErrUnsafeWorktree, Repository: repository.Identity, Path: repository.Path,
+			Reason: "cannot inspect main worktree path", Err: err,
+		}
+	}
+	registeredPaths := make([]worktreePathObservation, 0, len(registered))
 	for _, item := range registered {
 		if item.Bare {
 			return nil, &WorktreeError{
@@ -117,75 +139,40 @@ func EnumerateWorktrees(
 				Reason:     "registered worktree path is not absolute",
 			}
 		}
-		pathInfo, statErr := filesystem.stat(item.Path)
+		observation, err := observe(item.Path)
+		if err != nil {
+			return nil, &WorktreeError{
+				Kind: ErrUnsafeWorktree, Repository: repository.Identity, Path: item.Path,
+				Reason: "cannot inspect registered worktree path", Err: err,
+			}
+		}
 		switch {
-		case statErr == nil && !pathInfo.IsDir():
+		case observation.info != nil && !observation.info.IsDir():
 			return nil, &WorktreeError{
-				Kind:       ErrUnsafeWorktree,
-				Repository: repository.Identity,
-				Path:       item.Path,
-				Reason:     "registered worktree path exists and is not a directory",
+				Kind: ErrUnsafeWorktree, Repository: repository.Identity, Path: item.Path,
+				Reason: "registered worktree path exists and is not a directory",
 			}
-		case statErr != nil && !errors.Is(statErr, os.ErrNotExist):
+		case observation.info == nil && !item.Prunable:
 			return nil, &WorktreeError{
-				Kind:       ErrUnsafeWorktree,
-				Repository: repository.Identity,
-				Path:       item.Path,
-				Reason:     "cannot inspect registered worktree path",
-				Err:        statErr,
-			}
-		case errors.Is(statErr, os.ErrNotExist) && !item.Prunable:
-			return nil, &WorktreeError{
-				Kind:       ErrUnsafeWorktree,
-				Repository: repository.Identity,
-				Path:       item.Path,
-				Reason:     "registered worktree path is missing but Git did not mark it prunable",
+				Kind: ErrUnsafeWorktree, Repository: repository.Identity, Path: item.Path,
+				Reason: "registered worktree path is missing but Git did not mark it prunable",
 			}
 		}
 
-		physicalPath, err := filesystem.physicalizeAbsolute(item.Path)
-		if err != nil {
-			return nil, &WorktreeError{
-				Kind:       ErrUnsafeWorktree,
-				Repository: repository.Identity,
-				Path:       item.Path,
-				Reason:     "cannot physicalize registered path",
-				Err:        err,
-			}
-		}
-		for _, previousPath := range registeredPaths {
-			samePath, compareErr := filesystem.samePhysicalPath(previousPath, physicalPath)
-			if compareErr != nil {
-				return nil, &WorktreeError{
-					Kind:       ErrUnsafeWorktree,
-					Repository: repository.Identity,
-					Path:       item.Path,
-					OtherPath:  previousPath,
-					Reason:     "cannot compare duplicate registered paths",
-					Err:        compareErr,
-				}
-			}
-			if samePath {
+		physicalPath := observation.path
+		for _, previous := range registeredPaths {
+			if filesystem.sameWorktreePath(previous, observation) {
 				return nil, &WorktreeError{
 					Kind:       ErrWorktreeAmbiguous,
 					Repository: repository.Identity,
-					Path:       previousPath,
+					Path:       previous.path,
 					OtherPath:  physicalPath,
 					Reason:     "Git reported the same physical worktree path more than once",
 				}
 			}
 		}
-		registeredPaths = append(registeredPaths, physicalPath)
-		isMain, err := filesystem.samePhysicalPath(physicalPath, repository.Path)
-		if err != nil {
-			return nil, &WorktreeError{
-				Kind:       ErrUnsafeWorktree,
-				Repository: repository.Identity,
-				Path:       item.Path,
-				Reason:     "cannot compare registered path with the main worktree",
-				Err:        err,
-			}
-		}
+		registeredPaths = append(registeredPaths, observation)
+		isMain := filesystem.sameWorktreePath(observation, mainPath)
 
 		record := Worktree{
 			Repository:     repository,
@@ -268,6 +255,35 @@ func EnumerateWorktrees(
 	return result, nil
 }
 
+type worktreePathObservation struct {
+	path string
+	info fs.FileInfo
+}
+
+func (f filesystem) observeWorktreePath(path string) (worktreePathObservation, error) {
+	physical, err := f.physicalizeAbsolute(path)
+	if err != nil {
+		return worktreePathObservation{}, err
+	}
+	info, err := f.stat(physical)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return worktreePathObservation{}, err
+	}
+	if err == nil {
+		if err := fsidentity.Prime(info, f.sameFile); err != nil {
+			return worktreePathObservation{}, err
+		}
+	}
+	return worktreePathObservation{path: physical, info: info}, nil
+}
+
+func (f filesystem) sameWorktreePath(first, second worktreePathObservation) bool {
+	if first.path == second.path || (runtime.GOOS == "windows" && equalFoldPath(first.path, second.path)) {
+		return true
+	}
+	return first.info != nil && second.info != nil && f.sameFile(first.info, second.info)
+}
+
 // ValidateRepository checks the internal consistency needed by local Git
 // operations.
 func ValidateRepository(repository Repository) error {
@@ -341,11 +357,6 @@ func FindLinkedWorktree(ctx context.Context, worktrees []Worktree, slot string) 
 			Reason: "slot is registered more than once",
 		}
 	}
-}
-
-// FindRegisteredLinkedWorktree is an explicit alias for FindLinkedWorktree.
-func FindRegisteredLinkedWorktree(ctx context.Context, worktrees []Worktree, slot string) (Worktree, error) {
-	return FindLinkedWorktree(ctx, worktrees, slot)
 }
 
 func deriveWorktreeSlot(

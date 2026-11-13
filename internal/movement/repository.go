@@ -25,11 +25,6 @@ var (
 	ErrLinkedRepository = errors.New("linked Git worktree or submodule")
 )
 
-// RepositoryGit is the read-only Git seam used to inspect one repository.
-type RepositoryGit interface {
-	OutputDir(context.Context, string, ...string) ([]byte, error)
-}
-
 // RepositorySnapshot records the physical repository objects checked during
 // planning so they can be compared again immediately before movement.
 type RepositorySnapshot struct {
@@ -44,7 +39,7 @@ type RepositorySnapshot struct {
 func InspectRepository(
 	ctx context.Context,
 	path string,
-	git RepositoryGit,
+	git gitcmd.Outputter,
 	options Filesystem,
 ) (RepositorySnapshot, error) {
 	if git == nil {
@@ -113,19 +108,7 @@ func InspectRepository(
 		return RepositorySnapshot{}, fmt.Errorf("%w: %q", ErrBareRepository, physicalPath)
 	}
 
-	topOutput, err := git.OutputDir(ctx, physicalPath, "rev-parse", "--show-toplevel")
-	if err != nil {
-		return RepositorySnapshot{}, fmt.Errorf("find Git top-level for %q: %w", physicalPath, err)
-	}
-	topLevel, err := parseGitPath(topOutput, physicalPath, "top-level")
-	if err != nil {
-		return RepositorySnapshot{}, err
-	}
-	commonOutput, err := git.OutputDir(ctx, physicalPath, "rev-parse", "--git-common-dir")
-	if err != nil {
-		return RepositorySnapshot{}, fmt.Errorf("find common Git directory for %q: %w", physicalPath, err)
-	}
-	commonDir, err := parseGitPath(commonOutput, physicalPath, "common Git directory")
+	topLevel, commonDir, err := gitcmd.RepositoryPaths(ctx, git, physicalPath)
 	if err != nil {
 		return RepositorySnapshot{}, err
 	}
@@ -158,7 +141,7 @@ func InspectRepository(
 // source and .git directory are still the same filesystem objects.
 func (snapshot RepositorySnapshot) Revalidate(
 	ctx context.Context,
-	git RepositoryGit,
+	git gitcmd.Outputter,
 	options Filesystem,
 ) error {
 	if snapshot.Path == "" || snapshot.GitDir == "" ||
@@ -330,18 +313,6 @@ func parseGitBoolean(output []byte, description string) (bool, error) {
 	default:
 		return false, fmt.Errorf("Git returned invalid %s %q", description, value)
 	}
-}
-
-func parseGitPath(output []byte, relativeTo, description string) (string, error) {
-	value, err := gitcmd.ParseLine(output, description)
-	if err != nil {
-		return "", err
-	}
-	path := filepath.FromSlash(value)
-	if !filepath.IsAbs(path) {
-		path = filepath.Join(relativeTo, path)
-	}
-	return filepath.Clean(path), nil
 }
 
 func normalizePath(path string) string {

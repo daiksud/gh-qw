@@ -71,6 +71,11 @@ physical root are distinct. Capture filesystem identity before mutation,
 including on Windows. Reject unrelated paths, symlink escapes, nested
 registrations, and unknown registration state.
 
+Worktree enumeration validates each slot and captures filesystem identities once
+per observation. Display rendering uses those canonical fields without Git or
+filesystem queries. Git top-level and common-directory paths come from one
+native query; failed commands never yield usable partial observations.
+
 Share observations only within one read-only phase. Rebuild bulk removal plans
 after confirmation and revalidate each target immediately before deletion.
 Interactive removal also preserves target observations across the picker and

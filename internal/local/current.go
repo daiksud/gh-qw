@@ -14,7 +14,7 @@ import (
 // CurrentRepositoryOptions supplies the Git output and filesystem seams used
 // to identify a repository from a directory.
 type CurrentRepositoryOptions struct {
-	Git        GitOutputter
+	Git        gitcmd.Outputter
 	Filesystem FilesystemOptions
 }
 
@@ -149,7 +149,7 @@ func findCurrentRepository(
 		cwd = absolute
 	}
 
-	topLevel, commonDir, err := gitTopLevelAndCommon(ctx, git, cwd)
+	topLevel, commonDir, err := gitcmd.RepositoryPaths(ctx, git, cwd)
 	if err != nil {
 		return Repository{}, "", &WorktreeError{
 			Kind:   ErrCurrentUnmanaged,
