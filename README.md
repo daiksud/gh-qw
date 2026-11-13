@@ -37,17 +37,19 @@ The complete command set requires Git 2.42.0 or newer and GitHub CLI 2.88.0 or
 newer. Git must be on `PATH`; gh is resolved through `GH_PATH`, then `PATH`.
 Configure authentication with `gh auth login` for network operations.
 Install `fzf` on `PATH` to choose repositories when cloning by owner or partial
-name, and cleanup targets with argumentless `remove`.
+name, local directories with `list`, and cleanup targets with argumentless
+`remove`.
 
-To enable `add --cd` in Zsh, put this in `~/.zshrc` (use `bash` and
+To enable `add --cd` and `list --cd` in Zsh, put this in `~/.zshrc` (use `bash` and
 `~/.bashrc` for Bash):
 
 ```sh
 eval "$(gh qw shell-init zsh)"
 ```
 
-The opt-in shell function intercepts only `gh qw add --cd`. Other `gh`
-commands continue to use the normal GitHub CLI.
+Reload this integration after updating gh-qw. The opt-in shell function handles
+navigation for `gh qw add --cd` and `gh qw list --cd`. Other `gh` commands
+continue to use the normal GitHub CLI.
 
 ## Quick start
 
@@ -57,10 +59,16 @@ gh qw add --cd ~/projects/my-api
 gh qw list --full-path
 gh qw add --worktree --cd -R cli/cli -b feature/docs
 gh qw list --all
+gh qw list --all --cd
 ```
 
 To find a repository before cloning, run `gh qw clone cli`. This lists the
 owner's repositories, or opens `fzf` to choose one when it is installed.
+
+To resume local work, `gh qw list --cd` selects a repository and enters it;
+`--all` also offers linked worktrees. Ordinary `list` opens fzf when stdout is
+a terminal and fzf is installed. Use `--fzf=false` for a plain list, or `--fzf`
+to select while piping or capturing the result.
 
 Main repositories live at `<root>/<host>/<owner>/<repo>`. Linked worktrees
 live at `<root>/worktrees/<unique-name>/<repo>`, with the default root `~/ghqw`.
@@ -85,7 +93,7 @@ are described in the
 | --- | --- |
 | `clone` | Acquire and register a new repository; supply an owner to list or choose a repository. |
 | `add` | Register a local repository; `--move` relocates it; `--worktree` adds a linked worktree; `--cd` navigates there with shell integration. |
-| `list` | List registered repositories; `--worktree` selects worktrees, `--gone` filters them, and `--all` includes both. |
+| `list` | List or select registered repositories; `--worktree` selects worktrees, `--gone` filters them, `--all` includes both, and `--cd` enters the selected directory. |
 | `forget` | Unregister a repository without deleting its files. |
 | `root` | Print the repository placement root. |
 | `remove` | Remove a repository, one linked worktree, or gone-upstream worktrees; omit the target to choose with `fzf`. |

@@ -145,7 +145,7 @@ func TestListHelpShowsSupportedOptions(t *testing.T) {
 	if status != 0 {
 		t.Fatalf("Execute() status = %d, want 0", status)
 	}
-	for _, want := range []string{"Usage:", "--full-path", "--exact", "--unique", "--worktree"} {
+	for _, want := range []string{"Usage:", "--full-path", "--exact", "--unique", "--worktree", "--fzf", "--cd"} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("help = %q, want substring %q", stdout.String(), want)
 		}

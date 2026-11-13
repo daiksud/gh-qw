@@ -51,6 +51,34 @@ output, or another selector failure returns `1`. An installed but failing
 selector does not fall back to printing candidates. Each command defines when
 selection is offered and what happens if `fzf` is absent.
 
+## Shell navigation
+
+`add --cd` and `list --cd` enter the resulting directory in the **invoking
+shell**. They require explicit Bash or Zsh integration: a child executable
+cannot change its parent's working directory. Initialize it in your shell
+startup file:
+
+```sh
+# Zsh: ~/.zshrc
+eval "$(gh qw shell-init zsh)"
+# Bash: use `eval "$(gh qw shell-init bash)"` in ~/.bashrc instead.
+```
+
+Reload the integration after updating gh-qw. The generated function wraps `gh`
+for these two commands with `--cd` enabled and delegates other invocations
+unchanged. It captures the successful absolute path, uses the shell's built-in
+`cd`, then prints the original path result. Spaces and embedded or trailing
+newlines in paths are preserved. `--cd=true` and `--cd=false` are supported;
+the last value wins. Flags after `--` are positional input, and help never
+changes the working directory.
+
+Without integration, `--cd` is a usage error before discovery or mutation.
+Command failure or canceled selection leaves the shell's working directory
+unchanged. If the destination is no longer a directory or `cd` fails, return
+an error; any preceding `add` operation remains complete. A result-output
+failure after successful navigation returns an error without undoing the
+directory change. Other shells can consume ordinary path output themselves.
+
 ## Repository input
 
 A canonical repository identity is `<host>/<owner>/<repo>`. Managed linked
@@ -214,27 +242,9 @@ to Git. Git owns branch and worktree behavior; see the worktree-add details
 below for the remaining flags. Both successful modes print the resulting
 absolute path.
 
-### Shell navigation
-
-`--cd` enters the registered repository, the `--move` destination, or the
-new linked worktree in the **invoking shell** after `add` succeeds. It requires
-explicit shell integration: a child executable cannot change its parent's
-working directory. Initialize it once in your shell startup file:
-
-```sh
-# Zsh: ~/.zshrc
-eval "$(gh qw shell-init zsh)"
-# Bash: use `eval "$(gh qw shell-init bash)"` in ~/.bashrc instead.
-```
-
-The generated shell function wraps `gh` only for `gh qw add --cd` and
-delegates all other invocations unchanged. It captures the successful path,
-uses the shell's built-in `cd`, then prints the original path result.
-A failed `add` leaves the shell's working directory unchanged. A failed
-`cd` returns an error even though the preceding registration or worktree
-creation is complete. Shell integration is supported for Bash and Zsh.
-Without integration, `add --cd` is a usage error **before mutation**; use
-ordinary `add` to obtain the path in other shells.
+`--cd` enters the registered repository, the `--move` destination, or the new
+linked worktree after success. See [Shell navigation](#shell-navigation) for
+setup and failure behavior.
 
 ## forget
 
@@ -251,7 +261,8 @@ missing, a symlink is dangling, or the location cannot otherwise be resolved.
 ## list
 
 ```text
-gh qw list [-e|--exact] [-p|--full-path] [--unique] [--worktree [--gone]|--all] [<query>]
+gh qw list [-e|--exact] [-p|--full-path] [--unique]
+           [--worktree [--gone]|--all] [--fzf[=false]] [--cd] [<query>]
 ```
 
 List explicitly registered main repositories by default. `--worktree`
@@ -262,7 +273,8 @@ With `--worktree --gone`, include only attached linked worktrees whose local
 branch has a configured, fully qualified upstream ref that is absent from the
 local ref database. Do not fetch or infer remote state. `--gone` requires
 `--worktree`; it cannot be combined with `--all`.
-Match substrings against the non-host identity using smartcase:
+Without interactive selection, match substrings against the non-host identity
+using smartcase:
 lowercase queries ignore case; uppercase queries match case. A host-looking
 first component followed by `/` restricts the host (`github.com/`, not bare
 `github.com`). URL queries are canonicalized first.
@@ -278,10 +290,12 @@ have no branch, so they display `@<slot>` instead. If labels would collide,
 the affected linked worktrees display their distinct slots. Branch labels follow
 checkouts and can change without renaming directories. `--full-path` prints
 physical paths; `--unique` prints the shortest unambiguous displayed suffix
-among selected entries. Those two flags are mutually exclusive.
+among the filtered entries (or all entries offered to fzf before selection).
+Those two flags are mutually exclusive.
 The XDG registry is the sole source of managed-repository membership.
 Missing registrations are never imported from the configured root. Sort emitted
-strings bytewise. No matches succeeds with empty stdout.
+strings bytewise. Empty candidate sets succeed with empty stdout, except with
+`--cd` as described below.
 
 Managed linked slots are the actual directory names beneath `worktrees`.
 They are derived from `host-owner-repo-branch`, with punctuation converted
@@ -289,6 +303,42 @@ to `-` and numeric suffixes assigned to resolve collisions. Slots remain
 stable when their Git branches change. External attached worktrees use their
 short branch; external detached worktrees use their final path component.
 Unsafe or ambiguous slots are rejected rather than treated as a managed target.
+
+### Interactive listing and navigation
+
+| Selection option | Behavior |
+| --- | --- |
+| Omitted | Open fzf when stdout is a terminal and fzf is on `PATH`; otherwise print the ordinary filtered list. |
+| `--fzf` | Select one entry even when stdout is piped or captured; require fzf. |
+| `--fzf=false` | Print the ordinary filtered list. |
+| `--cd` | Select one entry and enter its directory through shell integration; imply fzf and absolute-path output. |
+
+Selection uses the same repository/worktree modes as ordinary listing. Without
+`--exact`, the canonicalized query seeds fzf's editable search without filtering
+the candidates. fzf owns matching, including its search syntax; ordinary list
+substring and host restrictions do not constrain that search. With `--exact`,
+apply the identity-suffix filter first and start fzf with an empty query.
+
+Candidates show their kind, displayed identity, and quoted absolute path.
+Stable slot identities and current branch identities remain searchable when
+they differ from the displayed identity. The selected result follows the normal
+identity, `--full-path`, or `--unique` output option; display rows are private.
+Even one candidate requires selection. An empty candidate set does not inspect
+or launch fzf. Other than a missing executable in automatic mode, selector
+lookup and execution failures are errors rather than a fallback to listing.
+See [fzf selection](#fzf-selection) for terminal and cancellation behavior.
+
+`list --cd` requires [Shell navigation](#shell-navigation) setup and works
+without spelling `--fzf` or `--full-path`. `--fzf=false` and `--unique` conflict
+with `--cd`. An empty candidate set returns `1` without output or navigation,
+so a following `&&` command cannot run in an unintended directory.
+
+```sh
+gh qw list --cd
+gh qw list --all --cd
+gh qw list --worktree --cd api
+gh qw list --fzf --full-path api
+```
 
 ## root
 
