@@ -1,7 +1,6 @@
 package local
 
-// Repository is one ordinary main worktree discovered below a configured
-// repository root.
+// Repository is one registered main checkout and its filesystem boundary.
 type Repository struct {
 	Identity  string
 	Host      string
@@ -30,7 +29,7 @@ type Worktree struct {
 	PrunableReason string
 }
 
-// Current identifies the discovered repository and registered worktree that
+// Current identifies the registered repository and registered worktree that
 // contain the current directory.
 type Current struct {
 	Repository Repository

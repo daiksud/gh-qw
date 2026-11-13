@@ -15,6 +15,7 @@ import (
 	"github.com/daiksud/gh-qw/internal/local"
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
 	"github.com/daiksud/gh-qw/internal/testenv"
+	"github.com/daiksud/gh-qw/internal/testregistry"
 )
 
 func TestWorktreeRemoveMissingSlotPreservesManagedError(t *testing.T) {
@@ -119,6 +120,7 @@ func TestWorktreeRemoveGonePostRemovalFailurePolicies(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 			git := &removalExecutionRunner{Runner: &gitcmd.Runner{Executable: "git", Env: testenv.Environment(t.TempDir()), Stdout: io.Discard, Stderr: io.Discard}}
 			dependencies := WorktreeRemoveDependencies{
+				Registry: testregistry.New(t, local.Repository{Identity: "github.com/acme/widget", Path: repository}),
 				Resolver: worktreeRemoveStaticResolver{result: roots},
 				Git:      git,
 				Getwd:    func() (string, error) { return root, nil },

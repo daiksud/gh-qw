@@ -73,7 +73,6 @@ func worktreeRemoveGoneRun(
 		commandRuntime,
 		request,
 		roots,
-		true,
 	)
 	if err != nil {
 		return err
@@ -114,7 +113,7 @@ func worktreeRemoveGoneRun(
 		}
 	}
 
-	revalidated, err := worktreeRemoveGonePreflight(ctx, commandRuntime, request, false)
+	revalidated, err := worktreeRemoveGonePreflight(ctx, commandRuntime, request)
 	if err != nil {
 		return fmt.Errorf("revalidate gone-worktree removal plan: %w", err)
 	}
@@ -141,7 +140,6 @@ func worktreeRemoveGonePreflight(
 	ctx context.Context,
 	commandRuntime worktreeRemoveRuntime,
 	request worktreeRemoveRequest,
-	emitWarnings bool,
 ) (worktreeRemoveGonePlan, error) {
 	roots, err := commandRuntime.resolver.Resolve()
 	if err != nil {
@@ -153,7 +151,6 @@ func worktreeRemoveGonePreflight(
 		commandRuntime,
 		request,
 		roots,
-		emitWarnings,
 	)
 }
 
@@ -162,32 +159,17 @@ func worktreeRemoveGonePreflightWithRoots(
 	commandRuntime worktreeRemoveRuntime,
 	request worktreeRemoveRequest,
 	roots rootpkg.Result,
-	emitWarnings bool,
 ) (worktreeRemoveGonePlan, error) {
-	discovery, discoveryErr := commandRuntime.discover(
-		ctx,
-		roots.RepositoryRoots,
-		local.DiscoveryOptions{
-			Git:        commandRuntime.git,
-			Filesystem: commandRuntime.filesystem,
-		},
-	)
-	var warningErr error
-	if emitWarnings {
-		warningErr = commandWriteWarnings(commandRuntime.stderr, discovery.Warnings)
-	}
-	if discoveryErr != nil || warningErr != nil {
-		return worktreeRemoveGonePlan{}, errors.Join(
-			worktreeRemoveWrapError("discover repositories", discoveryErr),
-			worktreeRemoveWrapError("write discovery warnings", warningErr),
-		)
+	repositories, registryErr := registeredRepositories(ctx, commandRuntime.registry, roots.RepositoryRoots)
+	if registryErr != nil {
+		return worktreeRemoveGonePlan{}, fmt.Errorf("read registered repositories: %w", registryErr)
 	}
 
 	repository, err := worktreeRemoveSelectRepository(
 		ctx,
 		commandRuntime,
 		roots.WorktreeRoot,
-		discovery.Repositories,
+		repositories,
 		request.selector,
 		request.selectorSet,
 	)
@@ -198,7 +180,7 @@ func worktreeRemoveGonePreflightWithRoots(
 		ctx,
 		commandRuntime,
 		roots,
-		discovery.Repositories,
+		repositories,
 		repository,
 		request.force,
 	)
@@ -529,22 +511,18 @@ func worktreeRemoveGoneExecute(
 			}
 			continue
 		}
-		latest, discoveryErr := commandRuntime.discover(
-			ctx,
-			plan.roots.RepositoryRoots,
-			local.DiscoveryOptions{Git: commandRuntime.git, Filesystem: commandRuntime.filesystem},
-		)
-		if discoveryErr != nil {
-			return failed, fmt.Errorf("revalidate registered repositories: %w", discoveryErr)
+		latest, registryErr := registeredRepositories(ctx, commandRuntime.registry, plan.roots.RepositoryRoots)
+		if registryErr != nil {
+			return failed, fmt.Errorf("revalidate registered repositories: %w", registryErr)
 		}
 		if err := removeRejectNestedRegisteredPaths(
 			plan.repository.Identity,
 			[]string{entry.target.Directory.Path},
-			latest.Repositories,
+			latest,
 		); err != nil {
 			return failed, fmt.Errorf("revalidate registered repositories: %w", err)
 		}
-		if err := removal.CompareRepositories(plan.repositories, latest.Repositories); err != nil {
+		if err := removal.CompareRepositories(plan.repositories, latest); err != nil {
 			return failed, fmt.Errorf("revalidate registered repositories: %w", err)
 		}
 
@@ -706,28 +684,21 @@ func worktreeRemoveGoneRevalidateEntry(
 	if dirty && !force {
 		return fmt.Errorf("%w: worktree is dirty", ErrRemoveSafety)
 	}
-	discovery, err := commandRuntime.discover(
-		ctx,
-		plan.roots.RepositoryRoots,
-		local.DiscoveryOptions{
-			Git:        commandRuntime.git,
-			Filesystem: commandRuntime.filesystem,
-		},
-	)
+	repositories, err := registeredRepositories(ctx, commandRuntime.registry, plan.roots.RepositoryRoots)
 	if err != nil {
-		return worktreeRemoveGoneShared(fmt.Errorf("discover repositories: %w", err))
+		return worktreeRemoveGoneShared(fmt.Errorf("read registered repositories: %w", err))
 	}
 	if err := removal.CompareRepositories(
 		plan.repositories,
-		discovery.Repositories,
+		repositories,
 	); err != nil {
 		return worktreeRemoveGoneShared(err)
 	}
-	// Discovery is a fresh inventory boundary: do not reuse the earlier selected
+	// Reading registrations is a fresh inventory boundary: do not reuse the earlier selected
 	// repository enumeration when checking newly nested registrations.
 
 	registrations, err := commandRuntime.observer().Registrations(ctx,
-		discovery.Repositories,
+		repositories,
 	)
 	if err != nil {
 		return worktreeRemoveGoneShared(err)

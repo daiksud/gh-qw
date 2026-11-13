@@ -31,6 +31,10 @@ type AddDependencies struct {
 // registry. With --worktree it selects a registered repository and delegates
 // creation of its linked worktree to Git.
 func NewAddCommand(deps AddDependencies) *cobra.Command {
+	deps.Registry = commandRegistry(deps.Registry)
+	if deps.Worktree.Registry == nil {
+		deps.Worktree.Registry = deps.Registry
+	}
 	deps.Stdout = commandStdout(deps.Stdout)
 	deps.Stderr = commandStderr(deps.Stderr)
 	if deps.Resolver == nil {
@@ -138,12 +142,8 @@ func NewAddCommand(deps AddDependencies) *cobra.Command {
 				}
 				return worktreeAddRun(command.Context(), runtime, request)
 			}
-			store, err := resolveLocationRegistry(deps.Registry)
-			if err != nil {
-				return err
-			}
-			movement.Registry = store
-			return addRepository(command.Context(), movement, store, args[0], move, command.OutOrStdout())
+			movement.Registry = deps.Registry
+			return addRepository(command.Context(), movement, deps.Registry, args[0], move, command.OutOrStdout())
 		},
 	}
 	flags := command.Flags()

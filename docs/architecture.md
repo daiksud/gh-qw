@@ -12,7 +12,7 @@ The [purpose](purpose.md) owns product direction; the [CLI](cli.md) and
 | `repospec` | Input syntax, canonical repository identity, transport separation, and native literal-ref validation. |
 | `config`, `root`, `xdg` | TOML loading, environment precedence, root normalization, and XDG defaults. |
 | `registry` | Explicit identity-to-location mappings under XDG data; no Git metadata. |
-| `local` | Read-only repository/worktree discovery, selectors, slots, and Git associations. |
+| `local` | Registered-repository selectors, current checkout resolution, worktree inspection, slots, and Git associations. |
 | `gitcmd`, `ghcmd`, `ghapi` | Native command arguments and structured output interpretation. |
 | `fzfcmd` | External selector invocation and validation of one returned candidate. |
 | `procio` | Context-bound processes, descriptors, captured output, bounded diagnostic tails, and typed failures. |
@@ -61,7 +61,9 @@ remains authoritative for the registration and current branch.
 The explicit XDG location registry owns gh-qw's managed main-repository set.
 Git remains the source of truth for actual worktree registrations, and the
 filesystem for existing files. Configured roots determine default placement;
-their contents are never imported into the managed set automatically.
+their contents are never scanned or imported into the managed set. Commands read
+the registry directly; each picker, confirmation, and mutation revalidation
+phase reads a fresh inventory.
 
 Configured-path normalization and runtime validation against an established
 physical root are distinct. Capture filesystem identity before mutation,
@@ -96,8 +98,8 @@ removes each linked directory.
 Report operations already completed when a later step fails. Do not undo a
 created branch, completed repository move, or successful worktree creation merely
 because a subsequent checkout, repair, cleanup, or output write fails. A failed
-warning write prevents mutation; an output failure after mutation reports the
-actual partial result. See the [CLI reference](cli.md) for command-specific rules.
+plan or diagnostic write prevents mutation; an output failure after mutation
+reports the actual partial result. See the [CLI reference](cli.md) for command-specific rules.
 
 ## Tests
 

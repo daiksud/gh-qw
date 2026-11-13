@@ -26,12 +26,8 @@ type WorktreeRemoveGit interface {
 // WorktreeRemoveDependencies supplies command integration and test seams.
 type WorktreeRemoveDependencies struct {
 	Resolver RootResolver
-	Discover func(
-		context.Context,
-		[]string,
-		...local.DiscoveryOptions,
-	) (local.DiscoveryResult, error)
-	Current func(
+	Registry LocationRegistry
+	Current  func(
 		context.Context,
 		string,
 		string,
@@ -72,12 +68,8 @@ type WorktreeRemoveDependencies struct {
 
 type worktreeRemoveRuntime struct {
 	resolver RootResolver
-	discover func(
-		context.Context,
-		[]string,
-		...local.DiscoveryOptions,
-	) (local.DiscoveryResult, error)
-	current func(
+	registry LocationRegistry
+	current  func(
 		context.Context,
 		string,
 		string,
@@ -150,9 +142,6 @@ func worktreeRemovePrepareRuntime(
 			Stderr:     stderr,
 		}
 	}
-	if dependencies.Discover == nil {
-		dependencies.Discover = local.DiscoverRepositories
-	}
 	if dependencies.Current == nil {
 		dependencies.Current = local.DiscoverCurrent
 	}
@@ -201,7 +190,7 @@ func worktreeRemovePrepareRuntime(
 	}
 	return worktreeRemoveRuntime{
 		resolver:            resolver,
-		discover:            dependencies.Discover,
+		registry:            commandRegistry(dependencies.Registry),
 		current:             dependencies.Current,
 		resolveManaged:      dependencies.ResolveManaged,
 		enumerate:           dependencies.Enumerate,
@@ -233,27 +222,16 @@ func worktreeRemoveRun(
 		return fmt.Errorf("resolve roots: %w", err)
 	}
 
-	discovery, discoveryErr := commandRuntime.discover(
-		ctx,
-		roots.RepositoryRoots,
-		local.DiscoveryOptions{
-			Git:        commandRuntime.git,
-			Filesystem: commandRuntime.filesystem,
-		},
-	)
-	warningErr := commandWriteWarnings(commandRuntime.stderr, discovery.Warnings)
-	if discoveryErr != nil || warningErr != nil {
-		return errors.Join(
-			worktreeRemoveWrapError("discover repositories", discoveryErr),
-			worktreeRemoveWrapError("write discovery warnings", warningErr),
-		)
+	repositories, registryErr := registeredRepositories(ctx, commandRuntime.registry, roots.RepositoryRoots)
+	if registryErr != nil {
+		return fmt.Errorf("read registered repositories: %w", registryErr)
 	}
 
 	repository, err := worktreeRemoveSelectRepository(
 		ctx,
 		commandRuntime,
 		roots.WorktreeRoot,
-		discovery.Repositories,
+		repositories,
 		request.selector,
 		request.selectorSet,
 	)
@@ -307,7 +285,7 @@ func worktreeRemoveRun(
 	if err := removeRejectNestedRegisteredPaths(
 		repository.Identity,
 		[]string{worktree.Path},
-		discovery.Repositories,
+		repositories,
 	); err != nil {
 		return err
 	}
@@ -325,22 +303,18 @@ func worktreeRemoveRun(
 	// Re-read the managed inventory immediately before mutation. A repository
 	// registered after the initial observation must not be deleted with the
 	// linked worktree that now contains it.
-	latest, discoveryErr := commandRuntime.discover(
-		ctx,
-		roots.RepositoryRoots,
-		local.DiscoveryOptions{Git: commandRuntime.git, Filesystem: commandRuntime.filesystem},
-	)
-	if discoveryErr != nil {
-		return fmt.Errorf("revalidate registered repositories: %w", discoveryErr)
+	latest, registryErr := registeredRepositories(ctx, commandRuntime.registry, roots.RepositoryRoots)
+	if registryErr != nil {
+		return fmt.Errorf("revalidate registered repositories: %w", registryErr)
 	}
 	if err := removeRejectNestedRegisteredPaths(
 		repository.Identity,
 		[]string{worktree.Path},
-		latest.Repositories,
+		latest,
 	); err != nil {
 		return fmt.Errorf("revalidate registered repositories: %w", err)
 	}
-	if err := removal.CompareRepositories(discovery.Repositories, latest.Repositories); err != nil {
+	if err := removal.CompareRepositories(repositories, latest); err != nil {
 		return fmt.Errorf("revalidate registered repositories: %w", err)
 	}
 	if request.selected != nil {
@@ -399,7 +373,7 @@ func worktreeRemoveSelectRepository(
 	selectorSet bool,
 ) (local.Repository, error) {
 	if selectorSet {
-		repository, err := local.ResolveRepositoryForMutation(repositories, selector)
+		repository, err := local.ResolveRepository(repositories, selector)
 		if err != nil {
 			return local.Repository{}, worktreeRemoveNewUsageError(
 				fmt.Errorf("resolve repository %q: %w", selector, err),

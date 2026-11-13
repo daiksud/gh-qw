@@ -27,13 +27,6 @@ func defaultLocationRegistry() (LocationRegistry, error) {
 	return registry.NewStore()
 }
 
-func resolveLocationRegistry(provided LocationRegistry) (LocationRegistry, error) {
-	if provided != nil {
-		return provided, nil
-	}
-	return defaultLocationRegistry()
-}
-
 func registeredRepositories(ctx context.Context, store LocationRegistry, roots []string) ([]local.Repository, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -78,16 +71,6 @@ func registeredRepositories(ctx context.Context, store LocationRegistry, roots [
 		})
 	}
 	return result, nil
-}
-
-func registryDiscovery(store LocationRegistry) func(context.Context, []string, ...local.DiscoveryOptions) (local.DiscoveryResult, error) {
-	return func(ctx context.Context, roots []string, _ ...local.DiscoveryOptions) (local.DiscoveryResult, error) {
-		repositories, err := registeredRepositories(ctx, store, roots)
-		if err != nil {
-			return local.DiscoveryResult{}, err
-		}
-		return local.DiscoveryResult{Repositories: repositories}, nil
-	}
 }
 
 func validateRegisteredRepository(ctx context.Context, git RepositoryMoveGit, repository local.Repository) error {
@@ -174,4 +157,11 @@ func (dynamicLocationRegistry) ForgetAt(identity, path string) error {
 		return err
 	}
 	return store.ForgetAt(identity, path)
+}
+
+func commandRegistry(provided LocationRegistry) LocationRegistry {
+	if provided != nil {
+		return provided
+	}
+	return dynamicLocationRegistry{}
 }

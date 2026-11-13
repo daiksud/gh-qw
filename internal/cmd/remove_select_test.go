@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/daiksud/gh-qw/internal/gitcmd"
-	"github.com/daiksud/gh-qw/internal/local"
+	"github.com/daiksud/gh-qw/internal/testregistry"
 )
 
 func TestRemoveSelectedRepositoryKeepsConfirmationAndForgetsRemovedPath(t *testing.T) {
@@ -26,7 +26,7 @@ func TestRemoveSelectedRepositoryKeepsConfirmationAndForgetsRemovedPath(t *testi
 				return removeSelectionRow(t, rows, "repository\t"), nil
 			}
 			forgotten := false
-			deps.Forget = func(identity, path string) error {
+			deps.Registry.(*testregistry.Registry).OnForgetAt = func(identity, path string) error {
 				forgotten = true
 				if identity != fixture.repository.Identity || path != fixture.repository.Path {
 					t.Fatalf("forgot %q at %q", identity, path)
@@ -158,19 +158,19 @@ func TestRemoveWorktreePickerOnlyOffersWorktrees(t *testing.T) {
 	fixture.assertStdoutEmpty(t)
 }
 
-func TestRemovePickerWarningFailureDoesNotSelectOrMutate(t *testing.T) {
+func TestRemovePickerRegistryFailureDoesNotSelectOrMutate(t *testing.T) {
 	fixture := newRemoveTestFixture(t, "topic")
-	fixture.warnings = []local.Warning{{Path: fixture.repository.Path}}
-	fixture.stderrWriter = &removeTestShortWriter{}
+	readErr := errors.New("registry unavailable")
+	fixture.registryErr = readErr
 	deps := removeSelectionDependencies(fixture)
 	deps.Select = func(context.Context, []string) (string, error) {
-		t.Fatal("selector started after warning output failed")
+		t.Fatal("selector started after registry read failed")
 		return "", nil
 	}
 	command := NewRemoveCommand(deps)
 	command.SetArgs([]string{})
-	if err := command.Execute(); !errors.Is(err, io.ErrShortWrite) {
-		t.Fatalf("warning failure = %v", err)
+	if err := command.Execute(); !errors.Is(err, readErr) {
+		t.Fatalf("registry failure = %v", err)
 	}
 	fixture.assertNoMutation(t)
 }
@@ -189,7 +189,7 @@ func removeSelectionRow(t *testing.T, rows []string, prefix string) string {
 func removeSelectionDependencies(fixture *removeTestFixture) RemoveDependencies {
 	deps := fixture.dependencies()
 	deps.Worktree = WorktreeRemoveDependencies{
-		Resolver: deps.Resolver, Discover: deps.Discover,
+		Resolver: deps.Resolver, Registry: deps.Registry,
 		ResolveManaged: deps.ResolveManaged, Enumerate: deps.Enumerate,
 		ValidateAssociation: deps.ValidateAssociation,
 		Git:                 removeSelectionGit{fixture.git}, Filesystem: deps.Filesystem,

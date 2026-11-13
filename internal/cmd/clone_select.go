@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/daiksud/gh-qw/internal/fzfcmd"
-	"github.com/daiksud/gh-qw/internal/local"
 	"github.com/daiksud/gh-qw/internal/repospec"
 )
 
@@ -20,7 +19,6 @@ import (
 type clonePreparation struct {
 	deps           CloneDependencies
 	ssh            bool
-	warn           local.WarningSink
 	stdout, stderr io.Writer
 	roots          []string
 	states         map[string]*cloneTarget
@@ -63,16 +61,12 @@ func (p *clonePreparation) prepare(ctx context.Context, input string) (*clonePar
 		return nil, nil, err
 	}
 	if p.states == nil {
-		discovery, err := p.deps.Discover(ctx, p.roots)
+		repositories, err := registeredRepositories(ctx, p.deps.Registry, p.roots)
 		if err != nil {
-			p.fatalError = fmt.Errorf("discover existing repositories: %w", err)
+			p.fatalError = fmt.Errorf("read registered repositories: %w", err)
 			return nil, nil, p.fatalError
 		}
-		if err := cloneEmitDiscoveryWarnings(discovery.Warnings, p.warn, p.stderr); err != nil {
-			p.fatalError = fmt.Errorf("write discovery warning: %w", err)
-			return nil, nil, p.fatalError
-		}
-		p.states = cloneInitialTargetStates(discovery.Repositories)
+		p.states = cloneInitialTargetStates(repositories)
 	}
 	state, err := cloneResolveTarget(p.states, spec, p.roots[0])
 	if err != nil {

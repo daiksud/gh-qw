@@ -19,6 +19,7 @@ import (
 	"github.com/daiksud/gh-qw/internal/repospec"
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
 	"github.com/daiksud/gh-qw/internal/testenv"
+	"github.com/daiksud/gh-qw/internal/testregistry"
 	"github.com/spf13/cobra"
 )
 
@@ -80,26 +81,6 @@ func TestNewRemoveCommandWorktreeSelectsCurrentMainOrLinked(t *testing.T) {
 	}
 }
 
-func TestNewRemoveCommandWorktreeUsesCurrentRepositoryWithDuplicateIdentity(t *testing.T) {
-	fixture := worktreeRemoveNewFixture(t, "feature-current-duplicate")
-	duplicate := fixture.repository
-	duplicate.Path = filepath.Join(fixture.repositoryRoot, "duplicate")
-	duplicate.RootIndex = 1
-	fixture.repositories = append(fixture.repositories, duplicate)
-
-	if err := fixture.worktreeRemoveExecute(fixture.branch); err != nil {
-		t.Fatalf("Execute() error = %v", err)
-	}
-	if fixture.resolvedRepository.Path != fixture.repository.Path {
-		t.Fatalf(
-			"resolved repository path = %q, want current %q",
-			fixture.resolvedRepository.Path,
-			fixture.repository.Path,
-		)
-	}
-	worktreeRemoveAssertSuccess(t, fixture)
-}
-
 func TestNewRemoveCommandWorktreePassesOneForceLevel(t *testing.T) {
 	fixture := worktreeRemoveNewFixture(t, "feature-forced")
 
@@ -152,12 +133,13 @@ func TestNewRemoveCommandWorktreeRejectsUsageAndAmbiguity(t *testing.T) {
 			wantIs: local.ErrRepositoryNotFound,
 		},
 		{
-			name: "duplicate explicit identity",
-			args: []string{"-R", "github.com/acme/widget", "feature-test"},
+			name: "ambiguous repository name",
+			args: []string{"-R", "widget", "feature-test"},
 			configure: func(fixture *worktreeRemoveFixture) {
 				duplicate := fixture.repository
-				duplicate.Path = filepath.Join(fixture.repositoryRoot, "duplicate")
-				duplicate.RootIndex = 1
+				duplicate.Identity = "github.com/other/widget"
+				duplicate.Owner = "other"
+				duplicate.Path = filepath.Join(fixture.repositoryRoot, "github.com", "other", "widget")
 				fixture.repositories = append(fixture.repositories, duplicate)
 			},
 			wantIs: local.ErrRepositoryAmbiguous,
@@ -303,7 +285,7 @@ func TestNewRemoveCommandWorktreeRejectsNestedRegisteredRepository(t *testing.T)
 func TestNewRemoveCommandWorktreeRevalidatesNestedRegisteredRepository(t *testing.T) {
 	fixture := worktreeRemoveNewFixture(t, "feature-late-nested-repository")
 	nestedPath := filepath.Join(fixture.target, "nested")
-	fixture.onDiscover = func(call int) {
+	fixture.onRegistryRead = func(call int) {
 		if call != 2 {
 			return
 		}
@@ -324,8 +306,8 @@ func TestNewRemoveCommandWorktreeRevalidatesNestedRegisteredRepository(t *testin
 	if !errors.Is(err, ErrRemoveSafety) || !strings.Contains(err.Error(), "registered repository") {
 		t.Fatalf("Execute() error = %v, want late nested registration safety error", err)
 	}
-	if fixture.discoveryCalls != 2 || len(fixture.git.removals) != 0 {
-		t.Fatalf("discovery calls = %d, removals = %d; want 2, 0", fixture.discoveryCalls, len(fixture.git.removals))
+	if fixture.registryReads != 2 || len(fixture.git.removals) != 0 {
+		t.Fatalf("registry calls = %d, removals = %d; want 2, 0", fixture.registryReads, len(fixture.git.removals))
 	}
 	if info, statErr := os.Stat(nestedPath); statErr != nil || !info.IsDir() {
 		t.Fatalf("late nested repository changed: info=%v err=%v", info, statErr)
@@ -502,47 +484,7 @@ func TestNewRemoveCommandWorktreeRevalidatesCleanupBoundary(t *testing.T) {
 	}
 }
 
-func TestNewRemoveCommandWorktreeWarningsAndWriterFailures(t *testing.T) {
-	t.Run("warning prefix", func(t *testing.T) {
-		fixture := worktreeRemoveNewFixture(t, "feature-warning")
-		warning := local.Warning{
-			Kind:      local.WarningInspection,
-			Root:      fixture.repositoryRoot,
-			RootIndex: 0,
-			Path:      filepath.Join(fixture.repositoryRoot, "unreadable"),
-			Operation: "inspect",
-			Err:       errors.New("unreadable"),
-		}
-		fixture.warnings = []local.Warning{warning}
-
-		if err := fixture.worktreeRemoveExecute(fixture.branch); err != nil {
-			t.Fatalf("Execute() error = %v", err)
-		}
-		want := "gh-qw: warning: " + warning.Error() + "\n" +
-			"removed worktree " + local.NormalizePathForOutput(fixture.target) + "\n"
-		if got := fixture.stderr.String(); got != want {
-			t.Fatalf("stderr = %q, want %q", got, want)
-		}
-	})
-
-	t.Run("warning write failure prevents mutation", func(t *testing.T) {
-		fixture := worktreeRemoveNewFixture(t, "feature-warning-write")
-		fixture.warnings = []local.Warning{{
-			Kind:      local.WarningInspection,
-			Path:      "entry",
-			Operation: "inspect",
-		}}
-		writeErr := errors.New("warning writer failed")
-		fixture.stderrWriter = &worktreeRemoveErrorWriter{err: writeErr}
-
-		err := fixture.worktreeRemoveExecute(fixture.branch)
-		if !errors.Is(err, writeErr) {
-			t.Fatalf("Execute() error = %v, want errors.Is(%v)", err, writeErr)
-		}
-		if len(fixture.git.removals) != 0 {
-			t.Fatalf("WorktreeRemove() calls = %d, want 0", len(fixture.git.removals))
-		}
-	})
+func TestNewRemoveCommandWorktreeWriterFailures(t *testing.T) {
 
 	t.Run("diagnostic write failure reports completed mutation", func(t *testing.T) {
 		fixture := worktreeRemoveNewFixture(t, "feature-diagnostic-write")
@@ -630,6 +572,7 @@ func TestNewRemoveCommandWorktreeRealGitLifecycle(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	command := newWorktreeRemoveTestCommand(WorktreeRemoveDependencies{
+		Registry: testregistry.New(t, local.Repository{Identity: "github.com/acme/widget", Path: repositoryPath}),
 		Resolver: worktreeRemoveStaticResolver{result: rootpkg.Result{
 			RepositoryRoots: []string{repositoryRoot},
 			WorktreeRoot:    worktreeRoot,
@@ -732,10 +675,11 @@ func TestNewRemoveCommandWorktreeGoneRealGitLifecycle(t *testing.T) {
 	testenv.Git(t, repositoryPath, "update-ref", "-d", worktrees[1].ref)
 	testenv.Git(t, repositoryPath, "update-ref", "refs/heads/HEAD", "HEAD")
 
-	// Reuse the real Git fixture to check that discovery and cleanup agree,
+	// Reuse the real Git fixture to check that registry and cleanup agree,
 	// including a non-default remote fetch refspec.
 	var listed bytes.Buffer
 	list := NewListCommand(ListDependencies{
+		Registry: testregistry.New(t, local.Repository{Identity: "github.com/acme/widget", Path: repositoryPath}),
 		Resolver: worktreeRemoveStaticResolver{result: rootpkg.Result{
 			RepositoryRoots: []string{repositoryRoot},
 			WorktreeRoot:    worktreeRoot,
@@ -754,6 +698,7 @@ func TestNewRemoveCommandWorktreeGoneRealGitLifecycle(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	prompts := 0
 	command := newWorktreeRemoveTestCommand(WorktreeRemoveDependencies{
+		Registry: testregistry.New(t, local.Repository{Identity: "github.com/acme/widget", Path: repositoryPath}),
 		Resolver: worktreeRemoveStaticResolver{result: rootpkg.Result{
 			RepositoryRoots: []string{repositoryRoot},
 			WorktreeRoot:    worktreeRoot,
@@ -810,6 +755,7 @@ func TestNewRemoveCommandWorktreeGoneRealGitLifecycle(t *testing.T) {
 	stdout.Reset()
 	stderr.Reset()
 	command = newWorktreeRemoveTestCommand(WorktreeRemoveDependencies{
+		Registry: testregistry.New(t, local.Repository{Identity: "github.com/acme/widget", Path: repositoryPath}),
 		Resolver: worktreeRemoveStaticResolver{result: rootpkg.Result{
 			RepositoryRoots: []string{repositoryRoot},
 			WorktreeRoot:    worktreeRoot,
@@ -832,6 +778,7 @@ func TestNewRemoveCommandWorktreeGoneRealGitLifecycle(t *testing.T) {
 	stdout.Reset()
 	stderr.Reset()
 	command = newWorktreeRemoveTestCommand(WorktreeRemoveDependencies{
+		Registry: testregistry.New(t, local.Repository{Identity: "github.com/acme/widget", Path: repositoryPath}),
 		Resolver: worktreeRemoveStaticResolver{result: rootpkg.Result{
 			RepositoryRoots: []string{repositoryRoot},
 			WorktreeRoot:    worktreeRoot,
@@ -892,6 +839,7 @@ func TestNewRemoveCommandWorktreeGoneDryRunAndForceDirty(t *testing.T) {
 	}
 	newCommand := func(stdout, stderr *bytes.Buffer) *cobra.Command {
 		return newWorktreeRemoveTestCommand(WorktreeRemoveDependencies{
+			Registry: testregistry.New(t, local.Repository{Identity: "github.com/acme/widget", Path: repositoryPath}),
 			Resolver: worktreeRemoveStaticResolver{result: rootpkg.Result{
 				RepositoryRoots: []string{repositoryRoot},
 				WorktreeRoot:    worktreeRoot,
@@ -1024,6 +972,7 @@ func TestNewRemoveCommandWorktreeGoneKeepsParentOfRegisteredWorktree(t *testing.
 
 	var stdout, stderr bytes.Buffer
 	command := newWorktreeRemoveTestCommand(WorktreeRemoveDependencies{
+		Registry: testregistry.New(t, local.Repository{Identity: "github.com/acme/widget", Path: repositoryPath}),
 		Resolver: worktreeRemoveStaticResolver{result: rootpkg.Result{
 			RepositoryRoots: []string{repositoryRoot},
 			WorktreeRoot:    worktreeRoot,
@@ -1105,6 +1054,7 @@ func TestNewRemoveCommandWorktreeGoneKeepsParentOfOtherRepositoryWorktree(t *tes
 
 	var stdout, stderr bytes.Buffer
 	command := newWorktreeRemoveTestCommand(WorktreeRemoveDependencies{
+		Registry: testregistry.New(t, local.Repository{Identity: "github.com/acme/widget", Path: repositoryPath}, local.Repository{Identity: "github.com/other/tool", Path: otherRepositoryPath}),
 		Resolver: worktreeRemoveStaticResolver{result: rootpkg.Result{
 			RepositoryRoots: []string{repositoryRoot},
 			WorktreeRoot:    worktreeRoot,
@@ -1138,6 +1088,7 @@ func TestNewRemoveCommandWorktreeGoneKeepsParentOfOtherRepositoryWorktree(t *tes
 	stdout.Reset()
 	stderr.Reset()
 	command = newWorktreeRemoveTestCommand(WorktreeRemoveDependencies{
+		Registry: testregistry.New(t, local.Repository{Identity: "github.com/acme/widget", Path: repositoryPath}, local.Repository{Identity: "github.com/other/tool", Path: otherRepositoryPath}),
 		Resolver: worktreeRemoveStaticResolver{result: rootpkg.Result{
 			RepositoryRoots: []string{repositoryRoot},
 			WorktreeRoot:    worktreeRoot,
@@ -1231,18 +1182,18 @@ func TestNewRemoveCommandWorktreeGoneKeepsNewNestedWorktreeBeforeRemoval(t *test
 			}}
 			var stdout, stderr bytes.Buffer
 			prompts := 0
-			discoveryCalls := 0
+			registryReads := 0
 			injections := 0
-			discover := func(ctx context.Context, roots []string, options ...local.DiscoveryOptions) (local.DiscoveryResult, error) {
-				discoveryCalls++
-				if discoveryCalls == 3 {
+			readRegistry := func() (map[string]string, error) {
+				registryReads++
+				if registryReads == 3 {
 					if prompts != 1 {
 						t.Fatalf("late inventory check ran after %d confirmations, want 1", prompts)
 					}
 					testenv.Git(t, childRepository, "worktree", "add", "-b", "live-child", childPath, "HEAD")
 					injections++
 				}
-				return local.DiscoverRepositories(ctx, roots, options...)
+				return map[string]string{"github.com/acme/widget": repositoryPath, "github.com/other/tool": otherRepositoryPath}, nil
 			}
 			command := newWorktreeRemoveTestCommand(WorktreeRemoveDependencies{
 				Resolver: worktreeRemoveStaticResolver{result: rootpkg.Result{
@@ -1250,7 +1201,7 @@ func TestNewRemoveCommandWorktreeGoneKeepsNewNestedWorktreeBeforeRemoval(t *test
 					WorktreeRoot:    worktreeRoot,
 				}},
 				Git:      git,
-				Discover: discover,
+				Registry: testregistry.From(readRegistry),
 				Getwd:    func() (string, error) { return root, nil },
 				Prompt: func(context.Context, io.Writer, string) (bool, error) {
 					prompts++
@@ -1271,8 +1222,8 @@ func TestNewRemoveCommandWorktreeGoneKeepsNewNestedWorktreeBeforeRemoval(t *test
 				}
 			}
 
-			if prompts != 1 || discoveryCalls != 3 || injections != 1 || len(git.removals) != 0 {
-				t.Fatalf("prompts=%d discovery=%d injections=%d removals=%#v", prompts, discoveryCalls, injections, git.removals)
+			if prompts != 1 || registryReads != 3 || injections != 1 || len(git.removals) != 0 {
+				t.Fatalf("prompts=%d registry=%d injections=%d removals=%#v", prompts, registryReads, injections, git.removals)
 			}
 			if stdout.Len() != 0 || !strings.Contains(stderr.String(), "kept worktree \"github-com-acme-widget-gone\"") ||
 				!strings.Contains(stderr.String(), "contains registered worktree from \""+childIdentity+"\"") {
@@ -1288,7 +1239,7 @@ func TestNewRemoveCommandWorktreeGoneKeepsNewNestedWorktreeBeforeRemoval(t *test
 	}
 }
 
-func TestNewRemoveCommandWorktreeGoneStopsWhenDiscoveredRepositoryDisappears(t *testing.T) {
+func TestNewRemoveCommandWorktreeGoneStopsWhenRegisteredRepositoryDisappears(t *testing.T) {
 	root := worktreeRemovePhysicalPath(t, t.TempDir())
 	repositoryRoot := filepath.Join(root, "repositories")
 	worktreeRoot := filepath.Join(repositoryRoot, "worktrees")
@@ -1323,25 +1274,14 @@ func TestNewRemoveCommandWorktreeGoneStopsWhenDiscoveredRepositoryDisappears(t *
 	testenv.Git(t, repositoryPath, "config", "branch."+branch+".merge", "refs/heads/gone-parent")
 	testenv.Git(t, repositoryPath, "update-ref", "-d", upstream)
 
-	discoveryCalls := 0
-	discover := func(
-		ctx context.Context,
-		roots []string,
-		options ...local.DiscoveryOptions,
-	) (local.DiscoveryResult, error) {
-		discoveryCalls++
-		result, err := local.DiscoverRepositories(ctx, roots, options...)
-		if err == nil && discoveryCalls >= 3 {
-			result.Repositories = result.Repositories[:1]
-			result.Warnings = append(result.Warnings, local.Warning{
-				Kind:      local.WarningInspection,
-				Root:      repositoryRoot,
-				Path:      otherRepositoryPath,
-				Operation: "simulated repository inspection",
-				Err:       errors.New("simulated warning"),
-			})
+	registryReads := 0
+	readRegistry := func() (map[string]string, error) {
+		registryReads++
+		locations := map[string]string{"github.com/acme/widget": repositoryPath}
+		if registryReads < 3 {
+			locations["github.com/other/tool"] = otherRepositoryPath
 		}
-		return result, err
+		return locations, nil
 	}
 	git := &worktreeRemoveFailingRunner{
 		Runner:   &gitcmd.Runner{Executable: "git", Env: testenv.Environment(t.TempDir()), Stdout: io.Discard, Stderr: io.Discard},
@@ -1354,7 +1294,7 @@ func TestNewRemoveCommandWorktreeGoneStopsWhenDiscoveredRepositoryDisappears(t *
 			RepositoryRoots: []string{repositoryRoot},
 			WorktreeRoot:    worktreeRoot,
 		}},
-		Discover: discover,
+		Registry: testregistry.From(readRegistry),
 		Git:      git,
 		Getwd:    func() (string, error) { return root, nil },
 		Stdout:   &stdout,
@@ -1366,8 +1306,8 @@ func TestNewRemoveCommandWorktreeGoneStopsWhenDiscoveredRepositoryDisappears(t *
 		!strings.Contains(err.Error(), "revalidate registered state") {
 		t.Fatalf("Execute() error = %v, want shared repository-inventory failure", err)
 	}
-	if discoveryCalls != 3 || len(git.removals) != 0 {
-		t.Fatalf("discovery calls=%d removals=%#v, want 3 and none", discoveryCalls, git.removals)
+	if registryReads != 3 || len(git.removals) != 0 {
+		t.Fatalf("registry calls=%d removals=%#v, want 3 and none", registryReads, git.removals)
 	}
 	if stdout.Len() != 0 {
 		t.Fatalf("stdout = %q, want empty", stdout.String())
@@ -1424,6 +1364,7 @@ func TestNewRemoveCommandWorktreeGoneContinuesAfterGitFailure(t *testing.T) {
 		failPath: paths[0],
 	}
 	command := newWorktreeRemoveTestCommand(WorktreeRemoveDependencies{
+		Registry: testregistry.New(t, local.Repository{Identity: "github.com/acme/widget", Path: repositoryPath}),
 		Resolver: worktreeRemoveStaticResolver{result: rootpkg.Result{
 			RepositoryRoots: []string{repositoryRoot},
 			WorktreeRoot:    worktreeRoot,
@@ -1566,10 +1507,9 @@ type worktreeRemoveFixture struct {
 	resolveManagedErr  error
 	resolvedRepository local.Repository
 	currentCalls       int
-	warnings           []local.Warning
-	discoveryErr       error
-	discoveryCalls     int
-	onDiscover         func(int)
+	registryErr        error
+	registryReads      int
+	onRegistryRead     func(int)
 	current            func(
 		context.Context,
 		string,
@@ -1658,20 +1598,13 @@ func (fixture *worktreeRemoveFixture) worktreeRemoveDependencies() WorktreeRemov
 			RepositoryRoots: []string{fixture.repositoryRoot},
 			WorktreeRoot:    fixture.worktreeRoot,
 		}},
-		Discover: func(
-			context.Context,
-			[]string,
-			...local.DiscoveryOptions,
-		) (local.DiscoveryResult, error) {
-			fixture.discoveryCalls++
-			if fixture.onDiscover != nil {
-				fixture.onDiscover(fixture.discoveryCalls)
+		Registry: testregistry.From(func() (map[string]string, error) {
+			fixture.registryReads++
+			if fixture.onRegistryRead != nil {
+				fixture.onRegistryRead(fixture.registryReads)
 			}
-			return local.DiscoveryResult{
-				Repositories: append([]local.Repository(nil), fixture.repositories...),
-				Warnings:     append([]local.Warning(nil), fixture.warnings...),
-			}, fixture.discoveryErr
-		},
+			return testregistry.Locations(fixture.repositories...), fixture.registryErr
+		}),
 		Current: current,
 		ResolveManaged: func(
 			_ context.Context,

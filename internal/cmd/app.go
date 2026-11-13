@@ -49,15 +49,10 @@ type ApplicationDependencies struct {
 	GitFactory CloneGitFactory
 	API        ApplicationAPI
 	Registry   LocationRegistry
-	Discover   func(
-		context.Context,
-		[]string,
-		...local.DiscoveryOptions,
-	) (local.DiscoveryResult, error)
-	Stdin   io.Reader
-	Stdout  io.Writer
-	Stderr  io.Writer
-	Version string
+	Stdin      io.Reader
+	Stdout     io.Writer
+	Stderr     io.Writer
+	Version    string
 }
 
 type commandUsageError struct {
@@ -109,12 +104,6 @@ func NewCommand(dependencies ApplicationDependencies) *cobra.Command {
 		return newCommandUsageError(err)
 	})
 
-	discover := func(
-		ctx context.Context,
-		roots []string,
-	) (local.DiscoveryResult, error) {
-		return deps.Discover(ctx, roots, local.DiscoveryOptions{Git: deps.Git})
-	}
 	enumerate := func(
 		ctx context.Context,
 		repository local.Repository,
@@ -129,23 +118,21 @@ func NewCommand(dependencies ApplicationDependencies) *cobra.Command {
 	}
 
 	cloneCommand := NewCloneCommand(CloneDependencies{
-		OnAcquired:    deps.Registry.Register,
+		Registry:      deps.Registry,
 		RootResolver:  deps.Resolver,
 		GitFactory:    deps.GitFactory,
-		Discover:      discover,
 		RepositoryAPI: deps.API,
 		Stdin:         deps.Stdin,
 		Stdout:        deps.Stdout,
 		Stderr:        deps.Stderr,
 	})
 	listCommand := NewListCommand(ListDependencies{
-		Registry:             deps.Registry,
-		Resolver:             deps.Resolver,
-		Git:                  deps.Git,
-		DiscoverRepositories: discover,
-		EnumerateWorktrees:   enumerate,
-		Stdout:               deps.Stdout,
-		Stderr:               deps.Stderr,
+		Registry:           deps.Registry,
+		Resolver:           deps.Resolver,
+		Git:                deps.Git,
+		EnumerateWorktrees: enumerate,
+		Stdout:             deps.Stdout,
+		Stderr:             deps.Stderr,
 	})
 	rootCommand := NewRootCommand(deps.Resolver, deps.Stdout)
 	shellInitCommand := NewShellInitCommand(deps.Stdout)
@@ -155,7 +142,7 @@ func NewCommand(dependencies ApplicationDependencies) *cobra.Command {
 		Registry: deps.Registry,
 		Worktree: WorktreeAddDependencies{
 			Resolver: deps.Resolver,
-			Discover: deps.Discover,
+			Registry: deps.Registry,
 			Git:      deps.Git,
 			Gh:       deps.Gh,
 			API:      deps.API,
@@ -167,15 +154,14 @@ func NewCommand(dependencies ApplicationDependencies) *cobra.Command {
 	})
 	forgetCommand := NewForgetCommand(deps.Registry, deps.Stderr)
 	removeCommand := NewRemoveCommand(RemoveDependencies{
-		Forget:   deps.Registry.ForgetAt,
 		Resolver: deps.Resolver,
-		Discover: deps.Discover,
+		Registry: deps.Registry,
 		Git:      deps.Git,
 		Stdout:   deps.Stdout,
 		Stderr:   deps.Stderr,
 		Worktree: WorktreeRemoveDependencies{
 			Resolver: deps.Resolver,
-			Discover: deps.Discover,
+			Registry: deps.Registry,
 			Git:      deps.Git,
 			Stdout:   deps.Stdout,
 			Stderr:   deps.Stderr,
@@ -273,12 +259,7 @@ func composeApplicationDependencies(deps ApplicationDependencies) ApplicationDep
 	if deps.API == nil {
 		deps.API = ghapi.NewClient(deps.Stderr)
 	}
-	if deps.Registry == nil {
-		deps.Registry = dynamicLocationRegistry{}
-	}
-	if deps.Discover == nil {
-		deps.Discover = registryDiscovery(deps.Registry)
-	}
+	deps.Registry = commandRegistry(deps.Registry)
 	if deps.Version == "" {
 		deps.Version = developmentVersion
 	}
