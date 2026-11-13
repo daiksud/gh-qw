@@ -20,6 +20,7 @@ import (
 	"github.com/daiksud/gh-qw/internal/local"
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
 	"github.com/daiksud/gh-qw/internal/testenv"
+	"github.com/daiksud/gh-qw/internal/testregistry"
 	"github.com/spf13/cobra"
 )
 
@@ -365,56 +366,6 @@ func TestAddWorktreeRepositorySelection(t *testing.T) {
 	})
 }
 
-func TestAddWorktreeHandlesDuplicateRepositoryIdentity(t *testing.T) {
-	for _, explicit := range []bool{false, true} {
-		name := "current"
-		if explicit {
-			name = "explicit"
-		}
-		t.Run(name, func(t *testing.T) {
-			fixture := worktreeAddNewFixture(t, "feature-duplicate")
-			duplicate := fixture.repository
-			duplicate.Root = filepath.Join(fixture.base, "repositories-two")
-			duplicate.Path = filepath.Join(
-				duplicate.Root,
-				duplicate.Host,
-				duplicate.Owner,
-				duplicate.Repo,
-			)
-			duplicate.RootIndex = 1
-			if err := os.MkdirAll(duplicate.Path, 0o755); err != nil {
-				t.Fatalf("MkdirAll(duplicate) error = %v", err)
-			}
-			fixture.repositories = append(fixture.repositories, duplicate)
-			fixture.git.localBranches["feature-duplicate"] = true
-
-			args := []string{"feature-duplicate"}
-			if explicit {
-				args = append([]string{"-R", fixture.repository.Identity}, args...)
-			}
-			err := fixture.worktreeAddExecute(args...)
-			if explicit {
-				if !errors.Is(err, local.ErrRepositoryAmbiguous) {
-					t.Fatalf("Execute() error = %v, want ErrRepositoryAmbiguous", err)
-				}
-				if len(fixture.git.adds) != 0 {
-					t.Fatalf("WorktreeAdd() calls = %d, want 0", len(fixture.git.adds))
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("Execute() error = %v", err)
-			}
-			if len(fixture.git.adds) != 1 {
-				t.Fatalf("WorktreeAdd() calls = %d, want 1", len(fixture.git.adds))
-			}
-			if got := fixture.git.adds[0].dir; got != fixture.repository.Path {
-				t.Fatalf("WorktreeAdd() dir = %q, want current %q", got, fixture.repository.Path)
-			}
-		})
-	}
-}
-
 func TestAddWorktreeAllocatesUniqueSlotNames(t *testing.T) {
 	for _, occupiedCount := range []int{1, 2} {
 		t.Run(fmt.Sprintf("%d occupied names", occupiedCount), func(t *testing.T) {
@@ -635,52 +586,6 @@ func TestAddWorktreePropagatesWriteFailureWithoutDeletingWorktree(t *testing.T) 
 	}
 }
 
-func TestAddWorktreePropagatesDiagnosticWriteFailure(t *testing.T) {
-	fixture := worktreeAddNewFixture(t, "feature-diagnostic-write")
-	wantErr := errors.New("diagnostic write failed")
-	fixture.stderrWriter = worktreeAddFailingWriter{err: wantErr}
-	fixture.discoveryWarning = &local.Warning{
-		Kind:      local.WarningInspection,
-		Root:      fixture.repositoryRoot,
-		RootIndex: 0,
-		Path:      filepath.Join(fixture.repositoryRoot, "unreadable"),
-		Operation: "inspect",
-		Err:       errors.New("unreadable"),
-	}
-
-	err := fixture.worktreeAddExecute(fixture.branch)
-	if !errors.Is(err, wantErr) {
-		t.Fatalf("Execute() error = %v, want %v", err, wantErr)
-	}
-	if len(fixture.git.adds) != 0 {
-		t.Fatalf("WorktreeAdd() calls = %d, want 0", len(fixture.git.adds))
-	}
-}
-
-func TestAddWorktreeWritesDiscoveryWarningsToStderr(t *testing.T) {
-	fixture := worktreeAddNewFixture(t, "feature-warning")
-	fixture.git.localBranches[fixture.branch] = true
-	fixture.discoveryWarning = &local.Warning{
-		Kind:      local.WarningInspection,
-		Root:      fixture.repositoryRoot,
-		RootIndex: 0,
-		Path:      filepath.Join(fixture.repositoryRoot, "unreadable"),
-		Operation: "inspect",
-		Err:       errors.New("unreadable"),
-	}
-
-	if err := fixture.worktreeAddExecute(fixture.branch); err != nil {
-		t.Fatalf("Execute() error = %v", err)
-	}
-	if got := fixture.stderr.String(); !strings.Contains(got, "warning:") ||
-		!strings.Contains(got, "unreadable") {
-		t.Fatalf("stderr = %q, want discovery warning", got)
-	}
-	if strings.Contains(fixture.stdout.String(), "warning:") {
-		t.Fatalf("stdout contains diagnostics: %q", fixture.stdout.String())
-	}
-}
-
 func TestAddWorktreeRealGitLifecycle(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git is unavailable")
@@ -713,6 +618,7 @@ func TestAddWorktreeRealGitLifecycle(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	command := newWorktreeAddTestCommand(WorktreeAddDependencies{
+		Registry: testregistry.New(t, repository),
 		Resolver: &worktreeAddResolver{result: rootpkg.Result{
 			RepositoryRoots: []string{repositoryRoot},
 			WorktreeRoot:    worktreeRoot,
@@ -764,8 +670,7 @@ type worktreeAddFixture struct {
 	postDetached     bool
 	associationErr   error
 	associationCalls int
-	discoveryWarning *local.Warning
-	discoverCalls    int
+	registryReads    int
 	currentCalls     int
 	currentCwd       string
 	currentErr       error
@@ -848,20 +753,11 @@ func (fixture *worktreeAddFixture) worktreeAddExecute(args ...string) error {
 
 	command := newWorktreeAddTestCommand(WorktreeAddDependencies{
 		Resolver: fixture.resolver,
-		Discover: func(
-			_ context.Context,
-			_ []string,
-			_ ...local.DiscoveryOptions,
-		) (local.DiscoveryResult, error) {
-			fixture.discoverCalls++
-			result := local.DiscoveryResult{
-				Repositories: append([]local.Repository(nil), fixture.repositories...),
-			}
-			if fixture.discoveryWarning != nil {
-				result.Warnings = []local.Warning{*fixture.discoveryWarning}
-			}
+		Registry: testregistry.From(func() (map[string]string, error) {
+			fixture.registryReads++
+			result := testregistry.Locations(fixture.repositories...)
 			return result, nil
-		},
+		}),
 		Current: func(
 			_ context.Context,
 			cwd string,

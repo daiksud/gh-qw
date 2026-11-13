@@ -42,12 +42,8 @@ type WorktreeAddAPI interface {
 type WorktreeAddDependencies struct {
 	Resolver RootResolver
 
-	Discover func(
-		context.Context,
-		[]string,
-		...local.DiscoveryOptions,
-	) (local.DiscoveryResult, error)
-	Current func(
+	Registry LocationRegistry
+	Current  func(
 		context.Context,
 		string,
 		string,
@@ -114,6 +110,7 @@ type worktreeAddPlanner struct {
 }
 
 func worktreeAddPrepareRuntime(deps WorktreeAddDependencies) WorktreeAddDependencies {
+	deps.Registry = commandRegistry(deps.Registry)
 	deps.Stdout = commandStdout(deps.Stdout)
 	deps.Stderr = commandStderr(deps.Stderr)
 	if deps.Resolver == nil {
@@ -131,9 +128,6 @@ func worktreeAddPrepareRuntime(deps WorktreeAddDependencies) WorktreeAddDependen
 	}
 	if deps.API == nil {
 		deps.API = ghapi.NewClient(deps.Stderr)
-	}
-	if deps.Discover == nil {
-		deps.Discover = local.DiscoverRepositories
 	}
 	if deps.Current == nil {
 		deps.Current = local.DiscoverCurrent
@@ -169,26 +163,16 @@ func worktreeAddRun(
 		return fmt.Errorf("resolve roots: %w", err)
 	}
 
-	discovery, err := runtime.Discover(
-		ctx,
-		roots.RepositoryRoots,
-		local.DiscoveryOptions{
-			Git:        runtime.Git,
-			Filesystem: runtime.Filesystem,
-		},
-	)
-	if writeErr := commandWriteWarnings(runtime.Stderr, discovery.Warnings); writeErr != nil {
-		return fmt.Errorf("write discovery warning: %w", writeErr)
-	}
+	repositories, err := registeredRepositories(ctx, runtime.Registry, roots.RepositoryRoots)
 	if err != nil {
-		return fmt.Errorf("discover repositories: %w", err)
+		return fmt.Errorf("read registered repositories: %w", err)
 	}
 
 	repository, err := worktreeAddSelectRepository(
 		ctx,
 		runtime,
 		roots.WorktreeRoot,
-		discovery.Repositories,
+		repositories,
 		request.selector,
 		request.selectorSet,
 	)
@@ -424,7 +408,7 @@ func worktreeAddSelectRepository(
 	selectorSet bool,
 ) (local.Repository, error) {
 	if selectorSet {
-		repository, err := local.ResolveRepositoryForMutation(repositories, selector)
+		repository, err := local.ResolveRepository(repositories, selector)
 		if err != nil {
 			return local.Repository{}, worktreeAddNewUsageError(
 				fmt.Errorf("resolve repository %q: %w", selector, err),

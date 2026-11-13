@@ -12,6 +12,7 @@ import (
 // NewForgetCommand removes only a registered identity-to-location mapping.
 // It deliberately does not inspect, move, or delete the Git repository.
 func NewForgetCommand(store LocationRegistry, stderr io.Writer) *cobra.Command {
+	store = commandRegistry(store)
 	command := &cobra.Command{
 		Use:           "forget <repo>",
 		Short:         "Forget a managed repository without deleting its files",
@@ -21,26 +22,18 @@ func NewForgetCommand(store LocationRegistry, stderr io.Writer) *cobra.Command {
 			return newCommandUsageError(cobra.ExactArgs(1)(command, args))
 		},
 		RunE: func(command *cobra.Command, args []string) error {
-			selected := store
-			if selected == nil {
-				var err error
-				selected, err = defaultLocationRegistry()
-				if err != nil {
-					return err
-				}
-			}
-			repositories, err := registeredRepositories(command.Context(), selected, nil)
+			repositories, err := registeredRepositories(command.Context(), store, nil)
 			if err != nil {
 				return err
 			}
 			if len(repositories) == 0 {
 				return fmt.Errorf("forget %q: %w", args[0], errors.New("no registered repositories"))
 			}
-			repository, err := local.ResolveRepositoryForMutation(repositories, args[0])
+			repository, err := local.ResolveRepository(repositories, args[0])
 			if err != nil {
 				return err
 			}
-			if err := selected.Forget(repository.Identity); err != nil {
+			if err := store.Forget(repository.Identity); err != nil {
 				return fmt.Errorf("forget %q: %w", repository.Identity, err)
 			}
 			return nil

@@ -10,10 +10,10 @@ import (
 	"testing"
 
 	"github.com/daiksud/gh-qw/internal/cmd"
-	"github.com/daiksud/gh-qw/internal/local"
 	"github.com/daiksud/gh-qw/internal/registry"
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
 	"github.com/daiksud/gh-qw/internal/testenv"
+	"github.com/daiksud/gh-qw/internal/testregistry"
 )
 
 func TestManagedRepositoryLifecycle(t *testing.T) {
@@ -121,21 +121,21 @@ func TestManagedRepositoryLifecycle(t *testing.T) {
 	}
 }
 
-func TestFlatAddRejectsInvalidWorktreeSlotBeforeDiscovery(t *testing.T) {
-	discoveryCalls := 0
+func TestFlatAddRejectsInvalidWorktreeSlotBeforeRegistryRead(t *testing.T) {
+	registryReads := 0
 	code := cmd.Execute(context.Background(), []string{"add", "--worktree", "../escape"}, cmd.ApplicationDependencies{
-		Discover: func(context.Context, []string, ...local.DiscoveryOptions) (local.DiscoveryResult, error) {
-			discoveryCalls++
-			return local.DiscoveryResult{}, nil
-		},
+		Registry: testregistry.From(func() (map[string]string, error) {
+			registryReads++
+			return map[string]string{}, nil
+		}),
 		Stdout: &lockedBuffer{},
 		Stderr: &lockedBuffer{},
 	})
 	if code != 2 {
 		t.Fatalf("exit status = %d, want 2", code)
 	}
-	if discoveryCalls != 0 {
-		t.Fatalf("discovery calls = %d, want 0", discoveryCalls)
+	if registryReads != 0 {
+		t.Fatalf("registry calls = %d, want 0", registryReads)
 	}
 }
 

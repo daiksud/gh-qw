@@ -133,9 +133,6 @@ type CloneGitOperations interface {
 // standard gh environment. The subprocess never receives the caller's stdin.
 type CloneGitFactory func(stdout, stderr io.Writer) CloneGitOperations
 
-// CloneDiscoverFunc discovers ordinary main repositories below configured roots.
-type CloneDiscoverFunc func(context.Context, []string) (local.DiscoveryResult, error)
-
 // CloneRepositoryAPI discovers repositories through gh's authentication.
 type CloneRepositoryAPI interface {
 	RepositoryExists(context.Context, string, string, string) (bool, error)
@@ -151,16 +148,14 @@ type CloneDependencies struct {
 	GitFactory    CloneGitFactory
 	MkdirAll      func(string, fs.FileMode) error
 	Lstat         func(string) (fs.FileInfo, error)
-	Discover      CloneDiscoverFunc
+	Registry      LocationRegistry
 	RepositoryAPI CloneRepositoryAPI
 	LookPath      func(string) (string, error)
 	Select        func(context.Context, []string, string) (string, error)
-	OnAcquired    func(string, string) error
 	Stdin         io.Reader
 	Stdout        io.Writer
 	Stderr        io.Writer
 	IsTerminal    CloneTerminalDetector
-	WarningSink   local.WarningSink
 	WorkingDir    string
 }
 
@@ -265,7 +260,6 @@ func NewCloneCommand(deps CloneDependencies) *cobra.Command {
 			}
 
 			diagnostic := &cloneLockedWriter{writer: command.ErrOrStderr(), passthrough: !flags.parallel}
-			warn := resolved.WarningSink
 
 			if flags.parallel {
 				return cloneRunParallel(
@@ -274,7 +268,6 @@ func NewCloneCommand(deps CloneDependencies) *cobra.Command {
 					flags,
 					filter,
 					resolved,
-					warn,
 					command.OutOrStdout(),
 					diagnostic,
 				)
@@ -285,7 +278,6 @@ func NewCloneCommand(deps CloneDependencies) *cobra.Command {
 				flags,
 				filter,
 				resolved,
-				warn,
 				command.OutOrStdout(),
 				diagnostic,
 			)
@@ -330,11 +322,7 @@ func cloneResolveDependencies(deps CloneDependencies) CloneDependencies {
 	if deps.Lstat == nil {
 		deps.Lstat = os.Lstat
 	}
-	if deps.Discover == nil {
-		deps.Discover = func(ctx context.Context, roots []string) (local.DiscoveryResult, error) {
-			return local.DiscoverRepositories(ctx, roots)
-		}
-	}
+	deps.Registry = commandRegistry(deps.Registry)
 	if deps.RepositoryAPI == nil {
 		deps.RepositoryAPI = ghapi.NewClient(deps.Stderr)
 	}
@@ -360,10 +348,9 @@ func cloneRunOrdered(
 	flags cloneFlags,
 	filter ghcmd.PartialFilter,
 	deps CloneDependencies,
-	warn local.WarningSink,
 	stdout, stderr io.Writer,
 ) error {
-	preparation := clonePreparation{deps: deps, ssh: flags.ssh, warn: warn, stdout: stdout, stderr: stderr}
+	preparation := clonePreparation{deps: deps, ssh: flags.ssh, stdout: stdout, stderr: stderr}
 	for _, input := range inputs {
 		item, state, err := preparation.prepare(ctx, input)
 		if err != nil {
@@ -384,10 +371,8 @@ func cloneRunOrdered(
 		if err != nil {
 			return fmt.Errorf("clone %q: %w", input, err)
 		}
-		if deps.OnAcquired != nil {
-			if err := deps.OnAcquired(item.spec.Identity.String(), path); err != nil {
-				return fmt.Errorf("repository acquired at %q but location registration failed: %w", path, err)
-			}
+		if err := deps.Registry.Register(item.spec.Identity.String(), path); err != nil {
+			return fmt.Errorf("repository acquired at %q but location registration failed: %w", path, err)
 		}
 		if err := commandWritePath(stdout, path); err != nil {
 			return err
@@ -402,11 +387,10 @@ func cloneRunParallel(
 	flags cloneFlags,
 	filter ghcmd.PartialFilter,
 	deps CloneDependencies,
-	warn local.WarningSink,
 	stdout, stderr io.Writer,
 ) error {
 	aggregate := &CloneAggregateError{}
-	preparation := clonePreparation{deps: deps, ssh: flags.ssh, warn: warn, stdout: stdout, stderr: stderr}
+	preparation := clonePreparation{deps: deps, ssh: flags.ssh, stdout: stdout, stderr: stderr}
 	previous := make(map[string]<-chan struct{})
 	jobs := make([]cloneParallelJob, 0, len(inputs))
 	for _, input := range inputs {
@@ -480,8 +464,8 @@ func cloneRunParallel(
 				stderr,
 			)
 			<-semaphore
-			if err == nil && deps.OnAcquired != nil {
-				if registerErr := deps.OnAcquired(job.item.spec.Identity.String(), path); registerErr != nil {
+			if err == nil {
+				if registerErr := deps.Registry.Register(job.item.spec.Identity.String(), path); registerErr != nil {
 					err = fmt.Errorf("repository acquired at %q but location registration failed: %w", path, registerErr)
 				}
 			}
@@ -546,10 +530,6 @@ func cloneResolveRepository(
 func cloneInitialTargetStates(repositories []local.Repository) map[string]*cloneTarget {
 	states := make(map[string]*cloneTarget, len(repositories))
 	for _, repository := range repositories {
-		current, found := states[repository.Identity]
-		if found && current.repository.RootIndex <= repository.RootIndex {
-			continue
-		}
 		repository.Path = filepath.Clean(repository.Path)
 		repository.Root = filepath.Clean(repository.Root)
 		states[repository.Identity] = &cloneTarget{
@@ -783,16 +763,6 @@ func commandWritePath(output io.Writer, path string) error {
 	}
 	if _, err := fmt.Fprintln(output, local.NormalizePathForOutput(path)); err != nil {
 		return fmt.Errorf("write repository path: %w", err)
-	}
-	return nil
-}
-
-func cloneEmitDiscoveryWarnings(warnings []local.Warning, sink local.WarningSink, writer io.Writer) error {
-	if sink == nil {
-		return commandWriteWarnings(writer, warnings)
-	}
-	for _, warning := range warnings {
-		sink(warning)
 	}
 	return nil
 }

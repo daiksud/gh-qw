@@ -24,6 +24,7 @@ import (
 	"github.com/daiksud/gh-qw/internal/procio"
 	"github.com/daiksud/gh-qw/internal/repospec"
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
+	"github.com/daiksud/gh-qw/internal/testregistry"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -56,7 +57,7 @@ func TestNewCloneCommandFlagsAndCloneOptions(t *testing.T) {
 		},
 	}
 	resolver := &cloneRootResolver{result: rootpkg.Result{RepositoryRoots: []string{root}}}
-	var discoverCalls int
+	var registryReads int
 	var output bytes.Buffer
 	command := cmd.NewCloneCommand(cmd.CloneDependencies{
 		RootResolver:  resolver,
@@ -66,10 +67,10 @@ func TestNewCloneCommandFlagsAndCloneOptions(t *testing.T) {
 			gotGitStderr = stderr
 			return git
 		},
-		Discover: func(context.Context, []string) (local.DiscoveryResult, error) {
-			discoverCalls++
-			return local.DiscoveryResult{}, nil
-		},
+		Registry: testregistry.From(func() (map[string]string, error) {
+			registryReads++
+			return map[string]string{}, nil
+		}),
 
 		Stdout:     &output,
 		Stderr:     io.Discard,
@@ -110,8 +111,8 @@ func TestNewCloneCommandFlagsAndCloneOptions(t *testing.T) {
 	if resolver.Calls() != 1 {
 		t.Fatalf("Resolve() calls = %d, want 1", resolver.Calls())
 	}
-	if discoverCalls != 1 {
-		t.Fatalf("Discover() calls = %d, want 1", discoverCalls)
+	if registryReads != 1 {
+		t.Fatalf("Registry.List() calls = %d, want 1", registryReads)
 	}
 	if got, want := output.String(), filepath.ToSlash(gotClone.Destination)+"\n"; got != want {
 		t.Fatalf("output = %q, want %q", got, want)
@@ -445,14 +446,14 @@ func TestNewCloneCommandRejectsRegisteredRepository(t *testing.T) {
 			t.Fatal("MkdirAll called for registered repository")
 			return nil
 		},
-		Discover: func(context.Context, []string) (local.DiscoveryResult, error) {
-			return local.DiscoveryResult{Repositories: []local.Repository{{
+		Registry: testregistry.From(func() (map[string]string, error) {
+			return testregistry.Locations([]local.Repository{{
 				Identity:  "github.com/acme/widget",
 				Path:      path,
 				Root:      filepath.Dir(path),
 				RootIndex: 1,
-			}}}, nil
-		},
+			}}...), nil
+		}),
 		RepositoryAPI: &cloneRepositoryAPI{},
 
 		Stdin:      strings.NewReader(""),
@@ -703,7 +704,7 @@ func TestNewCloneCommandRejectsUnregisteredExistingDestination(t *testing.T) {
 			return nil
 		},
 	}, io.Discard, io.Discard)
-	deps.OnAcquired = func(string, string) error {
+	deps.Registry.(*testregistry.Registry).OnRegister = func(string, string) error {
 		registrations.Add(1)
 		return nil
 	}
@@ -838,21 +839,12 @@ func TestNewCloneCommandPropagatesMkdirAndOutputErrors(t *testing.T) {
 	})
 }
 
-func TestNewCloneCommandKeepsProgressAndWarningsOffStdout(t *testing.T) {
+func TestNewCloneCommandKeepsProgressOffStdout(t *testing.T) {
 	t.Parallel()
 
 	root := cloneTempRoot(t)
 	var output, diagnostic bytes.Buffer
-	warning := local.Warning{
-		Kind:      local.WarningInspection,
-		Path:      filepath.Join(root, "ignored"),
-		Operation: "inspect",
-		Err:       errors.New("not a repository"),
-	}
 	deps := cloneDependencies(root, &cloneGitOperations{}, &output, &diagnostic)
-	deps.Discover = func(context.Context, []string) (local.DiscoveryResult, error) {
-		return local.DiscoveryResult{Warnings: []local.Warning{warning}}, nil
-	}
 	deps.GitFactory = func(stdout, _ io.Writer) cmd.CloneGitOperations {
 		return &cloneGitOperations{
 			clone: func(context.Context, ghcmd.CloneOptions) error {
@@ -871,26 +863,17 @@ func TestNewCloneCommandKeepsProgressAndWarningsOffStdout(t *testing.T) {
 	if got := output.String(); got != wantPath {
 		t.Fatalf("stdout = %q, want only %q", got, wantPath)
 	}
-	if got := diagnostic.String(); !strings.Contains(got, "warning:") || !strings.Contains(got, "git progress") {
-		t.Fatalf("stderr = %q, want warning and progress", got)
+	if got := diagnostic.String(); !strings.Contains(got, "git progress") {
+		t.Fatalf("stderr = %q, want progress", got)
 	}
 }
 
-func TestNewCloneCommandSilentSuppressesProgressButKeepsWarningsAndPaths(t *testing.T) {
+func TestNewCloneCommandSilentSuppressesProgressButKeepsPaths(t *testing.T) {
 	t.Parallel()
 
 	root := cloneTempRoot(t)
 	var output, diagnostic bytes.Buffer
-	warning := local.Warning{
-		Kind:      local.WarningInspection,
-		Path:      filepath.Join(root, "ignored"),
-		Operation: "inspect",
-		Err:       errors.New("not a repository"),
-	}
 	deps := cloneDependencies(root, &cloneGitOperations{}, &output, &diagnostic)
-	deps.Discover = func(context.Context, []string) (local.DiscoveryResult, error) {
-		return local.DiscoveryResult{Warnings: []local.Warning{warning}}, nil
-	}
 	deps.GitFactory = func(stdout, _ io.Writer) cmd.CloneGitOperations {
 		return &cloneGitOperations{
 			clone: func(context.Context, ghcmd.CloneOptions) error {
@@ -909,9 +892,7 @@ func TestNewCloneCommandSilentSuppressesProgressButKeepsWarningsAndPaths(t *test
 	if got := output.String(); got != wantPath {
 		t.Fatalf("stdout = %q, want only %q", got, wantPath)
 	}
-	if got := diagnostic.String(); !strings.Contains(got, "warning:") {
-		t.Fatalf("stderr = %q, want warning", got)
-	} else if strings.Contains(got, "git progress") {
+	if got := diagnostic.String(); strings.Contains(got, "git progress") {
 		t.Fatalf("stderr = %q, want progress suppressed", got)
 	}
 }
@@ -1119,30 +1100,6 @@ func TestNewCloneCommandSilentKeepsGitErrors(t *testing.T) {
 	}
 }
 
-func TestNewCloneCommandCustomWarningSink(t *testing.T) {
-	t.Parallel()
-
-	root := cloneTempRoot(t)
-	warning := local.Warning{Path: filepath.Join(root, "warning")}
-	var got []local.Warning
-	deps := cloneDependencies(root, &cloneGitOperations{}, io.Discard, io.Discard)
-	deps.Discover = func(context.Context, []string) (local.DiscoveryResult, error) {
-		return local.DiscoveryResult{Warnings: []local.Warning{warning}}, nil
-	}
-	deps.WarningSink = func(warning local.Warning) {
-		got = append(got, warning)
-	}
-	command := cmd.NewCloneCommand(deps)
-	command.SetArgs([]string{"acme/widget"})
-
-	if err := command.Execute(); err != nil {
-		t.Fatalf("Execute() error = %v", err)
-	}
-	if len(got) != 1 || got[0].Path != warning.Path {
-		t.Fatalf("warnings = %v, want %v", got, warning)
-	}
-}
-
 func TestNewCloneCommandRejectsFileSchemeInput(t *testing.T) {
 	t.Parallel()
 
@@ -1241,9 +1198,9 @@ func cloneDependencies(
 		GitFactory: func(io.Writer, io.Writer) cmd.CloneGitOperations {
 			return git
 		},
-		Discover: func(context.Context, []string) (local.DiscoveryResult, error) {
-			return local.DiscoveryResult{}, nil
-		},
+		Registry: testregistry.From(func() (map[string]string, error) {
+			return map[string]string{}, nil
+		}),
 		RepositoryAPI: &cloneRepositoryAPI{},
 		Stdin:         strings.NewReader(""),
 		Stdout:        stdout,
@@ -1339,7 +1296,7 @@ func TestCloneHonorsGHHostForHostlessShorthand(t *testing.T) {
 				GitFactory:    func(io.Writer, io.Writer) cmd.CloneGitOperations { return git },
 				RepositoryAPI: &cloneRepositoryAPI{},
 				Stdout:        io.Discard, Stderr: io.Discard,
-				Discover: func(context.Context, []string) (local.DiscoveryResult, error) { return local.DiscoveryResult{}, nil },
+				Registry: testregistry.From(func() (map[string]string, error) { return nil, nil }),
 			})
 			command.SetArgs([]string{test.input})
 			if err := command.Execute(); err != nil {

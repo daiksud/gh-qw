@@ -18,6 +18,7 @@ import (
 	"github.com/daiksud/gh-qw/internal/repospec"
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
 	"github.com/daiksud/gh-qw/internal/testenv"
+	"github.com/daiksud/gh-qw/internal/testregistry"
 )
 
 func TestRemoveParseSelectionExactFormsAndFirstDelimiter(t *testing.T) {
@@ -369,24 +370,6 @@ func TestNewRemoveCommandRejectsUnsafeLinkedTargetsBeforePrompt(t *testing.T) {
 	}
 }
 
-func TestNewRemoveCommandRejectsDuplicateCanonicalIdentityAsUsage(t *testing.T) {
-	t.Parallel()
-
-	fixture := newRemoveTestFixture(t)
-	duplicate := fixture.repository
-	duplicate.Path = filepath.Join(fixture.base, "duplicate", "github.com", "acme", "widget")
-	duplicate.Root = filepath.Join(fixture.base, "duplicate")
-	duplicate.RootIndex = 1
-	fixture.repositories = append(fixture.repositories, duplicate)
-
-	err := fixture.execute("--dry-run", "github.com/acme/widget")
-	if !errors.Is(err, repospec.ErrUsage) ||
-		!errors.Is(err, local.ErrRepositoryAmbiguous) {
-		t.Fatalf("Execute() error = %v, want ambiguity usage", err)
-	}
-	fixture.assertNoMutation(t)
-}
-
 func TestNewRemoveCommandRejectsSymlinkAndReplacementTOCTOU(t *testing.T) {
 	if os.PathSeparator == '\\' {
 		t.Skip("symbolic-link behavior is platform-specific")
@@ -520,7 +503,7 @@ func TestNewRemoveCommandForgetsAfterPostDeletionCleanupFailure(t *testing.T) {
 	wantErr := errors.New("cleanup denied")
 	forgotten := false
 	dependencies := fixture.dependencies()
-	dependencies.Forget = func(identity, path string) error {
+	dependencies.Registry.(*testregistry.Registry).OnForgetAt = func(identity, path string) error {
 		forgotten = identity == fixture.repository.Identity && physicalpath.SamePath(path, fixture.repository.Path)
 		return nil
 	}
@@ -824,44 +807,8 @@ func TestNewRemoveCommandRevalidatesMainAfterLinkedMutation(t *testing.T) {
 	}
 }
 
-func TestNewRemoveCommandWarningsAndWriterErrors(t *testing.T) {
+func TestNewRemoveCommandWriterErrors(t *testing.T) {
 	t.Parallel()
-
-	t.Run("warning prefix", func(t *testing.T) {
-		t.Parallel()
-
-		fixture := newRemoveTestFixture(t)
-		fixture.warnings = []local.Warning{{
-			Kind:      local.WarningInspection,
-			Path:      filepath.Join(fixture.repositoryRoot, "unreadable"),
-			Operation: "inspect",
-			Err:       errors.New("denied"),
-		}}
-		if err := fixture.execute("--dry-run", "widget"); err != nil {
-			t.Fatalf("Execute() error = %v", err)
-		}
-		if !strings.HasPrefix(fixture.stderr.String(), "gh-qw: warning: ") {
-			t.Fatalf("stderr = %q, want warning prefix", fixture.stderr.String())
-		}
-	})
-
-	t.Run("warning writer failure", func(t *testing.T) {
-		t.Parallel()
-
-		fixture := newRemoveTestFixture(t)
-		fixture.warnings = []local.Warning{{
-			Kind:      local.WarningInspection,
-			Path:      "entry",
-			Operation: "inspect",
-		}}
-		wantErr := errors.New("warning write failed")
-		fixture.stderrWriter = &removeTestFailWriter{err: wantErr}
-		err := fixture.execute("--dry-run", "widget")
-		if !errors.Is(err, wantErr) {
-			t.Fatalf("Execute() error = %v, want %v", err, wantErr)
-		}
-		fixture.assertNoMutation(t)
-	})
 
 	t.Run("plan short write", func(t *testing.T) {
 		t.Parallel()
@@ -928,6 +875,7 @@ func TestNewRemoveCommandRealGitWholeLifecycle(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	command := NewRemoveCommand(RemoveDependencies{
+		Registry: testregistry.New(t, local.Repository{Identity: "github.com/acme/widget", Path: repositoryPath}),
 		Resolver: &removeTestResolver{result: rootpkg.Result{
 			RepositoryRoots: []string{repositoryRoot},
 			WorktreeRoot:    worktreeRoot,
@@ -1068,8 +1016,7 @@ type removeTestFixture struct {
 	worktrees      []*local.Worktree
 	resolver       *removeTestResolver
 	git            *removeTestGit
-	warnings       []local.Warning
-	discoveryErr   error
+	registryErr    error
 	associationErr error
 	prompt         RemovePrompt
 	promptCalls    int
@@ -1214,16 +1161,9 @@ func (fixture *removeTestFixture) dependencies() RemoveDependencies {
 	}
 	return RemoveDependencies{
 		Resolver: fixture.resolver,
-		Discover: func(
-			context.Context,
-			[]string,
-			...local.DiscoveryOptions,
-		) (local.DiscoveryResult, error) {
-			return local.DiscoveryResult{
-				Repositories: append([]local.Repository(nil), fixture.repositories...),
-				Warnings:     append([]local.Warning(nil), fixture.warnings...),
-			}, fixture.discoveryErr
-		},
+		Registry: testregistry.From(func() (map[string]string, error) {
+			return testregistry.Locations(fixture.repositories...), fixture.registryErr
+		}),
 		ResolveManaged: func(
 			_ context.Context,
 			repository local.Repository,

@@ -67,20 +67,14 @@ func removeCandidates(ctx context.Context, commandRuntime removeRuntime, filter 
 	if err != nil {
 		return nil, fmt.Errorf("resolve roots: %w", err)
 	}
-	discovery, discoveryErr := commandRuntime.discover(ctx, roots.RepositoryRoots, local.DiscoveryOptions{
-		Git: commandRuntime.git, Filesystem: commandRuntime.filesystem,
-	})
-	warningErr := commandWriteWarnings(commandRuntime.stderr, discovery.Warnings)
-	if discoveryErr != nil || warningErr != nil {
-		return nil, errors.Join(
-			removeWrapError("discover repositories", discoveryErr),
-			removeWrapError("write discovery warnings", warningErr),
-		)
+	repositories, registryErr := registeredRepositories(ctx, commandRuntime.registry, roots.RepositoryRoots)
+	if registryErr != nil {
+		return nil, fmt.Errorf("read registered repositories: %w", registryErr)
 	}
 
 	var selectedRepository local.Repository
 	if filter.repositorySet {
-		selectedRepository, err = local.ResolveRepositoryForMutation(discovery.Repositories, filter.repositorySelector)
+		selectedRepository, err = local.ResolveRepository(repositories, filter.repositorySelector)
 		if err != nil {
 			return nil, worktreeRemoveNewUsageError(fmt.Errorf("resolve repository %q: %w", filter.repositorySelector, err))
 		}
@@ -88,15 +82,11 @@ func removeCandidates(ctx context.Context, commandRuntime removeRuntime, filter 
 
 	var candidates []removeCandidate
 	var entries []listEntry
-	for _, repository := range discovery.Repositories {
+	for _, repository := range repositories {
 		if filter.repositorySet && repository != selectedRepository {
 			continue
 		}
 		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		// A canonical identity must still resolve uniquely when removal starts.
-		if _, err := local.ResolveRepositoryForMutation(discovery.Repositories, repository.Identity); err != nil {
 			return nil, err
 		}
 		mainNodes, err := removeCaptureCandidateNodes(commandRuntime.fs.observations(), repository.Path, removal.Directory)

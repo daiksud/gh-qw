@@ -167,7 +167,7 @@ func TestValidateWorktreeDestinationReservesGlobalSlot(t *testing.T) {
 	}
 }
 
-func TestExactSelectorResolutionAndDuplicateBehavior(t *testing.T) {
+func TestExactSelectorResolutionAndAmbiguity(t *testing.T) {
 	repositories := []Repository{
 		{
 			Identity:  "github.com/acme/widget",
@@ -187,15 +187,6 @@ func TestExactSelectorResolutionAndDuplicateBehavior(t *testing.T) {
 			Root:      "/root-one",
 			RootIndex: 0,
 		},
-		{
-			Identity:  "github.com/acme/widget",
-			Host:      "github.com",
-			Owner:     "acme",
-			Repo:      "widget",
-			Path:      "/root-two/github.com/acme/widget",
-			Root:      "/root-two",
-			RootIndex: 1,
-		},
 	}
 
 	if _, err := ResolveRepository(repositories, "missing"); !errors.Is(err, ErrRepositoryNotFound) {
@@ -204,31 +195,12 @@ func TestExactSelectorResolutionAndDuplicateBehavior(t *testing.T) {
 	if _, err := ResolveRepository(repositories, "widget"); !errors.Is(err, ErrRepositoryAmbiguous) {
 		t.Fatalf("ResolveRepository(widget) error = %v, want ambiguous", err)
 	}
-	if _, err := ResolveRepositoryForMutation(
-		repositories,
-		"github.com/acme/widget",
-	); !errors.Is(err, ErrRepositoryAmbiguous) {
-		t.Fatalf("ResolveRepositoryForMutation(duplicate identity) error = %v, want ambiguous", err)
-	}
-
 	got, err := ResolveRepository(repositories, "team/widget")
 	if err != nil {
 		t.Fatalf("ResolveRepository(team/widget) error = %v", err)
 	}
 	if got.Identity != "git.example.com/team/widget" {
 		t.Fatalf("ResolveRepository(team/widget) = %#v", got)
-	}
-
-	earliest := EarliestByIdentity(repositories)
-	if len(earliest) != 2 || earliest[0].Path != repositories[0].Path {
-		t.Fatalf("EarliestByIdentity() = %#v", earliest)
-	}
-	got, err = ResolveEarliestRepository(repositories, "github.com/acme/widget")
-	if err != nil {
-		t.Fatalf("ResolveEarliestRepository() error = %v", err)
-	}
-	if got.Path != repositories[0].Path {
-		t.Fatalf("ResolveEarliestRepository() path = %q, want %q", got.Path, repositories[0].Path)
 	}
 
 	invalid := []string{

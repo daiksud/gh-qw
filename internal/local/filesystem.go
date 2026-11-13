@@ -18,7 +18,6 @@ type FilesystemOptions struct {
 }
 
 type filesystem struct {
-	readDir      func(string) ([]os.DirEntry, error)
 	lstat        func(string) (fs.FileInfo, error)
 	stat         func(string) (fs.FileInfo, error)
 	evalSymlinks func(string) (string, error)
@@ -27,14 +26,10 @@ type filesystem struct {
 
 func newFilesystem(options FilesystemOptions) filesystem {
 	result := filesystem{
-		readDir:      options.ReadDir,
 		lstat:        options.Lstat,
 		stat:         options.Stat,
 		evalSymlinks: options.EvalSymlinks,
 		sameFile:     options.SameFile,
-	}
-	if result.readDir == nil {
-		result.readDir = os.ReadDir
 	}
 	if result.lstat == nil {
 		result.lstat = os.Lstat

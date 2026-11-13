@@ -16,6 +16,7 @@ import (
 	"github.com/daiksud/gh-qw/internal/local"
 	"github.com/daiksud/gh-qw/internal/repospec"
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
+	"github.com/daiksud/gh-qw/internal/testregistry"
 )
 
 func TestNewListCommandMatchesQueries(t *testing.T) {
@@ -102,16 +103,16 @@ func TestNewListCommandMatchesQueries(t *testing.T) {
 					WorktreeRoot:    listAbsolutePath("worktrees"),
 				},
 			}
-			discovery := &listDiscoveryRecorder{
-				result: local.DiscoveryResult{Repositories: repositories},
+			registry := &listRegistryRecorder{
+				result: testregistry.Locations(repositories...),
 			}
 			var stdout bytes.Buffer
 			var stderr bytes.Buffer
 			command := cmd.NewListCommand(cmd.ListDependencies{
-				Resolver:             resolver,
-				DiscoverRepositories: discovery.listDiscover,
-				Stdout:               &stdout,
-				Stderr:               &stderr,
+				Resolver: resolver,
+				Registry: testregistry.From(registry.listRead),
+				Stdout:   &stdout,
+				Stderr:   &stderr,
 			})
 			command.SetArgs(test.args)
 
@@ -127,8 +128,8 @@ func TestNewListCommandMatchesQueries(t *testing.T) {
 			if resolver.calls != 1 {
 				t.Fatalf("Resolve() calls = %d, want 1", resolver.calls)
 			}
-			if discovery.calls != 1 {
-				t.Fatalf("discovery calls = %d, want 1", discovery.calls)
+			if registry.calls != 1 {
+				t.Fatalf("registry calls = %d, want 1", registry.calls)
 			}
 		})
 	}
@@ -183,9 +184,9 @@ func TestNewListCommandExactMatching(t *testing.T) {
 					RepositoryRoots: []string{listAbsolutePath("roots")},
 					WorktreeRoot:    listAbsolutePath("worktrees"),
 				}},
-				DiscoverRepositories: func(context.Context, []string) (local.DiscoveryResult, error) {
-					return local.DiscoveryResult{Repositories: repositories}, nil
-				},
+				Registry: testregistry.From(func() (map[string]string, error) {
+					return testregistry.Locations(repositories...), nil
+				}),
 				Stdout: &stdout,
 				Stderr: io.Discard,
 			})
@@ -198,52 +199,6 @@ func TestNewListCommandExactMatching(t *testing.T) {
 				t.Fatalf("stdout = %q, want %q", got, want)
 			}
 		})
-	}
-}
-
-func TestNewListCommandDeduplicatesByEarliestConfiguredRootAndPrintsPaths(t *testing.T) {
-	t.Parallel()
-
-	firstRoot := listAbsolutePath("roots", "first")
-	secondRoot := listAbsolutePath("roots", "second")
-	firstPath := filepath.Join(firstRoot, "github.com", "acme", "widget")
-	firstDirtyPath := filepath.Join(firstRoot, "github.com", "acme", "nested") +
-		string(filepath.Separator) + ".." + string(filepath.Separator) + "widget"
-	secondPath := filepath.Join(secondRoot, "github.com", "acme", "widget")
-	otherPath := filepath.Join(secondRoot, "github.com", "other", "api")
-	repositories := []local.Repository{
-		listRepository("github.com/acme/widget", secondPath, 1),
-		listRepository("github.com/other/api", otherPath, 1),
-		listRepository("github.com/acme/widget", firstDirtyPath, 0),
-	}
-
-	resolver := &listRootResolver{result: rootpkg.Result{
-		RepositoryRoots: []string{firstRoot, secondRoot},
-		WorktreeRoot:    listAbsolutePath("worktrees"),
-	}}
-	discovery := &listDiscoveryRecorder{
-		result: local.DiscoveryResult{Repositories: repositories},
-	}
-	var stdout bytes.Buffer
-	command := cmd.NewListCommand(cmd.ListDependencies{
-		Resolver:             resolver,
-		DiscoverRepositories: discovery.listDiscover,
-		Stdout:               &stdout,
-		Stderr:               io.Discard,
-	})
-	command.SetArgs([]string{"-p"})
-
-	if err := command.Execute(); err != nil {
-		t.Fatalf("Execute() error = %v", err)
-	}
-	if got, want := stdout.String(), listSortedLines(
-		local.NormalizePathForOutput(firstPath),
-		local.NormalizePathForOutput(otherPath),
-	); got != want {
-		t.Fatalf("stdout = %q, want %q", got, want)
-	}
-	if got := discovery.roots; len(got) != 2 || got[0] != firstRoot || got[1] != secondRoot {
-		t.Fatalf("discovery roots = %#v, want [%q %q]", got, firstRoot, secondRoot)
 	}
 }
 
@@ -296,9 +251,9 @@ func TestNewListCommandUniqueSuffixesUseSelectedEntries(t *testing.T) {
 					RepositoryRoots: []string{listAbsolutePath("roots")},
 					WorktreeRoot:    listAbsolutePath("worktrees"),
 				}},
-				DiscoverRepositories: func(context.Context, []string) (local.DiscoveryResult, error) {
-					return local.DiscoveryResult{Repositories: repositories}, nil
-				},
+				Registry: testregistry.From(func() (map[string]string, error) {
+					return testregistry.Locations(repositories...), nil
+				}),
 				Stdout: &stdout,
 				Stderr: io.Discard,
 			})
@@ -413,9 +368,9 @@ func TestNewListCommandWorktreesAndWorktreeQueries(t *testing.T) {
 					RepositoryRoots: []string{listAbsolutePath("roots")},
 					WorktreeRoot:    worktreeRoot,
 				}},
-				DiscoverRepositories: func(context.Context, []string) (local.DiscoveryResult, error) {
-					return local.DiscoveryResult{Repositories: []local.Repository{repository}}, nil
-				},
+				Registry: testregistry.From(func() (map[string]string, error) {
+					return testregistry.Locations(repository), nil
+				}),
 				EnumerateWorktrees: enumeration.listEnumerate,
 				Stdout:             &stdout,
 				Stderr:             io.Discard,
@@ -483,9 +438,9 @@ func TestNewListCommandDisambiguatesCollidingWorktreeLabels(t *testing.T) {
 					RepositoryRoots: []string{listAbsolutePath("roots")},
 					WorktreeRoot:    listAbsolutePath("worktrees"),
 				}},
-				DiscoverRepositories: func(context.Context, []string) (local.DiscoveryResult, error) {
-					return local.DiscoveryResult{Repositories: []local.Repository{repository}}, nil
-				},
+				Registry: testregistry.From(func() (map[string]string, error) {
+					return testregistry.Locations(repository), nil
+				}),
 				EnumerateWorktrees: (&listEnumerationRecorder{
 					byIdentity: map[string][]local.Worktree{repository.Identity: worktrees},
 				}).listEnumerate,
@@ -557,9 +512,9 @@ func TestNewListCommandGoneWorktrees(t *testing.T) {
 					RepositoryRoots: []string{listAbsolutePath("roots")},
 					WorktreeRoot:    listAbsolutePath("worktrees"),
 				}},
-				DiscoverRepositories: func(context.Context, []string) (local.DiscoveryResult, error) {
-					return local.DiscoveryResult{Repositories: []local.Repository{repository}}, nil
-				},
+				Registry: testregistry.From(func() (map[string]string, error) {
+					return testregistry.Locations(repository), nil
+				}),
 				EnumerateWorktrees: (&listEnumerationRecorder{
 					byIdentity: map[string][]local.Worktree{repository.Identity: worktrees},
 				}).listEnumerate,
@@ -612,9 +567,9 @@ func TestNewListCommandUniqueWorktreeSuffixCollisions(t *testing.T) {
 			RepositoryRoots: []string{listAbsolutePath("roots")},
 			WorktreeRoot:    listAbsolutePath("worktrees"),
 		}},
-		DiscoverRepositories: func(context.Context, []string) (local.DiscoveryResult, error) {
-			return local.DiscoveryResult{Repositories: repositories}, nil
-		},
+		Registry: testregistry.From(func() (map[string]string, error) {
+			return testregistry.Locations(repositories...), nil
+		}),
 		EnumerateWorktrees: enumeration.listEnumerate,
 		Stdout:             &stdout,
 		Stderr:             io.Discard,
@@ -633,51 +588,6 @@ func TestNewListCommandUniqueWorktreeSuffixCollisions(t *testing.T) {
 	}
 }
 
-func TestNewListCommandEmitsWarningsAndContinues(t *testing.T) {
-	t.Parallel()
-
-	repository := listRepository(
-		"github.com/acme/widget",
-		listAbsolutePath("roots", "github.com", "acme", "widget"),
-		0,
-	)
-	warning := local.Warning{
-		Kind:      local.WarningPermission,
-		Root:      listAbsolutePath("roots"),
-		RootIndex: 0,
-		Path:      listAbsolutePath("roots", "blocked"),
-		Operation: "read owner",
-		Err:       errors.New("permission denied"),
-	}
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
-	command := cmd.NewListCommand(cmd.ListDependencies{
-		Resolver: &listRootResolver{result: rootpkg.Result{
-			RepositoryRoots: []string{listAbsolutePath("roots")},
-			WorktreeRoot:    listAbsolutePath("worktrees"),
-		}},
-		DiscoverRepositories: func(context.Context, []string) (local.DiscoveryResult, error) {
-			return local.DiscoveryResult{
-				Repositories: []local.Repository{repository},
-				Warnings:     []local.Warning{warning},
-			}, nil
-		},
-		Stdout: &stdout,
-		Stderr: &stderr,
-	})
-	command.SetArgs(nil)
-
-	if err := command.Execute(); err != nil {
-		t.Fatalf("Execute() error = %v", err)
-	}
-	if got, want := stdout.String(), repository.Identity+"\n"; got != want {
-		t.Fatalf("stdout = %q, want %q", got, want)
-	}
-	if got, want := stderr.String(), "gh-qw: warning: "+warning.Error()+"\n"; got != want {
-		t.Fatalf("stderr = %q, want %q", got, want)
-	}
-}
-
 func TestNewListCommandSurfacesErrorsWithoutPartialOutput(t *testing.T) {
 	t.Parallel()
 
@@ -686,45 +596,39 @@ func TestNewListCommandSurfacesErrorsWithoutPartialOutput(t *testing.T) {
 
 		wantErr := errors.New("resolve failed")
 		resolver := &listRootResolver{err: wantErr}
-		discovery := &listDiscoveryRecorder{}
+		registry := &listRegistryRecorder{}
 		var stdout bytes.Buffer
 		command := cmd.NewListCommand(cmd.ListDependencies{
-			Resolver:             resolver,
-			DiscoverRepositories: discovery.listDiscover,
-			Stdout:               &stdout,
-			Stderr:               io.Discard,
+			Resolver: resolver,
+			Registry: testregistry.From(registry.listRead),
+			Stdout:   &stdout,
+			Stderr:   io.Discard,
 		})
 
 		if gotErr := command.Execute(); !errors.Is(gotErr, wantErr) {
 			t.Fatalf("Execute() error = %v, want %v", gotErr, wantErr)
 		}
-		if discovery.calls != 0 {
-			t.Fatalf("discovery calls = %d, want 0", discovery.calls)
+		if registry.calls != 0 {
+			t.Fatalf("registry calls = %d, want 0", registry.calls)
 		}
 		if stdout.Len() != 0 {
 			t.Fatalf("stdout = %q, want empty", stdout.String())
 		}
 	})
 
-	t.Run("discovery with warning", func(t *testing.T) {
+	t.Run("registry read failure", func(t *testing.T) {
 		t.Parallel()
 
-		wantErr := errors.New("discovery failed")
-		warning := local.Warning{
-			Kind:      local.WarningInspection,
-			Path:      listAbsolutePath("roots", "bad"),
-			Operation: "inspect Git repository",
-			Err:       errors.New("bad repository"),
-		}
+		wantErr := errors.New("registry failed")
 		var stdout bytes.Buffer
 		var stderr bytes.Buffer
 		command := cmd.NewListCommand(cmd.ListDependencies{
 			Resolver: &listRootResolver{result: rootpkg.Result{
 				RepositoryRoots: []string{listAbsolutePath("roots")},
 			}},
-			DiscoverRepositories: func(context.Context, []string) (local.DiscoveryResult, error) {
-				return local.DiscoveryResult{Warnings: []local.Warning{warning}}, wantErr
-			},
+			Registry: testregistry.From(func() (map[string]string, error) {
+				return map[string]string{}, wantErr
+			}),
 			Stdout: &stdout,
 			Stderr: &stderr,
 		})
@@ -734,9 +638,6 @@ func TestNewListCommandSurfacesErrorsWithoutPartialOutput(t *testing.T) {
 		}
 		if stdout.Len() != 0 {
 			t.Fatalf("stdout = %q, want empty", stdout.String())
-		}
-		if got, want := stderr.String(), "gh-qw: warning: "+warning.Error()+"\n"; got != want {
-			t.Fatalf("stderr = %q, want %q", got, want)
 		}
 	})
 
@@ -758,9 +659,9 @@ func TestNewListCommandSurfacesErrorsWithoutPartialOutput(t *testing.T) {
 				RepositoryRoots: []string{listAbsolutePath("roots")},
 				WorktreeRoot:    listAbsolutePath("worktrees"),
 			}},
-			DiscoverRepositories: func(context.Context, []string) (local.DiscoveryResult, error) {
-				return local.DiscoveryResult{Repositories: []local.Repository{first, second}}, nil
-			},
+			Registry: testregistry.From(func() (map[string]string, error) {
+				return testregistry.Locations(first, second), nil
+			}),
 			EnumerateWorktrees: enumeration.listEnumerate,
 			Stdout:             &stdout,
 			Stderr:             io.Discard,
@@ -814,9 +715,9 @@ func TestNewListCommandSurfacesErrorsWithoutPartialOutput(t *testing.T) {
 					RepositoryRoots: []string{listAbsolutePath("roots")},
 					WorktreeRoot:    listAbsolutePath("worktrees"),
 				}},
-				DiscoverRepositories: func(context.Context, []string) (local.DiscoveryResult, error) {
-					return local.DiscoveryResult{Repositories: []local.Repository{repository}}, nil
-				},
+				Registry: testregistry.From(func() (map[string]string, error) {
+					return testregistry.Locations(repository), nil
+				}),
 				EnumerateWorktrees: (&listEnumerationRecorder{byIdentity: map[string][]local.Worktree{
 					repository.Identity: {
 						{Main: true, Path: repository.Path},
@@ -892,18 +793,15 @@ func TestNewListCommandHandlesWriterAndPathErrors(t *testing.T) {
 		listAbsolutePath("roots", "github.com", "acme", "widget"),
 		0,
 	)
-	listDeps := func(stdout, stderr io.Writer, warnings []local.Warning) cmd.ListDependencies {
+	listDeps := func(stdout, stderr io.Writer) cmd.ListDependencies {
 		return cmd.ListDependencies{
 			Resolver: &listRootResolver{result: rootpkg.Result{
 				RepositoryRoots: []string{listAbsolutePath("roots")},
 				WorktreeRoot:    listAbsolutePath("worktrees"),
 			}},
-			DiscoverRepositories: func(context.Context, []string) (local.DiscoveryResult, error) {
-				return local.DiscoveryResult{
-					Repositories: []local.Repository{repository},
-					Warnings:     warnings,
-				}, nil
-			},
+			Registry: testregistry.From(func() (map[string]string, error) {
+				return testregistry.Locations(repository), nil
+			}),
 			Stdout: stdout,
 			Stderr: stderr,
 		}
@@ -913,31 +811,10 @@ func TestNewListCommandHandlesWriterAndPathErrors(t *testing.T) {
 		t.Parallel()
 
 		wantErr := errors.New("stdout failed")
-		command := cmd.NewListCommand(listDeps(listErrorWriter{err: wantErr}, io.Discard, nil))
+		command := cmd.NewListCommand(listDeps(listErrorWriter{err: wantErr}, io.Discard))
 
 		if gotErr := command.Execute(); !errors.Is(gotErr, wantErr) {
 			t.Fatalf("Execute() error = %v, want %v", gotErr, wantErr)
-		}
-	})
-
-	t.Run("stderr warning", func(t *testing.T) {
-		t.Parallel()
-
-		wantErr := errors.New("stderr failed")
-		warnings := []local.Warning{{
-			Kind:      local.WarningInspection,
-			Path:      listAbsolutePath("roots", "bad"),
-			Operation: "inspect",
-			Err:       errors.New("bad"),
-		}}
-		var stdout bytes.Buffer
-		command := cmd.NewListCommand(listDeps(&stdout, listErrorWriter{err: wantErr}, warnings))
-
-		if gotErr := command.Execute(); !errors.Is(gotErr, wantErr) {
-			t.Fatalf("Execute() error = %v, want %v", gotErr, wantErr)
-		}
-		if stdout.Len() != 0 {
-			t.Fatalf("stdout = %q, want empty", stdout.String())
 		}
 	})
 
@@ -951,9 +828,9 @@ func TestNewListCommandHandlesWriterAndPathErrors(t *testing.T) {
 			Resolver: &listRootResolver{result: rootpkg.Result{
 				RepositoryRoots: []string{listAbsolutePath("roots")},
 			}},
-			DiscoverRepositories: func(context.Context, []string) (local.DiscoveryResult, error) {
-				return local.DiscoveryResult{Repositories: []local.Repository{relative}}, nil
-			},
+			Registry: testregistry.From(func() (map[string]string, error) {
+				return testregistry.Locations(relative), nil
+			}),
 			Stdout: &stdout,
 			Stderr: io.Discard,
 		})
@@ -979,19 +856,14 @@ func (resolver *listRootResolver) Resolve() (rootpkg.Result, error) {
 	return resolver.result, resolver.err
 }
 
-type listDiscoveryRecorder struct {
-	result local.DiscoveryResult
+type listRegistryRecorder struct {
+	result map[string]string
 	err    error
 	calls  int
-	roots  []string
 }
 
-func (recorder *listDiscoveryRecorder) listDiscover(
-	_ context.Context,
-	roots []string,
-) (local.DiscoveryResult, error) {
+func (recorder *listRegistryRecorder) listRead() (map[string]string, error) {
 	recorder.calls++
-	recorder.roots = append([]string(nil), roots...)
 	return recorder.result, recorder.err
 }
 

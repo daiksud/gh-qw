@@ -109,48 +109,6 @@ func ResolveRepository(repositories []Repository, selector string) (Repository, 
 	}
 }
 
-// ResolveRepositoryForMutation is the destructive-selection spelling of
-// ResolveRepository.
-func ResolveRepositoryForMutation(repositories []Repository, selector string) (Repository, error) {
-	return ResolveRepository(repositories, selector)
-}
-
-// ResolveEarliestRepository resolves after retaining only the earliest record
-// for each canonical identity.
-func ResolveEarliestRepository(repositories []Repository, selector string) (Repository, error) {
-	return ResolveRepository(EarliestByIdentity(repositories), selector)
-}
-
-// EarliestByIdentity returns the first record for each canonical identity
-// while preserving input order.
-func EarliestByIdentity(repositories []Repository) []Repository {
-	seen := make(map[string]struct{}, len(repositories))
-	unique := make([]Repository, 0, len(repositories))
-	for _, repository := range repositories {
-		if _, exists := seen[repository.Identity]; exists {
-			continue
-		}
-		seen[repository.Identity] = struct{}{}
-		unique = append(unique, repository)
-	}
-	return unique
-}
-
-// FindEarliestIdentity returns the first record with the exact canonical
-// identity.
-func FindEarliestIdentity(repositories []Repository, identity string) (Repository, bool, error) {
-	parts, err := ParseIdentity(identity)
-	if err != nil {
-		return Repository{}, false, err
-	}
-	for _, repository := range repositories {
-		if repository.Identity == parts.String() {
-			return repository, true, nil
-		}
-	}
-	return Repository{}, false, nil
-}
-
 func selectorMatches(repository Repository, selector Selector) bool {
 	switch selector.Depth {
 	case 1:

@@ -251,7 +251,7 @@ func EnumerateWorktrees(
 		return nil, &WorktreeError{
 			Kind:       ErrUnsafeWorktree,
 			Repository: repository.Identity,
-			Reason:     "Git did not report the discovered main worktree",
+			Reason:     "Git did not report the registered main worktree",
 		}
 	}
 

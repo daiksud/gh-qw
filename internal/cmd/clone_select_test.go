@@ -16,8 +16,8 @@ import (
 	"github.com/daiksud/gh-qw/internal/cmd"
 	"github.com/daiksud/gh-qw/internal/fzfcmd"
 	"github.com/daiksud/gh-qw/internal/ghcmd"
-	"github.com/daiksud/gh-qw/internal/local"
 	"github.com/daiksud/gh-qw/internal/repospec"
+	"github.com/daiksud/gh-qw/internal/testregistry"
 )
 
 func TestCloneOwnerListsWithoutLocalConfigurationOrMutation(t *testing.T) {
@@ -29,9 +29,9 @@ func TestCloneOwnerListsWithoutLocalConfigurationOrMutation(t *testing.T) {
 				return nil
 			}}, &stdout, io.Discard)
 			deps.RootResolver = &cloneRootResolver{err: errors.New("listing must not resolve local roots")}
-			deps.Discover = func(context.Context, []string) (local.DiscoveryResult, error) {
-				t.Fatal("listing must not discover local repositories")
-				return local.DiscoveryResult{}, nil
+			deps.Registry.(*testregistry.Registry).Read = func() (map[string]string, error) {
+				t.Fatal("listing must not read the registry")
+				return map[string]string{}, nil
 			}
 			deps.RepositoryAPI = &cloneRepositoryAPI{repositories: func(_ context.Context, host, owner string) ([]string, error) {
 				if host != "github.com" || owner != "acme" {
@@ -126,7 +126,7 @@ func TestCloneSelectorReceivesEveryRepositoryAndPreservesOptions(t *testing.T) {
 					}
 					return candidates[0], nil
 				}
-				deps.OnAcquired = func(identity, path string) error {
+				deps.Registry.(*testregistry.Registry).OnRegister = func(identity, path string) error {
 					registered = identity
 					if path != filepath.Join(root, "github.com", "acme", "completely-different") {
 						t.Fatalf("registered path = %q", path)
@@ -216,7 +216,7 @@ func TestCloneSelectedRepositoryPreservesGHHostPort(t *testing.T) {
 	}
 }
 
-func TestCloneDiscoveryFailuresNeverAcquire(t *testing.T) {
+func TestCloneSelectionFailuresNeverAcquire(t *testing.T) {
 	wantFailure := errors.New("API unavailable")
 	for _, test := range []struct {
 		name                          string
@@ -251,7 +251,7 @@ func TestCloneDiscoveryFailuresNeverAcquire(t *testing.T) {
 				}
 				deps.LookPath = func(string) (string, error) { return "/fzf", nil }
 				deps.Select = func(context.Context, []string, string) (string, error) { return test.selection, test.selectErr }
-				deps.OnAcquired = func(string, string) error { t.Fatal("failure must not register"); return nil }
+				deps.Registry.(*testregistry.Registry).OnRegister = func(string, string) error { t.Fatal("failure must not register"); return nil }
 				command := cmd.NewCloneCommand(deps)
 				args := []string{test.input}
 				if parallel {
@@ -321,40 +321,23 @@ func TestCloneParallelNoMatchPreservesKnownUsageFailure(t *testing.T) {
 }
 
 func TestCloneParallelDoesNotRetryFailedGlobalPreparation(t *testing.T) {
-	for _, operation := range []string{"discovery", "warning"} {
-		t.Run(operation, func(t *testing.T) {
-			root := cloneTempRoot(t)
-			failure := errors.New("first preparation failed")
-			writer := &cloneRecoveringWriter{failure: failure}
-			deps := cloneDependencies(root, &cloneGitOperations{clone: func(context.Context, ghcmd.CloneOptions) error {
-				t.Fatal("global preparation failure must prevent every clone")
-				return nil
-			}}, io.Discard, writer)
-			calls := 0
-			deps.Discover = func(context.Context, []string) (local.DiscoveryResult, error) {
-				calls++
-				if calls == 1 && operation == "discovery" {
-					return local.DiscoveryResult{}, failure
-				}
-				return local.DiscoveryResult{Warnings: []local.Warning{{Path: root}}}, nil
-			}
-			command := cmd.NewCloneCommand(deps)
-			command.SetArgs([]string{"--parallel", "acme/one", "acme/two"})
-			err := command.Execute()
-			if !errors.Is(err, failure) || calls != 1 {
-				t.Fatalf("preparation error=%v, discovery calls=%d; want original fatal failure", err, calls)
-			}
-		})
+	failure := errors.New("first registry read failed")
+	deps := cloneDependencies(cloneTempRoot(t), &cloneGitOperations{clone: func(context.Context, ghcmd.CloneOptions) error {
+		t.Fatal("global preparation failure must prevent every clone")
+		return nil
+	}}, io.Discard, io.Discard)
+	calls := 0
+	deps.Registry.(*testregistry.Registry).Read = func() (map[string]string, error) {
+		calls++
+		if calls == 1 {
+			return nil, failure
+		}
+		return map[string]string{}, nil
 	}
-}
-
-type cloneRecoveringWriter struct{ failure error }
-
-func (w *cloneRecoveringWriter) Write(data []byte) (int, error) {
-	if w.failure != nil {
-		err := w.failure
-		w.failure = nil
-		return 0, err
+	command := cmd.NewCloneCommand(deps)
+	command.SetArgs([]string{"--parallel", "acme/one", "acme/two"})
+	err := command.Execute()
+	if !errors.Is(err, failure) || calls != 1 {
+		t.Fatalf("preparation error=%v, registry reads=%d; want original fatal failure", err, calls)
 	}
-	return len(data), nil
 }

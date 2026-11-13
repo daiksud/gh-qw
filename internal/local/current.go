@@ -18,7 +18,7 @@ type CurrentRepositoryOptions struct {
 	Filesystem FilesystemOptions
 }
 
-// FindCurrentRepository identifies the discovered main repository whose real
+// FindCurrentRepository identifies the registered main repository whose real
 // .git directory is Git's common directory for cwd.
 func FindCurrentRepository(
 	ctx context.Context,
@@ -37,7 +37,7 @@ type CurrentOptions struct {
 	Filesystem FilesystemOptions
 }
 
-// DiscoverCurrent identifies both the discovered main repository and the
+// DiscoverCurrent identifies both the registered main repository and the
 // registered main or linked worktree containing cwd.
 func DiscoverCurrent(
 	ctx context.Context,
@@ -196,7 +196,7 @@ func findCurrentRepository(
 		return Repository{}, "", &WorktreeError{
 			Kind:   ErrCurrentUnmanaged,
 			Path:   physicalTop,
-			Reason: "common Git directory does not belong to a discovered main repository",
+			Reason: "common Git directory does not belong to a registered main repository",
 		}
 	case 1:
 		return matches[0], physicalTop, nil

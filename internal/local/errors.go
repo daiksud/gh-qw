@@ -32,7 +32,7 @@ var (
 	// ErrBareWorktree identifies bare Git state, which gh-qw never manages.
 	ErrBareWorktree = errors.New("bare worktree is not managed")
 	// ErrCurrentUnmanaged identifies a current directory outside every
-	// discovered main repository and its registered linked worktrees.
+	// registered main repository and its registered linked worktrees.
 	ErrCurrentUnmanaged = errors.New("current directory is not in a managed repository")
 	// ErrSlotCollision identifies exact and component-prefix slot collisions.
 	ErrSlotCollision = errors.New("worktree slot collides with an existing slot")

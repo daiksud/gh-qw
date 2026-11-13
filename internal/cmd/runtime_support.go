@@ -1,12 +1,9 @@
 package cmd
 
 import (
-	"bytes"
-	"fmt"
 	"io"
 	"os"
 
-	"github.com/daiksud/gh-qw/internal/local"
 	"github.com/daiksud/gh-qw/internal/repospec"
 )
 
@@ -58,19 +55,6 @@ func commandWriteAll(writer io.Writer, data []byte) error {
 		}
 	}
 	return nil
-}
-
-// commandWriteWarnings preserves the per-warning diagnostics, but never drops
-// an I/O failure. Callers may attach operation context.
-func commandWriteWarnings(writer io.Writer, warnings []local.Warning) error {
-	if len(warnings) == 0 {
-		return nil
-	}
-	var output bytes.Buffer
-	for _, warning := range warnings {
-		_, _ = fmt.Fprintf(&output, "gh-qw: warning: %v\n", warning)
-	}
-	return commandWriteAll(writer, output.Bytes())
 }
 
 func commandStdin(reader io.Reader) io.Reader {

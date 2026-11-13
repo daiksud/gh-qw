@@ -27,13 +27,12 @@ var (
 // ListDependencies supplies the read-only seams used by the list command.
 // Nil fields use production implementations and process streams.
 type ListDependencies struct {
-	Resolver             RootResolver
-	Registry             LocationRegistry
-	Git                  ListGit
-	DiscoverRepositories func(context.Context, []string) (local.DiscoveryResult, error)
-	EnumerateWorktrees   func(context.Context, local.Repository, string) ([]local.Worktree, error)
-	Stdout               io.Writer
-	Stderr               io.Writer
+	Resolver           RootResolver
+	Registry           LocationRegistry
+	Git                ListGit
+	EnumerateWorktrees func(context.Context, local.Repository, string) ([]local.Worktree, error)
+	Stdout             io.Writer
+	Stderr             io.Writer
 }
 
 // ListGit supplies the native Git queries used by gone-upstream filtering.
@@ -55,7 +54,7 @@ type listEntry struct {
 
 type listUsageError = repositoryUsageError
 
-// NewListCommand returns the command that lists discovered repositories and
+// NewListCommand returns the command that lists registered repositories and
 // their registered worktrees.
 func NewListCommand(deps ListDependencies) *cobra.Command {
 	deps = listDependenciesWithDefaults(deps)
@@ -93,21 +92,9 @@ func NewListCommand(deps ListDependencies) *cobra.Command {
 				return err
 			}
 
-			var repositories []local.Repository
-			if deps.Registry != nil {
-				repositories, err = registeredRepositories(command.Context(), deps.Registry, roots.RepositoryRoots)
-				if err != nil {
-					return err
-				}
-			} else {
-				discovery, discoveryErr := deps.DiscoverRepositories(command.Context(), roots.RepositoryRoots)
-				if err := commandWriteWarnings(command.ErrOrStderr(), discovery.Warnings); err != nil {
-					return fmt.Errorf("write discovery warnings: %w", err)
-				}
-				if discoveryErr != nil {
-					return discoveryErr
-				}
-				repositories = listEarliestRepositories(discovery.Repositories)
+			repositories, err := registeredRepositories(command.Context(), deps.Registry, roots.RepositoryRoots)
+			if err != nil {
+				return err
 			}
 
 			entries, err := listCollectEntries(
@@ -177,14 +164,7 @@ func listDependenciesWithDefaults(deps ListDependencies) ListDependencies {
 	if deps.Resolver == nil {
 		deps.Resolver = rootpkg.NewResolver()
 	}
-	if deps.DiscoverRepositories == nil {
-		deps.DiscoverRepositories = func(
-			ctx context.Context,
-			roots []string,
-		) (local.DiscoveryResult, error) {
-			return local.DiscoverRepositories(ctx, roots)
-		}
-	}
+	deps.Registry = commandRegistry(deps.Registry)
 	if deps.EnumerateWorktrees == nil {
 		deps.EnumerateWorktrees = func(
 			ctx context.Context,
@@ -198,23 +178,6 @@ func listDependenciesWithDefaults(deps ListDependencies) ListDependencies {
 		deps.Git = &gitcmd.Runner{Executable: "git", Stdout: io.Discard, Stderr: deps.Stderr}
 	}
 	return deps
-}
-
-func listEarliestRepositories(repositories []local.Repository) []local.Repository {
-	positions := make(map[string]int, len(repositories))
-	unique := make([]local.Repository, 0, len(repositories))
-	for _, repository := range repositories {
-		position, exists := positions[repository.Identity]
-		if !exists {
-			positions[repository.Identity] = len(unique)
-			unique = append(unique, repository)
-			continue
-		}
-		if repository.RootIndex < unique[position].RootIndex {
-			unique[position] = repository
-		}
-	}
-	return unique
 }
 
 func listCollectEntries(

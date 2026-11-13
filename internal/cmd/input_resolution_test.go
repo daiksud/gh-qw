@@ -16,9 +16,9 @@ import (
 	"github.com/daiksud/gh-qw/internal/cmd"
 	"github.com/daiksud/gh-qw/internal/ghcmd"
 	"github.com/daiksud/gh-qw/internal/gitcmd"
-	"github.com/daiksud/gh-qw/internal/local"
 	"github.com/daiksud/gh-qw/internal/repospec"
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
+	"github.com/daiksud/gh-qw/internal/testregistry"
 )
 
 func TestCloneSyntaxErrorHasNoResolutionOrCloneSideEffects(t *testing.T) {
@@ -40,9 +40,9 @@ func TestCloneSyntaxErrorHasNoResolutionOrCloneSideEffects(t *testing.T) {
 			}
 			resolver := &cloneRootResolver{err: errors.New("root resolution must not run")}
 			deps.RootResolver = resolver
-			deps.Discover = func(context.Context, []string) (local.DiscoveryResult, error) {
-				t.Fatal("syntax errors must not discover repositories")
-				return local.DiscoveryResult{}, nil
+			deps.Registry.(*testregistry.Registry).Read = func() (map[string]string, error) {
+				t.Fatal("syntax errors must not read the registry")
+				return map[string]string{}, nil
 			}
 			deps.GitFactory = func(io.Writer, io.Writer) cmd.CloneGitOperations {
 				t.Fatal("syntax errors must not construct clone operations")
@@ -87,9 +87,9 @@ func TestNativeRefFailuresRemainRuntimeErrors(t *testing.T) {
 				var stdout bytes.Buffer
 				command := cmd.NewCommand(cmd.ApplicationDependencies{
 					Resolver: &cloneRootResolver{result: rootpkg.Result{RepositoryRoots: []string{t.TempDir()}}},
-					Discover: func(context.Context, []string, ...local.DiscoveryOptions) (local.DiscoveryResult, error) {
-						return local.DiscoveryResult{}, nil
-					},
+					Registry: testregistry.From(func() (map[string]string, error) {
+						return map[string]string{}, nil
+					}),
 					Stdout: &stdout,
 					Stderr: io.Discard,
 				})
@@ -126,10 +126,10 @@ func TestCloneOrderedSyntaxFailurePreservesEarlierSuccess(t *testing.T) {
 			return nil
 		},
 	}, &stdout, io.Discard)
-	discoveries := 0
-	deps.Discover = func(context.Context, []string) (local.DiscoveryResult, error) {
-		discoveries++
-		return local.DiscoveryResult{}, nil
+	registryReads := 0
+	deps.Registry.(*testregistry.Registry).Read = func() (map[string]string, error) {
+		registryReads++
+		return map[string]string{}, nil
 	}
 	command := cmd.NewCloneCommand(deps)
 	command.SetArgs([]string{"github.com/owner/first", "invalid?repository", "github.com/owner/last"})
@@ -137,8 +137,8 @@ func TestCloneOrderedSyntaxFailurePreservesEarlierSuccess(t *testing.T) {
 	if cmd.ExitCode(err) != 2 || !errors.Is(err, repospec.ErrUsage) {
 		t.Fatalf("ordered syntax failure = %v, want usage status 2", err)
 	}
-	if !slices.Equal(cloned, []string{"https://github.com/owner/first"}) || discoveries != 1 {
-		t.Fatalf("cloned = %v, discoveries = %d; want only earlier success and one discovery", cloned, discoveries)
+	if !slices.Equal(cloned, []string{"https://github.com/owner/first"}) || registryReads != 1 {
+		t.Fatalf("cloned = %v, registryReads = %d; want only earlier success and one registry", cloned, registryReads)
 	}
 	want := filepath.ToSlash(filepath.Join(root, "github.com", "owner", "first")) + "\n"
 	if stdout.String() != want {
@@ -174,9 +174,9 @@ func TestCloneParallelKeepsKnownSyntaxFailureWhenRootResolutionFails(t *testing.
 	wantErr := errors.New("cannot read root configuration")
 	deps := cloneDependencies(t.TempDir(), &cloneGitOperations{}, io.Discard, io.Discard)
 	deps.RootResolver = &cloneRootResolver{err: wantErr}
-	deps.Discover = func(context.Context, []string) (local.DiscoveryResult, error) {
-		t.Fatal("root resolution failure must prevent discovery")
-		return local.DiscoveryResult{}, nil
+	deps.Registry.(*testregistry.Registry).Read = func() (map[string]string, error) {
+		t.Fatal("root resolution failure must prevent registry reads")
+		return map[string]string{}, nil
 	}
 	command := cmd.NewCloneCommand(deps)
 	command.SetArgs([]string{"--parallel", "invalid?repository", "owner/widget"})
@@ -222,8 +222,8 @@ func TestExistingCloneTargetRejectsWithoutExternalCommands(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	var stdout bytes.Buffer
 	deps := cloneDependencies(root, &cloneGitOperations{}, &stdout, io.Discard)
-	deps.Discover = func(context.Context, []string) (local.DiscoveryResult, error) {
-		return local.DiscoveryResult{Repositories: []local.Repository{repository}}, nil
+	deps.Registry.(*testregistry.Registry).Read = func() (map[string]string, error) {
+		return testregistry.Locations(repository), nil
 	}
 	deps.GitFactory = func(io.Writer, io.Writer) cmd.CloneGitOperations {
 		t.Fatal("existing-repository lookup must not construct clone operations")
@@ -256,9 +256,9 @@ func TestListCanonicalizationNeedsNoExternalCommands(t *testing.T) {
 	var stdout bytes.Buffer
 	command := cmd.NewListCommand(cmd.ListDependencies{
 		Resolver: &listRootResolver{result: rootpkg.Result{RepositoryRoots: []string{listAbsolutePath("roots")}}},
-		DiscoverRepositories: func(context.Context, []string) (local.DiscoveryResult, error) {
-			return local.DiscoveryResult{Repositories: []local.Repository{repository}}, nil
-		},
+		Registry: testregistry.From(func() (map[string]string, error) {
+			return testregistry.Locations(repository), nil
+		}),
 		Stdout: &stdout,
 		Stderr: io.Discard,
 	})

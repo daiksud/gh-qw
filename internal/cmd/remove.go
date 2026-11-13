@@ -41,12 +41,8 @@ type RemovePrompt func(context.Context, io.Writer, string) (bool, error)
 
 // RemoveDependencies supplies command integration and test seams.
 type RemoveDependencies struct {
-	Resolver RootResolver
-	Discover func(
-		context.Context,
-		[]string,
-		...local.DiscoveryOptions,
-	) (local.DiscoveryResult, error)
+	Resolver       RootResolver
+	Registry       LocationRegistry
 	ResolveManaged func(
 		context.Context,
 		local.Repository,
@@ -68,7 +64,6 @@ type RemoveDependencies struct {
 		...local.AssociationOptions,
 	) error
 	Git          RemoveGit
-	Forget       func(string, string) error
 	Filesystem   local.FilesystemOptions
 	Prompt       RemovePrompt
 	Select       func(context.Context, []string) (string, error)
@@ -81,12 +76,8 @@ type RemoveDependencies struct {
 }
 
 type removeRuntime struct {
-	resolver RootResolver
-	discover func(
-		context.Context,
-		[]string,
-		...local.DiscoveryOptions,
-	) (local.DiscoveryResult, error)
+	resolver       RootResolver
+	registry       LocationRegistry
 	resolveManaged func(
 		context.Context,
 		local.Repository,
@@ -128,6 +119,7 @@ type removeFilesystem struct {
 type removeSelection struct {
 	raw      string
 	selector string
+	selected *removeCandidate
 }
 
 type removeNode = removal.Node
@@ -155,6 +147,9 @@ type removeUsageError = repositoryUsageError
 // or delegates linked-worktree removal to Git.
 func NewRemoveCommand(dependencies RemoveDependencies) *cobra.Command {
 	commandRuntime := removePrepareRuntime(dependencies)
+	if dependencies.Worktree.Registry == nil {
+		dependencies.Worktree.Registry = commandRuntime.registry
+	}
 	worktreeRuntime := worktreeRemovePrepareRuntime(dependencies.Worktree)
 
 	var (
@@ -254,7 +249,7 @@ func NewRemoveCommand(dependencies RemoveDependencies) *cobra.Command {
 						selected:    selected,
 					})
 				}
-				selection = removeSelection{raw: selected.repository.Identity, selector: selected.repository.Identity}
+				selection = removeSelection{raw: selected.repository.Identity, selector: selected.repository.Identity, selected: selected}
 			} else {
 				var err error
 				selection, err = removeParseSelection(args[0])
@@ -267,7 +262,6 @@ func NewRemoveCommand(dependencies RemoveDependencies) *cobra.Command {
 				command.Context(),
 				commandRuntime,
 				selection,
-				true,
 			)
 			if err != nil {
 				return err
@@ -301,7 +295,6 @@ func NewRemoveCommand(dependencies RemoveDependencies) *cobra.Command {
 				command.Context(),
 				commandRuntime,
 				selection,
-				false,
 			)
 			if err != nil {
 				return fmt.Errorf("revalidate removal plan: %w", err)
@@ -312,8 +305,8 @@ func NewRemoveCommand(dependencies RemoveDependencies) *cobra.Command {
 
 			removed, removeErr := removeExecuteWhole(command.Context(), commandRuntime, revalidated)
 			var forgetErr error
-			if removed && dependencies.Forget != nil {
-				if err := dependencies.Forget(revalidated.Repository.Identity, revalidated.Repository.Path); err != nil {
+			if removed {
+				if err := commandRuntime.registry.ForgetAt(revalidated.Repository.Identity, revalidated.Repository.Path); err != nil {
 					forgetErr = fmt.Errorf("repository was removed at %q but its registration could not be forgotten: %w", revalidated.Repository.Path, err)
 				}
 			}
@@ -354,9 +347,6 @@ func removePrepareRuntime(dependencies RemoveDependencies) removeRuntime {
 	resolver := dependencies.Resolver
 	if resolver == nil {
 		resolver = rootpkg.NewResolver()
-	}
-	if dependencies.Discover == nil {
-		dependencies.Discover = local.DiscoverRepositories
 	}
 	if dependencies.ResolveManaged == nil {
 		dependencies.ResolveManaged = local.ResolveManagedWorktree
@@ -418,7 +408,7 @@ func removePrepareRuntime(dependencies RemoveDependencies) removeRuntime {
 	}
 	return removeRuntime{
 		resolver:            resolver,
-		discover:            dependencies.Discover,
+		registry:            commandRegistry(dependencies.Registry),
 		resolveManaged:      dependencies.ResolveManaged,
 		enumerate:           dependencies.Enumerate,
 		validateAssociation: dependencies.ValidateAssociation,
@@ -461,7 +451,6 @@ func removePreflight(
 	ctx context.Context,
 	commandRuntime removeRuntime,
 	selection removeSelection,
-	emitWarnings bool,
 ) (removePlan, error) {
 	roots, err := commandRuntime.resolver.Resolve()
 	if err != nil {
@@ -471,33 +460,23 @@ func removePreflight(
 		return removePlan{}, fmt.Errorf("%w: no repository root is configured", ErrRemoveSafety)
 	}
 
-	discovery, discoveryErr := commandRuntime.discover(
-		ctx,
-		roots.RepositoryRoots,
-		local.DiscoveryOptions{
-			Git:        commandRuntime.git,
-			Filesystem: commandRuntime.filesystem,
-		},
-	)
-	var warningErr error
-	if emitWarnings {
-		warningErr = removeWriteWarnings(commandRuntime.stderr, discovery.Warnings)
-	}
-	if discoveryErr != nil || warningErr != nil {
-		return removePlan{}, errors.Join(
-			removeWrapError("discover repositories", discoveryErr),
-			removeWrapError("write discovery warnings", warningErr),
-		)
+	repositories, registryErr := registeredRepositories(ctx, commandRuntime.registry, roots.RepositoryRoots)
+	if registryErr != nil {
+		return removePlan{}, fmt.Errorf("read registered repositories: %w", registryErr)
 	}
 
-	repository, err := local.ResolveRepositoryForMutation(
-		discovery.Repositories,
+	repository, err := local.ResolveRepository(
+		repositories,
 		selection.selector,
 	)
 	if err != nil {
 		return removePlan{}, removeNewUsageError(
 			fmt.Errorf("resolve repository %q: %w", selection.selector, err),
 		)
+	}
+
+	if selection.selected != nil && selection.selected.repository != repository {
+		return removePlan{}, fmt.Errorf("%w: selected removal target changed while fzf was open", ErrRemoveSafety)
 	}
 
 	plan, err := removePrepareCommon(
@@ -514,7 +493,7 @@ func removePreflight(
 	if err != nil {
 		return removePlan{}, err
 	}
-	if err := removeRejectNestedRegistrations(plan, discovery.Repositories); err != nil {
+	if err := removeRejectNestedRegistrations(plan, repositories); err != nil {
 		return removePlan{}, err
 	}
 	return plan, nil
@@ -1187,35 +1166,6 @@ func removePathList(paths []string) string {
 		return "(none)"
 	}
 	return "[" + strings.Join(paths, ", ") + "]"
-}
-
-func removeWriteWarnings(writer io.Writer, warnings []local.Warning) error {
-	if len(warnings) == 0 {
-		return nil
-	}
-	var output bytes.Buffer
-	for _, warning := range warnings {
-		path := removeOutputPath(warning.Path)
-		if warning.Err == nil {
-			_, _ = fmt.Fprintf(
-				&output,
-				"gh-qw: warning: %s warning at %q during %s\n",
-				warning.Kind,
-				path,
-				warning.Operation,
-			)
-			continue
-		}
-		_, _ = fmt.Fprintf(
-			&output,
-			"gh-qw: warning: %s warning at %q during %s: %v\n",
-			warning.Kind,
-			path,
-			warning.Operation,
-			warning.Err,
-		)
-	}
-	return commandWriteAll(writer, output.Bytes())
 }
 
 func removeWritePlan(writer io.Writer, plan removePlan) error {
