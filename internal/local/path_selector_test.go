@@ -135,7 +135,7 @@ func TestValidateWorktreeDestinationReservesGlobalSlot(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	repository := testRepository(t, repositoryRoot, "github.com/acme/widget", 0)
+	repository := testRepository(t, repositoryRoot, "github.com/acme/widget")
 
 	// An existing slot is taken even if the checkout belongs to another repo.
 	if err := os.MkdirAll(filepath.Join(worktreeRoot, "occupied", "other-repo"), 0o755); err != nil {
@@ -170,22 +170,20 @@ func TestValidateWorktreeDestinationReservesGlobalSlot(t *testing.T) {
 func TestExactSelectorResolutionAndAmbiguity(t *testing.T) {
 	repositories := []Repository{
 		{
-			Identity:  "github.com/acme/widget",
-			Host:      "github.com",
-			Owner:     "acme",
-			Repo:      "widget",
-			Path:      "/root-one/github.com/acme/widget",
-			Root:      "/root-one",
-			RootIndex: 0,
+			Identity: "github.com/acme/widget",
+			Host:     "github.com",
+			Owner:    "acme",
+			Repo:     "widget",
+			Path:     "/root-one/github.com/acme/widget",
+			Root:     "/root-one",
 		},
 		{
-			Identity:  "git.example.com/team/widget",
-			Host:      "git.example.com",
-			Owner:     "team",
-			Repo:      "widget",
-			Path:      "/root-one/git.example.com/team/widget",
-			Root:      "/root-one",
-			RootIndex: 0,
+			Identity: "git.example.com/team/widget",
+			Host:     "git.example.com",
+			Owner:    "team",
+			Repo:     "widget",
+			Path:     "/root-one/git.example.com/team/widget",
+			Root:     "/root-one",
 		},
 	}
 

@@ -290,9 +290,6 @@ func ValidateRepository(repository Repository) error {
 	if repository.Root != "" && !filepath.IsAbs(repository.Root) {
 		return fmt.Errorf("repository %q root %q is not absolute", repository.Identity, repository.Root)
 	}
-	if repository.RootIndex < 0 {
-		return fmt.Errorf("repository %q has a negative root index", repository.Identity)
-	}
 	return nil
 }
 

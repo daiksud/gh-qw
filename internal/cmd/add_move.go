@@ -39,7 +39,7 @@ type repositoryMovePlan struct {
 	destination string
 	snapshot    movementpkg.RepositorySnapshot
 	worktrees   movementpkg.WorktreeRepairPlan
-	singleRoots []string
+	root        string
 	identity    string
 }
 
@@ -86,12 +86,12 @@ func repositoryMovePlanSingle(
 	}
 	source = snapshot.Path
 
-	spec, err := repositoryMoveRemoteSpec(ctx, dependencies.Git, source, rootResult.RepositoryRoots)
+	spec, err := repositoryMoveRemoteSpec(ctx, dependencies.Git, source, rootResult.RepositoryRoot)
 	if err != nil {
 		return repositoryMovePlan{}, err
 	}
 	destination, err := movementpkg.DestinationPath(
-		rootResult.Primary(),
+		rootResult.RepositoryRoot,
 		spec.Host,
 		spec.Owner,
 		spec.Repo,
@@ -101,7 +101,7 @@ func repositoryMovePlanSingle(
 		return repositoryMovePlan{}, err
 	}
 	physicalDestination, exists, err := movementpkg.CheckDestination(
-		rootResult.Primary(),
+		rootResult.RepositoryRoot,
 		destination,
 		dependencies.Filesystem,
 	)
@@ -131,7 +131,7 @@ func repositoryMovePlanSingle(
 	if err != nil {
 		return repositoryMovePlan{}, err
 	}
-	item.singleRoots = append([]string(nil), rootResult.RepositoryRoots...)
+	item.root = rootResult.RepositoryRoot
 	item.identity = spec.Identity.String()
 	return item, nil
 }
@@ -200,7 +200,7 @@ func repositoryMoveExecute(
 		ctx,
 		dependencies.Git,
 		item.source,
-		item.singleRoots,
+		item.root,
 	)
 	if err != nil {
 		return false, fmt.Errorf("revalidate repository remote: %w", err)
@@ -213,7 +213,7 @@ func repositoryMoveExecute(
 		)
 	}
 	destination, err := movementpkg.DestinationPath(
-		rootResult.Primary(),
+		rootResult.RepositoryRoot,
 		spec.Host,
 		spec.Owner,
 		spec.Repo,
@@ -281,7 +281,7 @@ func repositoryMoveExecute(
 		movementpkg.MoveOptions{
 			Filesystem:      dependencies.Filesystem,
 			SourceRoot:      "",
-			DestinationRoot: rootResult.Primary(),
+			DestinationRoot: rootResult.RepositoryRoot,
 		},
 	)
 	if err != nil {
@@ -314,7 +314,7 @@ func repositoryMoveRemoteSpec(
 	ctx context.Context,
 	git RepositoryMoveGit,
 	source string,
-	roots []string,
+	root string,
 ) (repospec.Spec, error) {
 	remoteURL, err := repositoryMoveRemoteURL(ctx, git, source)
 	if err != nil {
@@ -325,7 +325,7 @@ func repositoryMoveRemoteSpec(
 		return repospec.Spec{}, fmt.Errorf("parse repository remote: %w", err)
 	}
 	spec, err := parsed.Resolve(ctx, repospec.Options{
-		Roots:      roots,
+		Root:       root,
 		WorkingDir: source,
 	})
 	if err != nil {

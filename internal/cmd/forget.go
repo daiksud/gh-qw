@@ -22,7 +22,7 @@ func NewForgetCommand(store LocationRegistry, stderr io.Writer) *cobra.Command {
 			return newCommandUsageError(cobra.ExactArgs(1)(command, args))
 		},
 		RunE: func(command *cobra.Command, args []string) error {
-			repositories, err := registeredRepositories(command.Context(), store, nil)
+			repositories, err := registeredRepositories(command.Context(), store, "")
 			if err != nil {
 				return err
 			}

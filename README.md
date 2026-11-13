@@ -74,8 +74,9 @@ Optional configuration in `~/.config/ghqw/config.toml`:
 root = "~/ghqw"
 ```
 
-`GHQW_ROOT` overrides `root`; worktrees always use the primary root's `worktrees`
-subdirectory. Multiple roots and XDG locations are described in the
+`GHQW_ROOT` overrides `root`; worktrees always use its `worktrees`
+subdirectory. Registered checkouts may live elsewhere. Root and XDG locations
+are described in the
 [configuration reference](docs/configuration.md).
 
 ## Commands
@@ -86,7 +87,7 @@ subdirectory. Multiple roots and XDG locations are described in the
 | `add` | Register a local repository; `--move` relocates it; `--worktree` adds a linked worktree; `--cd` navigates there with shell integration. |
 | `list` | List registered repositories; `--worktree` selects worktrees, `--gone` filters them, and `--all` includes both. |
 | `forget` | Unregister a repository without deleting its files. |
-| `root` | Print repository roots. |
+| `root` | Print the repository placement root. |
 | `remove` | Remove a repository, one linked worktree, or gone-upstream worktrees; omit the target to choose with `fzf`. |
 
 Use native `git worktree prune` for stale Git worktree metadata; gh-qw does not

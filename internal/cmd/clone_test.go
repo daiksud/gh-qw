@@ -56,7 +56,7 @@ func TestNewCloneCommandFlagsAndCloneOptions(t *testing.T) {
 			return nil
 		},
 	}
-	resolver := &cloneRootResolver{result: rootpkg.Result{RepositoryRoots: []string{root}}}
+	resolver := &cloneRootResolver{result: rootpkg.Result{RepositoryRoot: root}}
 	var registryReads int
 	var output bytes.Buffer
 	command := cmd.NewCloneCommand(cmd.CloneDependencies{
@@ -437,7 +437,7 @@ func TestNewCloneCommandRejectsRegisteredRepository(t *testing.T) {
 	path := filepath.Join(cloneTempRoot(t), "existing", "widget")
 	var output bytes.Buffer
 	command := cmd.NewCloneCommand(cmd.CloneDependencies{
-		RootResolver: &cloneRootResolver{result: rootpkg.Result{RepositoryRoots: []string{root}}},
+		RootResolver: &cloneRootResolver{result: rootpkg.Result{RepositoryRoot: root}},
 		GitFactory: func(io.Writer, io.Writer) cmd.CloneGitOperations {
 			t.Fatal("Git factory called for registered repository")
 			return nil
@@ -448,10 +448,9 @@ func TestNewCloneCommandRejectsRegisteredRepository(t *testing.T) {
 		},
 		Registry: testregistry.From(func() (map[string]string, error) {
 			return testregistry.Locations([]local.Repository{{
-				Identity:  "github.com/acme/widget",
-				Path:      path,
-				Root:      filepath.Dir(path),
-				RootIndex: 1,
+				Identity: "github.com/acme/widget",
+				Path:     path,
+				Root:     filepath.Dir(path),
 			}}...), nil
 		}),
 		RepositoryAPI: &cloneRepositoryAPI{},
@@ -1193,7 +1192,7 @@ func cloneDependencies(
 ) cmd.CloneDependencies {
 	return cmd.CloneDependencies{
 		RootResolver: &cloneRootResolver{result: rootpkg.Result{
-			RepositoryRoots: []string{root},
+			RepositoryRoot: root,
 		}},
 		GitFactory: func(io.Writer, io.Writer) cmd.CloneGitOperations {
 			return git
@@ -1292,7 +1291,7 @@ func TestCloneHonorsGHHostForHostlessShorthand(t *testing.T) {
 			var got string
 			git := &cloneGitOperations{clone: func(_ context.Context, options ghcmd.CloneOptions) error { got = options.URL; return nil }}
 			command := cmd.NewCloneCommand(cmd.CloneDependencies{
-				RootResolver:  &cloneRootResolver{result: rootpkg.Result{RepositoryRoots: []string{cloneTempRoot(t)}}},
+				RootResolver:  &cloneRootResolver{result: rootpkg.Result{RepositoryRoot: cloneTempRoot(t)}},
 				GitFactory:    func(io.Writer, io.Writer) cmd.CloneGitOperations { return git },
 				RepositoryAPI: &cloneRepositoryAPI{},
 				Stdout:        io.Discard, Stderr: io.Discard,

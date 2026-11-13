@@ -53,7 +53,7 @@ func physicalTempDir(t *testing.T) string {
 	return physical
 }
 
-func testRepository(t *testing.T, rootPath, identity string, rootIndex int) Repository {
+func testRepository(t *testing.T, rootPath, identity string) Repository {
 	t.Helper()
 	parts, err := ParseIdentity(identity)
 	if err != nil {
@@ -64,13 +64,12 @@ func testRepository(t *testing.T, rootPath, identity string, rootIndex int) Repo
 		t.Fatalf("MainPath(%q) error = %v", identity, err)
 	}
 	return Repository{
-		Identity:  parts.String(),
-		Host:      parts.Host,
-		Owner:     parts.Owner,
-		Repo:      parts.Repo,
-		Path:      path,
-		Root:      rootPath,
-		RootIndex: rootIndex,
+		Identity: parts.String(),
+		Host:     parts.Host,
+		Owner:    parts.Owner,
+		Repo:     parts.Repo,
+		Path:     path,
+		Root:     rootPath,
 	}
 }
 

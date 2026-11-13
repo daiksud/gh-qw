@@ -44,26 +44,18 @@ func (observer Observer) ObserveRepository(
 	if err := local.ValidateRepository(repository); err != nil {
 		return RepositoryObservation{}, fmt.Errorf("%w: validate selected repository: %v", ErrSafety, err)
 	}
-	external := repository.RootIndex == len(roots.RepositoryRoots)
-	if repository.RootIndex > len(roots.RepositoryRoots) {
-		return RepositoryObservation{}, fmt.Errorf(
-			"%w: repository %q has root index %d outside %d configured roots",
-			ErrSafety,
-			repository.Identity,
-			repository.RootIndex,
-			len(roots.RepositoryRoots),
-		)
+	if roots.RepositoryRoot == "" || !filepath.IsAbs(roots.RepositoryRoot) {
+		return RepositoryObservation{}, fmt.Errorf("%w: repository root %q is not an absolute path", ErrSafety, roots.RepositoryRoot)
 	}
-	configuredRoot := repository.Root
-	if !external {
-		configuredRoot = roots.RepositoryRoots[repository.RootIndex]
+	expectedMain := filepath.Join(roots.RepositoryRoot, repository.Host, repository.Owner, repository.Repo)
+	canonical := physicalpath.SamePath(repository.Path, expectedMain)
+	boundary := filepath.Dir(repository.Path)
+	if canonical {
+		boundary = roots.RepositoryRoot
 	}
-	if !physicalpath.SamePath(repository.Root, configuredRoot) {
+	if !physicalpath.SamePath(repository.Root, boundary) {
 		return RepositoryObservation{}, fmt.Errorf(
-			"%w: repository root changed from %q to %q",
-			ErrSafety,
-			repository.Root,
-			configuredRoot,
+			"%w: repository root changed from %q to %q", ErrSafety, repository.Root, boundary,
 		)
 	}
 	if roots.WorktreeRoot == "" || !filepath.IsAbs(roots.WorktreeRoot) {
@@ -73,31 +65,21 @@ func (observer Observer) ObserveRepository(
 			roots.WorktreeRoot,
 		)
 	}
-	for index, repositoryRoot := range roots.RepositoryRoots {
-		if index == 0 && physicalpath.SamePath(roots.WorktreeRoot, filepath.Join(repositoryRoot, "worktrees")) {
-			continue
-		}
-		if pathsOverlap(repositoryRoot, roots.WorktreeRoot) {
-			return RepositoryObservation{}, fmt.Errorf(
-				"%w: repository root %q overlaps worktree root %q",
-				ErrSafety,
-				repositoryRoot,
-				roots.WorktreeRoot,
-			)
-		}
-	}
-	if external && pathsOverlap(repository.Path, roots.WorktreeRoot) {
+	if !physicalpath.SamePath(roots.WorktreeRoot, filepath.Join(roots.RepositoryRoot, "worktrees")) &&
+		pathsOverlap(roots.RepositoryRoot, roots.WorktreeRoot) {
 		return RepositoryObservation{}, fmt.Errorf(
-			"%w: registered repository %q overlaps worktree root %q",
-			ErrSafety,
-			repository.Path,
-			roots.WorktreeRoot,
+			"%w: repository root %q overlaps worktree root %q", ErrSafety, roots.RepositoryRoot, roots.WorktreeRoot,
+		)
+	}
+	if !canonical && pathsOverlap(repository.Path, roots.WorktreeRoot) {
+		return RepositoryObservation{}, fmt.Errorf(
+			"%w: registered repository %q overlaps worktree root %q", ErrSafety, repository.Path, roots.WorktreeRoot,
 		)
 	}
 
 	repositoryRoot, err := CaptureNode(observer.Filesystem,
 		"",
-		configuredRoot,
+		boundary,
 		Directory,
 		false,
 	)
@@ -114,26 +96,12 @@ func (observer Observer) ObserveRepository(
 		return RepositoryObservation{}, fmt.Errorf("inspect worktree root: %w", err)
 	}
 
-	expectedMain := repository.Path
-	if !external {
-		expectedMain = filepath.Join(
-			configuredRoot,
-			repository.Host,
-			repository.Owner,
-			repository.Repo,
-		)
+	if !canonical {
+		expectedMain = repository.Path
 	}
-	if !physicalpath.SamePath(repository.Path, expectedMain) {
-		return RepositoryObservation{}, fmt.Errorf(
-			"%w: repository path %q is not the exact expected path %q",
-			ErrSafety,
-			repository.Path,
-			expectedMain,
-		)
-	}
-	if !external {
+	if canonical {
 		derivedMain, err := local.MainPath(
-			configuredRoot,
+			boundary,
 			repository.Host,
 			repository.Owner,
 			repository.Repo,
@@ -152,7 +120,7 @@ func (observer Observer) ObserveRepository(
 	}
 
 	mainDirectory, err := CaptureNode(observer.Filesystem,
-		configuredRoot,
+		boundary,
 		expectedMain,
 		Directory,
 		true,
@@ -265,22 +233,13 @@ func expectedWorktreeBase(worktreeRoot string, repository local.Repository) (str
 // CompareRepository compares established roots and repository identities.
 func CompareRepository(filesystem Filesystem, before, after RepositoryObservation) error {
 	if before.Repository.Identity != after.Repository.Identity ||
-		before.Repository.RootIndex != after.Repository.RootIndex ||
 		!physicalpath.SamePath(before.Repository.Path, after.Repository.Path) ||
 		!physicalpath.SamePath(before.Repository.Root, after.Repository.Root) {
 		return fmt.Errorf("%w: selected repository or removal mode changed", ErrSafety)
 	}
-	if len(before.Roots.RepositoryRoots) != len(after.Roots.RepositoryRoots) ||
+	if !physicalpath.SamePath(before.Roots.RepositoryRoot, after.Roots.RepositoryRoot) ||
 		!physicalpath.SamePath(before.Roots.WorktreeRoot, after.Roots.WorktreeRoot) {
 		return fmt.Errorf("%w: configured roots changed", ErrSafety)
-	}
-	for index := range before.Roots.RepositoryRoots {
-		if !physicalpath.SamePath(
-			before.Roots.RepositoryRoots[index],
-			after.Roots.RepositoryRoots[index],
-		) {
-			return fmt.Errorf("%w: configured roots changed", ErrSafety)
-		}
 	}
 
 	for _, comparison := range []struct {

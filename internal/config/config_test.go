@@ -28,27 +28,22 @@ func TestLoaderValidConfigurations(t *testing.T) {
 		{
 			name: "scalar root",
 			data: `root = "~/ghqw"`,
-			want: Config{Roots: []string{"~/ghqw"}},
-		},
-		{
-			name: "ordered root array",
-			data: `root = ["/second-volume/repos", "~/ghqw", "relative/repos"]`,
-			want: Config{Roots: []string{"/second-volume/repos", "~/ghqw", "relative/repos"}},
+			want: Config{Root: "~/ghqw"},
 		},
 		{
 			name: "comments and escapes",
-			data: `
-# Escapes in basic strings are decoded by TOML. Literal strings retain slashes.
-root = ["~/repo\u0020one", 'C:\repos'] # ordered roots
-`,
-			want: Config{
-				Roots: []string{"~/repo one", `C:\repos`},
-			},
+			data: `root = "~/repo\u0020one" # decoded TOML string`,
+			want: Config{Root: "~/repo one"},
 		},
 		{
-			name: "duplicates and surrounding spaces remain raw",
-			data: `root = ["relative/repo", " /path with boundary spaces ", "relative/repo"]`,
-			want: Config{Roots: []string{"relative/repo", " /path with boundary spaces ", "relative/repo"}},
+			name: "literal Windows path",
+			data: `root = 'C:\repos'`,
+			want: Config{Root: `C:\repos`},
+		},
+		{
+			name: "surrounding spaces remain raw",
+			data: `root = " /path with boundary spaces "`,
+			want: Config{Root: " /path with boundary spaces "},
 		},
 	}
 
@@ -178,24 +173,14 @@ worktree_root = "/two"
 			reasonContains: "only whitespace",
 		},
 		{
+			name:           "root array",
+			data:           `root = ["/one"]`,
+			reasonContains: "root must be a string",
+		},
+		{
 			name:           "empty root array",
 			data:           `root = []`,
-			reasonContains: "must not be empty",
-		},
-		{
-			name:           "empty root array item",
-			data:           `root = ["/one", ""]`,
-			reasonContains: "item 1 must not be empty",
-		},
-		{
-			name:           "whitespace root array item",
-			data:           `root = ["/one", " \t"]`,
-			reasonContains: "item 1 must not contain only whitespace",
-		},
-		{
-			name:           "mixed root array",
-			data:           `root = ["/one", 2]`,
-			reasonContains: "item 1 must be a string",
+			reasonContains: "root must be a string",
 		},
 		{
 			name: "root integer",
@@ -467,7 +452,7 @@ func TestLoaderReadsOnceUnderConcurrency(t *testing.T) {
 				close(readStarted)
 			}
 			<-releaseRead
-			return []byte(`root = ["/one", "/two"]`), nil
+			return []byte(`root = "/one"`), nil
 		},
 	})
 
@@ -492,7 +477,7 @@ func TestLoaderReadsOnceUnderConcurrency(t *testing.T) {
 	wait.Wait()
 	close(results)
 
-	want := Config{Roots: []string{"/one", "/two"}}
+	want := Config{Root: "/one"}
 	for result := range results {
 		if result.err != nil {
 			t.Fatalf("concurrent Load() error = %v", result.err)
@@ -506,40 +491,6 @@ func TestLoaderReadsOnceUnderConcurrency(t *testing.T) {
 	}
 	if reads.Load() != 1 {
 		t.Fatalf("read calls = %d, want 1", reads.Load())
-	}
-}
-
-func TestLoaderReturnsDefensiveRootCopies(t *testing.T) {
-	home := t.TempDir()
-	loader := NewLoaderWithOptions(LoaderOptions{
-		LookupEnv: emptyEnvironment,
-		HomeDir: func() (string, error) {
-			return home, nil
-		},
-		ReadFile: func(string) ([]byte, error) {
-			return []byte(`root = ["/one", "/two"]`), nil
-		},
-	})
-
-	first, err := loader.Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	second, err := loader.Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	first.Roots[0] = "/mutated"
-	first.Roots = append(first.Roots, "/three")
-	second.Roots[1] = "/also-mutated"
-
-	third, err := loader.Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := []string{"/one", "/two"}
-	if !reflect.DeepEqual(third.Roots, want) {
-		t.Fatalf("Load() after caller mutations returned %#v, want %#v", third.Roots, want)
 	}
 }
 

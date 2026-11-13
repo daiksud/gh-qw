@@ -456,11 +456,11 @@ func removePreflight(
 	if err != nil {
 		return removePlan{}, fmt.Errorf("resolve roots: %w", err)
 	}
-	if len(roots.RepositoryRoots) == 0 {
+	if roots.RepositoryRoot == "" {
 		return removePlan{}, fmt.Errorf("%w: no repository root is configured", ErrRemoveSafety)
 	}
 
-	repositories, registryErr := registeredRepositories(ctx, commandRuntime.registry, roots.RepositoryRoots)
+	repositories, registryErr := registeredRepositories(ctx, commandRuntime.registry, roots.RepositoryRoot)
 	if registryErr != nil {
 		return removePlan{}, fmt.Errorf("read registered repositories: %w", registryErr)
 	}

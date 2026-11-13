@@ -7,15 +7,15 @@ otherwise read `~/.config/ghqw/config.toml`. This rule applies on every platform
 The file and `root` setting are optional.
 
 ```toml
-root = ["~/ghqw", "~/work/repos"]
+root = "~/ghqw"
 ```
 
 | Key | Type | Meaning |
 | --- | --- | --- |
-| `root` | String or nonempty string array | Ordered repository roots; the first is primary. |
+| `root` | String | Default repository placement root. |
 
-Unknown keys or tables, duplicates, empty values or arrays, mixed array types,
-and invalid TOML are configuration errors (status `2`). File I/O failures are
+Unknown keys or tables, duplicates, empty values, arrays, and invalid TOML are
+configuration errors (status `2`). File I/O failures are
 runtime errors (status `1`). An absent file uses defaults.
 
 ## Location registry
@@ -35,35 +35,33 @@ longer resolvable; live path checks occur in commands that need the checkout.
 
 ## Precedence
 
-The repository roots use the first nonempty value, highest priority first:
+The repository root uses the first nonempty value, highest priority first:
 
 | Environment | File | Default |
 | --- | --- | --- |
 | `GHQW_ROOT` | `root` | `~/ghqw` |
 
-`GHQW_ROOT` replaces the entire ordered list; `:` separates entries on POSIX
-and `;` on Windows. Empty entries are invalid. The first root is primary.
-The linked-worktree root is always `<primary-root>/worktrees`; it has no
-independent configuration or environment override.
+`GHQW_ROOT` is one literal path. Path-list separators (`:` on POSIX and `;`
+on Windows) are not split into entries. The linked-worktree root is always
+`<root>/worktrees`; it has no independent configuration or environment override.
 
 ## Layout and physical boundaries
 
 ```text
 main:   <repository-root>/<host>/<owner>/<repo>
-linked: <primary-root>/worktrees/<unique-slot>/<repo>
+linked: <root>/worktrees/<unique-slot>/<repo>
 ```
 
-Roots expand a leading `~` or `~/`, require an absolute path, normalize path
-components and volumes, resolve existing symlink prefixes, and append missing
-suffixes. `~other-user` is invalid. Equivalent roots are deduplicated in order.
-The worktree root is reserved directly below the primary repository root.
-Symlinks cannot redirect that directory. Other configured roots must not
-overlap it, and the host name `worktrees` is reserved in the main layout.
+The root expands a leading `~` or `~/`, requires an absolute path, normalizes path
+components and volumes, resolves existing symlink prefixes, and appends missing
+suffixes. `~other-user` is invalid. The worktree root is reserved directly
+below the repository root. Symlinks cannot redirect that directory, and the
+host name `worktrees` is reserved in the main layout.
 
 The XDG registry, not the directory layout, determines which repositories are
-managed. Configured roots determine default destinations for `clone` and
-`add --move`; a checkout under a configured root is not registered implicitly.
-Reading configuration or listing roots does not create missing directories.
+managed. The configured root determines default destinations for `clone` and
+`add --move`; a checkout under the configured root is not registered implicitly.
+Reading configuration or printing the root does not create missing directories.
 
 Worktree names are derived from `<host>-<owner>-<repo>-<branch>` and all
 punctuation and separators are replaced with `-` (for example,

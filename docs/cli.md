@@ -117,7 +117,7 @@ gh qw clone [-p] [--shallow] [-b|--branch <branch>]
             [--partial blobless|treeless] [<owner>|<owner/repo>...]
 ```
 
-Acquire new repositories in the primary root using `gh repo clone`. Register
+Acquire new repositories in the configured root using `gh repo clone`. Register
 each successful clone before printing its absolute path. If the identity is
 already registered or the destination already exists, fail without reusing,
 updating, adopting, or overwriting it. Use `add` for an existing checkout.
@@ -191,7 +191,7 @@ gh qw add --worktree [--cd] [-R|--repo <repo>] [-b|-B] [--detach] [--orphan] [-f
 By default, validate an existing nonbare main Git repository, derive its
 canonical identity from its configured remote, and register its current
 absolute path in the XDG location registry. The directory is not moved.
-`--move` instead moves it into the configured primary root, delegates linked
+`--move` instead moves it into the configured root, delegates linked
 worktree repair to Git, and then registers the destination. An existing
 registration at the source moves to the destination with it. Never overwrite
 another destination or a different registered location. Refuse movement when
@@ -280,7 +280,7 @@ checkouts and can change without renaming directories. `--full-path` prints
 physical paths; `--unique` prints the shortest unambiguous displayed suffix
 among selected entries. Those two flags are mutually exclusive.
 The XDG registry is the sole source of managed-repository membership.
-Missing registrations are never imported from configured roots. Sort emitted
+Missing registrations are never imported from the configured root. Sort emitted
 strings bytewise. No matches succeeds with empty stdout.
 
 Managed linked slots are the actual directory names beneath `worktrees`.
@@ -293,11 +293,10 @@ Unsafe or ambiguous slots are rejected rather than treated as a managed target.
 ## root
 
 ```text
-gh qw root [--all]
+gh qw root
 ```
 
-Print the physical primary root, or every root in precedence order with `--all`.
-Do not create missing roots.
+Print the physical repository placement root. Do not create missing directories.
 
 ## remove
 
@@ -317,10 +316,11 @@ then revalidate and remove the main directory. No implicit force is applied.
 asking for confirmation or changing anything. Successful stdout is empty.
 Refusals stop further removal; errors identify already-removed and remaining
 paths. Verify both path and registration absence before cleaning empty parents.
-A registered repository outside configured roots may be removed, but its
-parent is an established boundary and is never cleaned. Once the main
-directory is confirmed absent,
-remove its registry entry even if later cleanup or progress output fails. The
+A registered repository outside the standard configured layout may be removed,
+but its immediate parent is an established boundary and is never cleaned. This
+also applies to arbitrary registered paths inside the configured root. Once the
+main directory is confirmed absent, remove its registry entry even if later
+cleanup or progress output fails. The
 removal is conditional on that same registered path, so a concurrent replacement
 registration is preserved and reported as a partial failure. Refuse
 whole-repository removal when another registered repository is physically nested
@@ -397,7 +397,7 @@ argument combinations return `2`.
 
 ### Linked-worktree creation
 
-The path is `<primary-root>/worktrees/<unique-name>/<repo>`, without
+The path is `<root>/worktrees/<unique-name>/<repo>`, without
 nested host or owner directories. Generate `<unique-name>` by joining the
 canonical host, owner, repo, and requested branch, replacing punctuation and
 separators with hyphens. If the directory is occupied, append the smallest

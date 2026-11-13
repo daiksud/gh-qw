@@ -147,7 +147,7 @@ func NewAddCommand(deps AddDependencies) *cobra.Command {
 		},
 	}
 	flags := command.Flags()
-	flags.BoolVar(&move, "move", false, "Move an existing repository into the configured primary root")
+	flags.BoolVar(&move, "move", false, "Move an existing repository into the configured root")
 	flags.BoolVar(&worktree, "worktree", false, "Create a linked Git worktree instead of registering a repository")
 	flags.BoolVar(&changeDirectory, "cd", false, "Change the invoking shell's directory after success (requires shell-init)")
 	flags.StringVarP(&selector, "repo", "R", "", "Select the repository for a linked worktree")
@@ -205,7 +205,7 @@ func addRepository(ctx context.Context, deps RepositoryMoveDependencies, store L
 	if err != nil {
 		return fmt.Errorf("inspect repository to add: %w", err)
 	}
-	spec, err := repositoryMoveRemoteSpec(ctx, deps.Git, snapshot.Path, roots.RepositoryRoots)
+	spec, err := repositoryMoveRemoteSpec(ctx, deps.Git, snapshot.Path, roots.RepositoryRoot)
 	if err != nil {
 		return fmt.Errorf("identify repository to add: %w", err)
 	}

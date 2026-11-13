@@ -22,7 +22,7 @@ var ErrInvalid = errors.New("invalid configuration")
 
 // Config is the unexpanded configuration read from config.toml.
 type Config struct {
-	Roots []string
+	Root string
 }
 
 // InvalidError describes invalid TOML syntax or a schema violation.
@@ -130,8 +130,8 @@ func DefaultPath(
 	return configPath(lookupEnv, homeDir)
 }
 
-// Load reads config.toml at most once and returns a defensive copy of the
-// cached configuration.
+// Load reads config.toml at most once and returns the cached
+// configuration by value.
 func (l *Loader) Load() (Config, error) {
 	if l == nil {
 		return Config{}, errors.New("load configuration: nil loader")
@@ -141,7 +141,7 @@ func (l *Loader) Load() (Config, error) {
 		l.config, l.err = l.load()
 	})
 
-	return cloneConfig(l.config), l.err
+	return l.config, l.err
 }
 
 func (l *Loader) load() (Config, error) {
@@ -209,43 +209,17 @@ func decode(path string, data []byte) (Config, error) {
 
 	var result Config
 	if value, ok := document["root"]; ok {
-		roots, reason := decodeRoots(value)
-		if reason != "" {
+		root, ok := value.(string)
+		if !ok {
+			return Config{}, newInvalidError(path, "root must be a string", nil)
+		}
+		if reason := nonBlankReason("root", root); reason != "" {
 			return Config{}, newInvalidError(path, reason, nil)
 		}
-		result.Roots = roots
+		result.Root = root
 	}
 
 	return result, nil
-}
-
-func decodeRoots(value any) ([]string, string) {
-	switch value := value.(type) {
-	case string:
-		if reason := nonBlankReason("root", value); reason != "" {
-			return nil, reason
-		}
-		return []string{value}, ""
-	case []any:
-		if len(value) == 0 {
-			return nil, "root array must not be empty"
-		}
-
-		roots := make([]string, len(value))
-		for index, item := range value {
-			root, ok := item.(string)
-			if !ok {
-				return nil, fmt.Sprintf("root array item %d must be a string", index)
-			}
-			if reason := nonBlankReason(fmt.Sprintf("root array item %d", index), root); reason != "" {
-				return nil, reason
-			}
-			roots[index] = root
-		}
-		return roots, ""
-	default:
-		return nil, "root must be a string or a non-empty array of strings"
-	}
 }
 
 func nonBlankReason(name, value string) string {
@@ -275,9 +249,4 @@ func newInvalidError(path, reason string, err error) *InvalidError {
 		reason: reason,
 		err:    err,
 	}
-}
-
-func cloneConfig(config Config) Config {
-	config.Roots = append([]string(nil), config.Roots...)
-	return config
 }

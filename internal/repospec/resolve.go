@@ -21,7 +21,7 @@ type Options struct {
 	// DefaultHost selects the host for owner/repository shorthand; empty uses github.com.
 	DefaultHost string
 	SSH         bool
-	Roots       []string
+	Root        string
 	WorkingDir  string
 	// RejectFileScheme rejects a file:// input (local or non-local
 	// authority) as a usage error. clone sets this because it delegates to
@@ -42,11 +42,10 @@ type localRepositoryPath struct {
 	repositoryPath
 	host     string
 	pathPart string
-	root     string
 }
 
 // Resolve fills environment-dependent identity and transport details.
-// Local forms require configured roots.
+// Local forms require a configured root.
 // A branch suffix requires Git, but no repository lookup or network request.
 func (p Input) Resolve(ctx context.Context, options Options) (Spec, error) {
 	spec, err := p.resolve(ctx, options)
@@ -136,8 +135,8 @@ func validateBranch(ctx context.Context, branch string) error {
 }
 
 func resolveLocalPath(ctx context.Context, rawPath string, absolute bool, options Options) (localRepositoryPath, error) {
-	if len(options.Roots) == 0 {
-		return localRepositoryPath{}, errors.New("local repository forms require configured roots")
+	if options.Root == "" {
+		return localRepositoryPath{}, errors.New("local repository forms require a configured root")
 	}
 
 	workingDir := options.WorkingDir
@@ -158,7 +157,7 @@ func resolveLocalPath(ctx context.Context, rawPath string, absolute bool, option
 		}
 		index := offset + relative
 		pathPart := rawPath[:index]
-		match, err := matchLocalRepository(pathPart, workingDir, options.Roots, absolute)
+		match, err := matchLocalRepository(pathPart, workingDir, options.Root, absolute)
 		if err == nil {
 			branch := rawPath[index+1:]
 			if err := validateBranch(ctx, branch); err != nil {
@@ -177,7 +176,7 @@ func resolveLocalPath(ctx context.Context, rawPath string, absolute bool, option
 		offset = index + 1
 	}
 
-	plain, plainErr := matchLocalRepository(rawPath, workingDir, options.Roots, absolute)
+	plain, plainErr := matchLocalRepository(rawPath, workingDir, options.Root, absolute)
 	if plainErr == nil {
 		plain.pathPart = rawPath
 		candidates = append(candidates, plain)
@@ -208,7 +207,7 @@ func resolveLocalPath(ctx context.Context, rawPath string, absolute bool, option
 	return localRepositoryPath{}, errors.New("local path does not identify a repository")
 }
 
-func matchLocalRepository(rawPath, workingDir string, roots []string, absolute bool) (localRepositoryPath, error) {
+func matchLocalRepository(rawPath, workingDir string, configuredRoot string, absolute bool) (localRepositoryPath, error) {
 	if rawPath == "" {
 		return localRepositoryPath{}, errors.New("local repository path is empty")
 	}
@@ -242,59 +241,34 @@ func matchLocalRepository(rawPath, workingDir string, roots []string, absolute b
 		return localRepositoryPath{}, fmt.Errorf("resolve local repository path: %w", err)
 	}
 
-	var matches []localRepositoryPath
-	for _, configuredRoot := range roots {
-		if configuredRoot == "" {
-			continue
-		}
-		root, err := canonicalFilesystemPath(configuredRoot)
-		if err != nil {
-			return localRepositoryPath{}, fmt.Errorf("resolve repository root %q: %w", configuredRoot, err)
-		}
-		relative, err := filepath.Rel(root, candidate)
-		if err != nil || !physicalpath.StrictlyWithin(root, candidate) {
-			continue
-		}
-		components := strings.Split(filepath.ToSlash(relative), "/")
-		if len(components) != 3 {
-			continue
-		}
-
-		auth, err := parseAuthority(components[0])
-		if err != nil || auth.port != "" {
-			continue
-		}
-		if err := validatePathComponent("owner", components[1]); err != nil {
-			continue
-		}
-		repo, err := normalizeRepository(components[2])
-		if err != nil {
-			continue
-		}
-		matches = append(matches, localRepositoryPath{
-			repositoryPath: repositoryPath{
-				owner:   components[1],
-				rawRepo: components[2],
-				repo:    repo,
-			},
-			host: auth.hostname,
-			root: root,
-		})
+	root, err := canonicalFilesystemPath(configuredRoot)
+	if err != nil {
+		return localRepositoryPath{}, fmt.Errorf("resolve repository root %q: %w", configuredRoot, err)
 	}
-
-	if len(matches) == 0 {
-		return localRepositoryPath{}, errors.New("local path is not a <host>/<owner>/<repo> directory under a configured root")
+	invalid := errors.New("local path is not a <host>/<owner>/<repo> directory under the configured root")
+	relative, err := filepath.Rel(root, candidate)
+	if err != nil || !physicalpath.StrictlyWithin(root, candidate) {
+		return localRepositoryPath{}, invalid
 	}
-	best := matches[0]
-	for _, match := range matches[1:] {
-		if match.host != best.host || match.owner != best.owner || match.repo != best.repo {
-			return localRepositoryPath{}, errors.New("local path maps to multiple repository identities")
-		}
-		if len(match.root) > len(best.root) {
-			best = match
-		}
+	components := strings.Split(filepath.ToSlash(relative), "/")
+	if len(components) != 3 {
+		return localRepositoryPath{}, invalid
 	}
-	return best, nil
+	auth, err := parseAuthority(components[0])
+	if err != nil || auth.port != "" {
+		return localRepositoryPath{}, invalid
+	}
+	if err := validatePathComponent("owner", components[1]); err != nil {
+		return localRepositoryPath{}, invalid
+	}
+	repo, err := normalizeRepository(components[2])
+	if err != nil {
+		return localRepositoryPath{}, invalid
+	}
+	return localRepositoryPath{
+		repositoryPath: repositoryPath{owner: components[1], rawRepo: components[2], repo: repo},
+		host:           auth.hostname,
+	}, nil
 }
 
 func validateLocalPathSyntax(path string, absolute bool) error {

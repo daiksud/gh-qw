@@ -160,7 +160,7 @@ func worktreeRemoveGonePreflightWithRoots(
 	request worktreeRemoveRequest,
 	roots rootpkg.Result,
 ) (worktreeRemoveGonePlan, error) {
-	repositories, registryErr := registeredRepositories(ctx, commandRuntime.registry, roots.RepositoryRoots)
+	repositories, registryErr := registeredRepositories(ctx, commandRuntime.registry, roots.RepositoryRoot)
 	if registryErr != nil {
 		return worktreeRemoveGonePlan{}, fmt.Errorf("read registered repositories: %w", registryErr)
 	}
@@ -511,7 +511,7 @@ func worktreeRemoveGoneExecute(
 			}
 			continue
 		}
-		latest, registryErr := registeredRepositories(ctx, commandRuntime.registry, plan.roots.RepositoryRoots)
+		latest, registryErr := registeredRepositories(ctx, commandRuntime.registry, plan.roots.RepositoryRoot)
 		if registryErr != nil {
 			return failed, fmt.Errorf("revalidate registered repositories: %w", registryErr)
 		}
@@ -684,7 +684,7 @@ func worktreeRemoveGoneRevalidateEntry(
 	if dirty && !force {
 		return fmt.Errorf("%w: worktree is dirty", ErrRemoveSafety)
 	}
-	repositories, err := registeredRepositories(ctx, commandRuntime.registry, plan.roots.RepositoryRoots)
+	repositories, err := registeredRepositories(ctx, commandRuntime.registry, plan.roots.RepositoryRoot)
 	if err != nil {
 		return worktreeRemoveGoneShared(fmt.Errorf("read registered repositories: %w", err))
 	}

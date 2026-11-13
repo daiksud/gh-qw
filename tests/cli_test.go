@@ -49,7 +49,7 @@ var (
 )
 
 // TestMain keeps only the immutable executable shared across the package.
-// Every fixture still gets independent HOME, config, roots, and Git state.
+// Every fixture still gets independent HOME, config, placement root, and Git state.
 func TestMain(m *testing.M) {
 	status := m.Run()
 	if sharedCLIDir != "" {
@@ -120,8 +120,8 @@ func TestCLIRepositoryAndWorktreeLifecycle(t *testing.T) {
 
 	// `gh qw clone` requires a real GitHub host and gh authentication, so its
 	// cloning path is covered by the dedicated real-binary acquisition tests.
-	// This local, network-free fixture seeds an ordinary clone with `origin`
-	// pointing at remoteURL and the default branch checked out.
+	// This network-free fixture seeds an ordinary clone with the canonical
+	// origin identity and the default branch checked out.
 	fixture.cloneMain(t, remoteURL, mainPath)
 	assertPathExists(t, mainPath)
 	// Explicit registration replaces the former implicit root scan.
@@ -637,10 +637,7 @@ func newCLIFixture(t testing.TB) *cliFixture {
 // only when those values are part of the contract under test.
 func isolatedEnvironment(fixture *cliFixture) []string {
 	return append(testenv.Environment(fixture.home),
-		"GHQW_ROOT="+strings.Join(
-			[]string{fixture.repository, fixture.remoteRoot},
-			string(os.PathListSeparator),
-		),
+		"GHQW_ROOT="+fixture.repository,
 		"GIT_CONFIG_COUNT=2",
 		"GIT_CONFIG_KEY_0=protocol.file.allow",
 		"GIT_CONFIG_VALUE_0=always",
@@ -676,7 +673,8 @@ func (fixture *cliFixture) seedRemote(t *testing.T, remoteURL string) {
 	fixture.initRepository(t, seed, remoteURL, true)
 }
 
-// cloneMain seeds mainPath as an ordinary clone of remoteURL. The local,
+// cloneMain clones remoteURL locally, then sets the fixture identity as origin.
+// The bare remote is separate from the configured placement root. The local,
 // network-free fixture cannot exercise the authenticated `gh repo clone`
 // path, whose argument mapping is covered by internal/cmd and internal/ghcmd
 // unit tests.
@@ -687,6 +685,7 @@ func (fixture *cliFixture) cloneMain(t *testing.T, remoteURL, mainPath string) {
 		t.Fatalf("create main repository parent: %v", err)
 	}
 	fixture.runGit(t, "", "clone", "--quiet", remoteURL, mainPath)
+	fixture.runGit(t, mainPath, "remote", "set-url", "origin", "https://"+testIdentity+".git")
 }
 
 // fakeGhSource delegates authentication entirely to the external command boundary.

@@ -13,16 +13,13 @@ import (
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
 )
 
-func TestNewRootCommandPrintsPrimaryRoot(t *testing.T) {
+func TestNewRootCommandPrintsConfiguredRoot(t *testing.T) {
 	t.Parallel()
 
 	primary := testAbsolutePath("repositories", "primary")
 	resolver := &stubRootResolver{
 		result: rootpkg.Result{
-			RepositoryRoots: []string{
-				primary,
-				testAbsolutePath("repositories", "secondary"),
-			},
+			RepositoryRoot: primary,
 		},
 	}
 	var output bytes.Buffer
@@ -41,34 +38,16 @@ func TestNewRootCommandPrintsPrimaryRoot(t *testing.T) {
 	}
 }
 
-func TestNewRootCommandAllPrintsRootsInConfiguredOrder(t *testing.T) {
-	t.Parallel()
-
-	roots := []string{
-		testAbsolutePath("repositories", "third"),
-		testAbsolutePath("repositories", "first"),
-		testAbsolutePath("repositories", "second"),
-	}
-	resolver := &stubRootResolver{
-		result: rootpkg.Result{RepositoryRoots: roots},
-	}
+func TestNewRootCommandRejectsAllBeforeResolving(t *testing.T) {
+	resolver := &stubRootResolver{}
 	var output bytes.Buffer
-
 	command := cmd.NewRootCommand(resolver, &output)
 	command.SetArgs([]string{"--all"})
-
-	if err := command.Execute(); err != nil {
-		t.Fatalf("Execute() error = %v", err)
+	if err := command.Execute(); err == nil || !strings.Contains(err.Error(), "unknown flag") {
+		t.Fatalf("Execute() error = %v, want unknown flag", err)
 	}
-	wantLines := make([]string, len(roots))
-	for index, root := range roots {
-		wantLines[index] = filepath.ToSlash(root)
-	}
-	if got, want := output.String(), strings.Join(wantLines, "\n")+"\n"; got != want {
-		t.Fatalf("output = %q, want %q", got, want)
-	}
-	if resolver.calls != 1 {
-		t.Fatalf("Resolve() calls = %d, want 1", resolver.calls)
+	if resolver.calls != 0 || output.Len() != 0 {
+		t.Fatalf("Resolve() calls = %d, output = %q; want no resolution or output", resolver.calls, output.String())
 	}
 }
 
@@ -98,7 +77,7 @@ func TestNewRootCommandRejectsArgumentsBeforeResolving(t *testing.T) {
 
 	resolver := &stubRootResolver{
 		result: rootpkg.Result{
-			RepositoryRoots: []string{testAbsolutePath("repositories", "primary")},
+			RepositoryRoot: testAbsolutePath("repositories", "primary"),
 		},
 	}
 	var output bytes.Buffer
@@ -123,7 +102,7 @@ func TestNewRootCommandPropagatesWriteError(t *testing.T) {
 	wantErr := errors.New("write failed")
 	resolver := &stubRootResolver{
 		result: rootpkg.Result{
-			RepositoryRoots: []string{testAbsolutePath("repositories", "primary")},
+			RepositoryRoot: testAbsolutePath("repositories", "primary"),
 		},
 	}
 	command := cmd.NewRootCommand(resolver, failingWriter{err: wantErr})
@@ -146,7 +125,7 @@ func TestNewRootCommandNormalizesPathSeparators(t *testing.T) {
 
 	nativePath := testAbsolutePath("repositories", "primary")
 	resolver := &stubRootResolver{
-		result: rootpkg.Result{RepositoryRoots: []string{nativePath}},
+		result: rootpkg.Result{RepositoryRoot: nativePath},
 	}
 	var output bytes.Buffer
 

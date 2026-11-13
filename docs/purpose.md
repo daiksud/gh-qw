@@ -39,8 +39,8 @@ Exact command behavior belongs in the [CLI reference](cli.md), not here.
 Git owns branches and worktree registrations. gh owns GitHub authentication and
 network operations. gh-qw stores exactly one explicit registry of **main
 repository identities and local locations**, under XDG data. This is the sole
-source of truth for gh-qw's managed repository set; configured roots are
-placement defaults, not automatic registration. A missing registry represents
+source of truth for gh-qw's managed repository set; the configured root is a
+placement default, not automatic registration. A missing registry represents
 an empty managed set; there is no first-run scan or automatic migration.
 `forget` removes the location mapping even if the checkout remains on disk.
 

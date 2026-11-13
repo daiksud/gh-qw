@@ -52,7 +52,7 @@ func TestParseRequiresOwnerAndRepository(t *testing.T) {
 func TestResolveOnlyUsesRequiredEnvironment(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	options := Options{
-		Roots:      []string{filepath.Join(t.TempDir(), "missing-root")},
+		Root:       filepath.Join(t.TempDir(), "missing-root"),
 		WorkingDir: filepath.Join(t.TempDir(), "missing-cwd"),
 	}
 	for _, raw := range []string{
@@ -66,7 +66,7 @@ func TestResolveOnlyUsesRequiredEnvironment(t *testing.T) {
 		}
 	}
 	root := t.TempDir()
-	options.Roots = []string{root}
+	options.Root = root
 	options.WorkingDir = root
 	spec, err := parseAndResolve("./github.com/owner/widget", options)
 	if err != nil || spec.Identity.String() != "github.com/owner/widget" {
@@ -123,7 +123,7 @@ func TestResolveRejectsDanglingRepositorySymlink(t *testing.T) {
 	if err := os.Symlink(filepath.Join(t.TempDir(), "missing"), filepath.Join(parent, "widget")); err != nil {
 		t.Skipf("symbolic links are unavailable: %v", err)
 	}
-	if _, err := parseAndResolve("./github.com/owner/widget", Options{Roots: []string{root}, WorkingDir: root}); err == nil {
+	if _, err := parseAndResolve("./github.com/owner/widget", Options{Root: root, WorkingDir: root}); err == nil {
 		t.Fatal("dangling repository symlink was treated as a missing contained path")
 	}
 }
