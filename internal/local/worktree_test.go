@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/daiksud/gh-qw/internal/gitcmd"
+	"github.com/daiksud/gh-qw/internal/testenv"
 )
 
 func TestManagedSlotSurvivesBranchSwitchAndDetachedCheckout(t *testing.T) {
@@ -23,7 +24,7 @@ func TestManagedSlotSurvivesBranchSwitchAndDetachedCheckout(t *testing.T) {
 		t.Fatal(err)
 	}
 	addTestWorktree(t, repository.Path, path, "-b", "original")
-	runGit(t, path, "checkout", "-q", "-b", "switched/branch")
+	testenv.Git(t, path, "checkout", "-q", "-b", "switched/branch")
 
 	worktree, err := ResolveManagedWorktree(context.Background(), repository, worktreeRoot, slot)
 	if err != nil {
@@ -32,7 +33,7 @@ func TestManagedSlotSurvivesBranchSwitchAndDetachedCheckout(t *testing.T) {
 	if worktree.Slot != slot || worktree.Branch != "switched/branch" || worktree.Path != path {
 		t.Fatalf("switched worktree conflates branch and slot: %#v", worktree)
 	}
-	runGit(t, path, "checkout", "-q", "--detach")
+	testenv.Git(t, path, "checkout", "-q", "--detach")
 	worktree, err = ResolveManagedWorktree(context.Background(), repository, worktreeRoot, slot)
 	if err != nil {
 		t.Fatal(err)
@@ -68,7 +69,7 @@ func TestEnumerateWorktreesRealGitAndCurrentDirectory(t *testing.T) {
 		t.Fatalf("WorktreePath(feature/x) error = %v", err)
 	}
 	addTestWorktree(t, repository.Path, managedPath, "-b", "feature/x")
-	runGit(
+	testenv.Git(
 		t,
 		repository.Path,
 		"worktree", "lock", "--reason", "deployment check", managedPath,

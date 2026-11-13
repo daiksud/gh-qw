@@ -3,12 +3,11 @@ package local
 import (
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/daiksud/gh-qw/internal/gitcmd"
+	"github.com/daiksud/gh-qw/internal/testenv"
 )
 
 func initTestRepository(t *testing.T, path string) {
@@ -16,8 +15,8 @@ func initTestRepository(t *testing.T, path string) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatalf("MkdirAll(%q) error = %v", filepath.Dir(path), err)
 	}
-	runGit(t, "", "init", "-q", "-b", "main", path)
-	runGit(
+	testenv.Git(t, "", "init", "-q", "-b", "main", path)
+	testenv.Git(
 		t,
 		path,
 		"-c", "user.name=gh-qw tests",
@@ -31,7 +30,7 @@ func initTestBareRepository(t *testing.T, path string) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatalf("MkdirAll(%q) error = %v", filepath.Dir(path), err)
 	}
-	runGit(t, "", "init", "-q", "--bare", path)
+	testenv.Git(t, "", "init", "-q", "--bare", path)
 }
 
 func addTestWorktree(t *testing.T, mainPath, worktreePath string, args ...string) {
@@ -41,29 +40,7 @@ func addTestWorktree(t *testing.T, mainPath, worktreePath string, args ...string
 	}
 	command := append([]string{"worktree", "add", "-q"}, args...)
 	command = append(command, worktreePath)
-	runGit(t, mainPath, command...)
-}
-
-func runGit(t *testing.T, dir string, args ...string) string {
-	t.Helper()
-	command := exec.Command("git", args...)
-	command.Dir = dir
-	command.Env = append(
-		os.Environ(),
-		"GIT_CONFIG_NOSYSTEM=1",
-		"GIT_TERMINAL_PROMPT=0",
-	)
-	output, err := command.CombinedOutput()
-	if err != nil {
-		t.Fatalf(
-			"git %s in %q error = %v\n%s",
-			strings.Join(args, " "),
-			dir,
-			err,
-			output,
-		)
-	}
-	return string(output)
+	testenv.Git(t, mainPath, command...)
 }
 
 func physicalTempDir(t *testing.T) string {

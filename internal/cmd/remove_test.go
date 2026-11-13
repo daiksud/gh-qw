@@ -7,7 +7,6 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -18,6 +17,7 @@ import (
 	"github.com/daiksud/gh-qw/internal/physicalpath"
 	"github.com/daiksud/gh-qw/internal/repospec"
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
+	"github.com/daiksud/gh-qw/internal/testenv"
 )
 
 func TestRemoveParseSelectionExactFormsAndFirstDelimiter(t *testing.T) {
@@ -903,14 +903,14 @@ func TestNewRemoveCommandRealGitWholeLifecycle(t *testing.T) {
 		}
 	}
 
-	removeTestRunGit(t, repositoryPath, "init", "-b", "main")
-	removeTestRunGit(t, repositoryPath, "config", "user.name", "gh-qw test")
-	removeTestRunGit(t, repositoryPath, "config", "user.email", "gh-qw@example.invalid")
+	testenv.Git(t, repositoryPath, "init", "-b", "main")
+	testenv.Git(t, repositoryPath, "config", "user.name", "gh-qw test")
+	testenv.Git(t, repositoryPath, "config", "user.email", "gh-qw@example.invalid")
 	if err := os.WriteFile(filepath.Join(repositoryPath, "README"), []byte("initial\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	removeTestRunGit(t, repositoryPath, "add", "README")
-	removeTestRunGit(t, repositoryPath, "commit", "-m", "initial")
+	testenv.Git(t, repositoryPath, "add", "README")
+	testenv.Git(t, repositoryPath, "commit", "-m", "initial")
 
 	paths := make(map[string]string)
 	for _, slot := range []string{"zeta", "feature-alpha"} {
@@ -922,7 +922,7 @@ func TestNewRemoveCommandRealGitWholeLifecycle(t *testing.T) {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		removeTestRunGit(t, repositoryPath, "worktree", "add", "-b", slot, path, "HEAD")
+		testenv.Git(t, repositoryPath, "worktree", "add", "-b", slot, path, "HEAD")
 		paths[slot] = path
 	}
 
@@ -1339,13 +1339,4 @@ func removeTestPhysicalPath(t *testing.T, path string) string {
 		t.Fatal(err)
 	}
 	return physical
-}
-
-func removeTestRunGit(t *testing.T, dir string, args ...string) {
-	t.Helper()
-	command := exec.Command("git", args...)
-	command.Dir = dir
-	if output, err := command.CombinedOutput(); err != nil {
-		t.Fatalf("git %s error = %v; output = %s", strings.Join(args, " "), err, output)
-	}
 }

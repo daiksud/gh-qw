@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/daiksud/gh-qw/internal/testenv"
 )
 
 const worktreePorcelainFixture = "" +
@@ -241,14 +243,14 @@ func TestWorktreeAddUsesNativeRemoteAmbiguityAndDefaultRemote(t *testing.T) {
 		t.Skip("git unavailable")
 	}
 	repo := t.TempDir()
-	gitcmdRunRealGit(t, repo, "init", "-b", "main")
-	gitcmdRunRealGit(t, repo, "commit", "--allow-empty", "-m", "initial")
-	head := strings.TrimSpace(gitcmdRunRealGit(t, repo, "rev-parse", "HEAD"))
+	testenv.Git(t, repo, "init", "-b", "main")
+	testenv.Git(t, repo, "commit", "--allow-empty", "-m", "initial")
+	head := strings.TrimSpace(testenv.Git(t, repo, "rev-parse", "HEAD"))
 	for _, remote := range []string{"origin", "fork"} {
-		gitcmdRunRealGit(t, repo, "remote", "add", remote, filepath.Join(repo, "missing-"+remote))
-		gitcmdRunRealGit(t, repo, "update-ref", "refs/remotes/"+remote+"/topic", head)
+		testenv.Git(t, repo, "remote", "add", remote, filepath.Join(repo, "missing-"+remote))
+		testenv.Git(t, repo, "update-ref", "refs/remotes/"+remote+"/topic", head)
 	}
-	runner := &Runner{Executable: "git", Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}}
+	runner := &Runner{Executable: "git", Env: testenv.Environment(t.TempDir()), Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}}
 	ambiguous := filepath.Join(t.TempDir(), "ambiguous")
 	if err := runner.WorktreeAdd(context.Background(), repo, WorktreeAddOptions{
 		Path: ambiguous, Commitish: "topic",
@@ -258,32 +260,32 @@ func TestWorktreeAddUsesNativeRemoteAmbiguityAndDefaultRemote(t *testing.T) {
 	if _, err := os.Lstat(ambiguous); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("ambiguous worktree path exists: %v", err)
 	}
-	gitcmdRunRealGit(t, repo, "config", "checkout.defaultRemote", "fork")
+	testenv.Git(t, repo, "config", "checkout.defaultRemote", "fork")
 	dest := filepath.Join(t.TempDir(), "topic")
 	if err := runner.WorktreeAdd(context.Background(), repo, WorktreeAddOptions{
 		Path: dest, Commitish: "topic",
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.TrimSpace(gitcmdRunRealGit(t, dest, "config", "--get", "branch.topic.remote")); got != "fork" {
+	if got := strings.TrimSpace(testenv.Git(t, dest, "config", "--get", "branch.topic.remote")); got != "fork" {
 		t.Fatalf("tracking remote = %q, want fork", got)
 	}
 }
 
 func TestWorktreeAddLeavesCreatedBranchWhenCheckoutFails(t *testing.T) {
 	repo := t.TempDir()
-	gitcmdRunRealGit(t, repo, "init", "-b", "main")
-	gitcmdRunRealGit(t, repo, "commit", "--allow-empty", "-m", "initial")
+	testenv.Git(t, repo, "init", "-b", "main")
+	testenv.Git(t, repo, "commit", "--allow-empty", "-m", "initial")
 	// The destination is the existing repository: Git must reject creating a
 	// worktree there, while the preceding native branch step is preserved.
-	runner := &Runner{Executable: "git", Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}}
+	runner := &Runner{Executable: "git", Env: testenv.Environment(t.TempDir()), Stdout: &bytes.Buffer{}, Stderr: &bytes.Buffer{}}
 	err := runner.WorktreeAdd(context.Background(), repo, WorktreeAddOptions{
 		Path: repo, NewBranch: "kept", Commitish: "main",
 	})
 	if err == nil || !strings.Contains(err.Error(), "left intact") {
 		t.Fatalf("WorktreeAdd error = %v", err)
 	}
-	if got := strings.TrimSpace(gitcmdRunRealGit(t, repo, "branch", "--list", "kept")); got != "kept" {
+	if got := strings.TrimSpace(testenv.Git(t, repo, "branch", "--list", "kept")); got != "kept" {
 		t.Fatalf("created branch was lost: %q", got)
 	}
 }
@@ -392,27 +394,27 @@ func TestListWorktreesRealSHA256RepositoryPreservesObjectFormatWidth(t *testing.
 	t.Parallel()
 
 	probeDir := t.TempDir()
-	if _, err := gitcmdTryRealGit("", "init", "--object-format=sha256", "-q", probeDir); err != nil {
+	if _, err := gitcmdTryRealGit(t, "", "init", "--object-format=sha256", "-q", probeDir); err != nil {
 		t.Skipf("installed git does not support --object-format=sha256: %v", err)
 	}
 
 	dir := t.TempDir()
-	gitcmdRunRealGit(t, "", "init", "--object-format=sha256", "-q", dir)
+	testenv.Git(t, "", "init", "--object-format=sha256", "-q", dir)
 
 	readmePath := filepath.Join(dir, "README")
 	if err := os.WriteFile(readmePath, []byte("gh-qw sha256 worktree test\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile(%q) error = %v", readmePath, err)
 	}
-	gitcmdRunRealGit(t, dir, "add", "README")
-	gitcmdRunRealGit(t, dir, "commit", "-q", "-m", "initial")
+	testenv.Git(t, dir, "add", "README")
+	testenv.Git(t, dir, "commit", "-q", "-m", "initial")
 
 	// Ground truth obtained independently of the code under test.
-	wantHEAD := strings.TrimSpace(gitcmdRunRealGit(t, dir, "rev-parse", "HEAD"))
+	wantHEAD := strings.TrimSpace(testenv.Git(t, dir, "rev-parse", "HEAD"))
 	if len(wantHEAD) != 64 {
 		t.Fatalf("ground-truth HEAD length = %d, want 64: %q", len(wantHEAD), wantHEAD)
 	}
 
-	runner := &Runner{Executable: "git"}
+	runner := &Runner{Executable: "git", Env: testenv.Environment(t.TempDir())}
 	worktrees, err := runner.WorktreeList(context.Background(), dir)
 	if err != nil {
 		t.Fatalf("WorktreeList() error = %v", err)
@@ -430,38 +432,15 @@ func TestListWorktreesRealSHA256RepositoryPreservesObjectFormatWidth(t *testing.
 	}
 }
 
-// gitcmdRunRealGit runs a real git subprocess in dir (or the current
-// directory when dir is empty), failing the test on error. It isolates the
-// subprocess from ambient user/system Git configuration, mirroring the
-// hermetic env used by internal/local's runGit and
-// internal/movement/backpointer_test.go's moveRunGit test helpers.
-func gitcmdRunRealGit(t *testing.T, dir string, args ...string) string {
-	t.Helper()
-	output, err := gitcmdTryRealGit(dir, args...)
-	if err != nil {
-		t.Fatalf("git %s in %q error = %v\n%s", strings.Join(args, " "), dir, err, output)
-	}
-	return string(output)
-}
-
 // gitcmdTryRealGit runs a real git subprocess in dir (or the current
 // directory when dir is empty) and returns its combined output without
 // failing the test, so callers can use it as a capability probe.
-func gitcmdTryRealGit(dir string, args ...string) ([]byte, error) {
+func gitcmdTryRealGit(t testing.TB, dir string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
-	cmd.Env = append(
-		os.Environ(),
-		"GIT_CONFIG_NOSYSTEM=1",
-		"GIT_CONFIG_GLOBAL="+os.DevNull,
-		"GIT_TERMINAL_PROMPT=0",
-		"GIT_AUTHOR_NAME=gh-qw tests",
-		"GIT_AUTHOR_EMAIL=gh-qw@example.invalid",
-		"GIT_COMMITTER_NAME=gh-qw tests",
-		"GIT_COMMITTER_EMAIL=gh-qw@example.invalid",
-	)
+	cmd.Env = testenv.Environment(t.TempDir())
 	return cmd.CombinedOutput()
 }

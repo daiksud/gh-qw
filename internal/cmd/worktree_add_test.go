@@ -19,6 +19,7 @@ import (
 	"github.com/daiksud/gh-qw/internal/gitcmd"
 	"github.com/daiksud/gh-qw/internal/local"
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
+	"github.com/daiksud/gh-qw/internal/testenv"
 	"github.com/spf13/cobra"
 )
 
@@ -698,16 +699,16 @@ func TestAddWorktreeRealGitLifecycle(t *testing.T) {
 			t.Fatalf("MkdirAll(%q) error = %v", path, err)
 		}
 	}
-	worktreeAddRunGit(t, repository.Path, "init", "-b", "main")
-	worktreeAddRunGit(t, repository.Path, "config", "user.name", "gh-qw test")
-	worktreeAddRunGit(t, repository.Path, "config", "user.email", "gh-qw@example.invalid")
+	testenv.Git(t, repository.Path, "init", "-b", "main")
+	testenv.Git(t, repository.Path, "config", "user.name", "gh-qw test")
+	testenv.Git(t, repository.Path, "config", "user.email", "gh-qw@example.invalid")
 	if err := os.WriteFile(filepath.Join(repository.Path, "README"), []byte("main\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile(README) error = %v", err)
 	}
-	worktreeAddRunGit(t, repository.Path, "add", "README")
-	worktreeAddRunGit(t, repository.Path, "commit", "-m", "initial")
+	testenv.Git(t, repository.Path, "add", "README")
+	testenv.Git(t, repository.Path, "commit", "-m", "initial")
 	branch := "feature/lifecycle"
-	worktreeAddRunGit(t, repository.Path, "branch", branch)
+	testenv.Git(t, repository.Path, "branch", branch)
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -731,7 +732,7 @@ func TestAddWorktreeRealGitLifecycle(t *testing.T) {
 	if got, want := stdout.String(), filepath.ToSlash(destination)+"\n"; got != want {
 		t.Fatalf("stdout = %q, want %q", got, want)
 	}
-	if got := strings.TrimSpace(worktreeAddGitOutput(t, destination, "branch", "--show-current")); got != branch {
+	if got := strings.TrimSpace(testenv.Git(t, destination, "branch", "--show-current")); got != branch {
 		t.Fatalf("checked-out branch = %q, want %q", got, branch)
 	}
 	if info, err := os.Lstat(filepath.Join(destination, ".git")); err != nil {
@@ -1092,26 +1093,6 @@ func worktreeAddDestination(
 	branch string,
 ) string {
 	return filepath.Join(worktreeRoot, local.WorktreeSlotDirectoryName(repository.Identity+"-"+branch), repository.Repo)
-}
-
-func worktreeAddRunGit(t *testing.T, dir string, args ...string) {
-	t.Helper()
-	command := exec.Command("git", args...)
-	command.Dir = dir
-	if output, err := command.CombinedOutput(); err != nil {
-		t.Fatalf("git %s error = %v; output = %s", strings.Join(args, " "), err, output)
-	}
-}
-
-func worktreeAddGitOutput(t *testing.T, dir string, args ...string) string {
-	t.Helper()
-	command := exec.Command("git", args...)
-	command.Dir = dir
-	output, err := command.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %s error = %v; output = %s", strings.Join(args, " "), err, output)
-	}
-	return string(output)
 }
 
 func worktreeAddPhysicalPath(t *testing.T, path string) string {

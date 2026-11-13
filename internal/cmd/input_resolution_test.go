@@ -282,7 +282,7 @@ func TestAddMoveRemoteResolutionNeedsNoGh(t *testing.T) {
 		t.Fatal(err)
 	}
 	moveTestInitRepository(t, source, "ssh://git@github.com/Owner/Widget.git")
-	git := moveTestGitRunner(io.Discard)
+	git := moveTestGitRunner(t, io.Discard)
 	git.runner.Executable = gitExecutable
 	t.Setenv("PATH", t.TempDir())
 	var stdout, stderr bytes.Buffer

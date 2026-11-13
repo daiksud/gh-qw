@@ -14,6 +14,7 @@ import (
 	"github.com/daiksud/gh-qw/internal/gitcmd"
 	"github.com/daiksud/gh-qw/internal/local"
 	rootpkg "github.com/daiksud/gh-qw/internal/root"
+	"github.com/daiksud/gh-qw/internal/testenv"
 )
 
 func TestWorktreeRemoveMissingSlotPreservesManagedError(t *testing.T) {
@@ -116,7 +117,7 @@ func TestWorktreeRemoveGonePostRemovalFailurePolicies(t *testing.T) {
 			defer cancel()
 			injectedErr := errors.New("injected " + failure + " failure")
 			var stdout, stderr bytes.Buffer
-			git := &removalExecutionRunner{Runner: &gitcmd.Runner{Executable: "git", Stdout: io.Discard, Stderr: io.Discard}}
+			git := &removalExecutionRunner{Runner: &gitcmd.Runner{Executable: "git", Env: testenv.Environment(t.TempDir()), Stdout: io.Discard, Stderr: io.Discard}}
 			dependencies := WorktreeRemoveDependencies{
 				Resolver: worktreeRemoveStaticResolver{result: roots},
 				Git:      git,
@@ -196,20 +197,20 @@ func removalExecutionRepositories(t *testing.T) (string, rootpkg.Result, string,
 	if err := os.MkdirAll(repository, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	worktreeRemoveRunGit(t, repository, "init", "-b", "main")
-	worktreeRemoveRunGit(t, repository, "config", "user.name", "gh-qw test")
-	worktreeRemoveRunGit(t, repository, "config", "user.email", "gh-qw@example.invalid")
-	worktreeRemoveRunGit(t, repository, "commit", "--allow-empty", "-m", "initial")
-	worktreeRemoveRunGit(t, repository, "config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*")
+	testenv.Git(t, repository, "init", "-b", "main")
+	testenv.Git(t, repository, "config", "user.name", "gh-qw test")
+	testenv.Git(t, repository, "config", "user.email", "gh-qw@example.invalid")
+	testenv.Git(t, repository, "commit", "--allow-empty", "-m", "initial")
+	testenv.Git(t, repository, "config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*")
 	var paths []string
 	for _, branch := range []string{"a-first", "b-second"} {
 		path := filepath.Join(roots.WorktreeRoot, local.WorktreeSlotDirectoryName("github.com/acme/widget-"+branch), "widget")
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 			t.Fatal(err)
 		}
-		worktreeRemoveRunGit(t, repository, "worktree", "add", "-b", branch, path, "HEAD")
-		worktreeRemoveRunGit(t, repository, "config", "branch."+branch+".remote", "origin")
-		worktreeRemoveRunGit(t, repository, "config", "branch."+branch+".merge", "refs/heads/"+branch)
+		testenv.Git(t, repository, "worktree", "add", "-b", branch, path, "HEAD")
+		testenv.Git(t, repository, "config", "branch."+branch+".remote", "origin")
+		testenv.Git(t, repository, "config", "branch."+branch+".merge", "refs/heads/"+branch)
 		paths = append(paths, path)
 	}
 	return root, roots, repository, paths
