@@ -146,13 +146,6 @@ func repositoryMovePrepareSnapshot(
 	if err := movementpkg.ValidateDisjoint(source, destination); err != nil {
 		return repositoryMovePlan{}, err
 	}
-	if err := movementpkg.ValidateSourceContainment(
-		"",
-		source,
-		dependencies.Filesystem,
-	); err != nil {
-		return repositoryMovePlan{}, err
-	}
 	if err := movementpkg.ValidateTree(source, dependencies.Filesystem); err != nil {
 		return repositoryMovePlan{}, fmt.Errorf("preflight repository tree: %w", err)
 	}
@@ -181,13 +174,6 @@ func repositoryMoveExecute(
 	item repositoryMovePlan,
 ) (bool, error) {
 	if err := item.snapshot.Revalidate(ctx, dependencies.Git, dependencies.Filesystem); err != nil {
-		return false, err
-	}
-	if err := movementpkg.ValidateSourceContainment(
-		"",
-		item.source,
-		dependencies.Filesystem,
-	); err != nil {
 		return false, err
 	}
 	if err := movementpkg.ValidateTree(item.source, dependencies.Filesystem); err != nil {
@@ -280,7 +266,6 @@ func repositoryMoveExecute(
 		item.destination,
 		movementpkg.MoveOptions{
 			Filesystem:      dependencies.Filesystem,
-			SourceRoot:      "",
 			DestinationRoot: rootResult.RepositoryRoot,
 		},
 	)

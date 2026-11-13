@@ -126,22 +126,20 @@ type removeNode = removal.Node
 
 type removeLinkedTarget = removal.LinkedObservation
 
-type removePlan struct {
+type removeObservation struct {
 	removal.RepositoryObservation
-	selection removeSelection
-
-	whole bool
-
-	mainWorktree local.Worktree
-	mainCleanup  []removeNode
-
 	worktreeBaseDir *removeNode
-	worktreeCleanup []removeNode
-
-	linked []removeLinkedTarget
+	linked          []removeLinkedTarget
 }
 
-type removeUsageError = repositoryUsageError
+// removePlan describes whole-repository removal. Linked-only policies carry
+// the shared observation without main-directory deletion state.
+type removePlan struct {
+	removeObservation
+	selection    removeSelection
+	mainWorktree local.Worktree
+	mainCleanup  []removeNode
+}
 
 // NewRemoveCommand returns the command that safely removes a managed repository
 // or delegates linked-worktree removal to Git.
@@ -170,28 +168,28 @@ func NewRemoveCommand(dependencies RemoveDependencies) *cobra.Command {
 			if worktree {
 				if gone {
 					if err := cobra.NoArgs(command, args); err != nil {
-						return worktreeRemoveNewUsageError(
+						return newRepositoryUsageError(
 							fmt.Errorf("--gone and <slot> are mutually exclusive: %w", err),
 						)
 					}
 					return nil
 				}
 				if err := cobra.MaximumNArgs(1)(command, args); err != nil {
-					return worktreeRemoveNewUsageError(err)
+					return newRepositoryUsageError(err)
 				}
 				if command.Flags().Changed("yes") {
-					return worktreeRemoveNewUsageError(errors.New("--yes requires --worktree --gone"))
+					return newRepositoryUsageError(errors.New("--yes requires --worktree --gone"))
 				}
 				if len(args) == 1 && command.Flags().Changed("dry-run") {
-					return worktreeRemoveNewUsageError(errors.New("--dry-run requires interactive selection or --gone"))
+					return newRepositoryUsageError(errors.New("--dry-run requires interactive selection or --gone"))
 				}
 				return nil
 			}
 			if err := cobra.MaximumNArgs(1)(command, args); err != nil {
-				return removeNewUsageError(err)
+				return newRepositoryUsageError(err)
 			}
 			if command.Flags().Changed("repo") || force || gone || yes {
-				return removeNewUsageError(errors.New("--repo, --force, --gone and --yes require --worktree"))
+				return newRepositoryUsageError(errors.New("--repo, --force, --gone and --yes require --worktree"))
 			}
 			return nil
 		},
@@ -225,7 +223,7 @@ func NewRemoveCommand(dependencies RemoveDependencies) *cobra.Command {
 				}
 				if err := local.ValidateSlot(command.Context(), args[0]); err != nil {
 					if errors.Is(err, local.ErrInvalidBranch) {
-						return worktreeRemoveNewUsageError(err)
+						return newRepositoryUsageError(err)
 					}
 					return err
 				}
@@ -254,7 +252,7 @@ func NewRemoveCommand(dependencies RemoveDependencies) *cobra.Command {
 				var err error
 				selection, err = removeParseSelection(args[0])
 				if err != nil {
-					return removeNewUsageError(err)
+					return newRepositoryUsageError(err)
 				}
 			}
 
@@ -327,7 +325,7 @@ func NewRemoveCommand(dependencies RemoveDependencies) *cobra.Command {
 	flags.BoolVar(&gone, "gone", false, "Remove linked worktrees whose upstream refs are gone")
 	flags.BoolVarP(&yes, "yes", "y", false, "Skip the gone-worktree confirmation")
 	command.SetFlagErrorFunc(func(_ *cobra.Command, err error) error {
-		return removeNewUsageError(err)
+		return newRepositoryUsageError(err)
 	})
 	command.SetOut(commandRuntime.stdout)
 	command.SetErr(commandRuntime.stderr)
@@ -335,14 +333,8 @@ func NewRemoveCommand(dependencies RemoveDependencies) *cobra.Command {
 }
 
 func removePrepareRuntime(dependencies RemoveDependencies) removeRuntime {
-	stdout := dependencies.Stdout
-	if stdout == nil {
-		stdout = os.Stdout
-	}
-	stderr := dependencies.Stderr
-	if stderr == nil {
-		stderr = os.Stderr
-	}
+	stdout := commandStdout(dependencies.Stdout)
+	stderr := commandStderr(dependencies.Stderr)
 
 	resolver := dependencies.Resolver
 	if resolver == nil {
@@ -367,41 +359,8 @@ func removePrepareRuntime(dependencies RemoveDependencies) removeRuntime {
 		}
 	}
 
-	readDir := dependencies.Filesystem.ReadDir
-	if readDir == nil {
-		readDir = os.ReadDir
-	}
-	lstat := dependencies.Filesystem.Lstat
-	if lstat == nil {
-		lstat = os.Lstat
-	}
-	evalSymlinks := dependencies.Filesystem.EvalSymlinks
-	if evalSymlinks == nil {
-		evalSymlinks = filepath.EvalSymlinks
-	}
-	sameFile := dependencies.Filesystem.SameFile
-	if sameFile == nil {
-		sameFile = os.SameFile
-	}
-	remove := dependencies.Remove
-	if remove == nil {
-		remove = os.Remove
-	}
-	removeAll := dependencies.RemoveAll
-	if removeAll == nil {
-		removeAll = os.RemoveAll
-	}
-
-	openTerminal := dependencies.OpenTerminal
-	if openTerminal == nil {
-		openTerminal = removeOpenControllingTerminal
-	}
-	prompt := dependencies.Prompt
-	if prompt == nil {
-		prompt = func(ctx context.Context, writer io.Writer, message string) (bool, error) {
-			return removeConfirm(ctx, writer, message, openTerminal)
-		}
-	}
+	filesystem := prepareRemoveFilesystem(dependencies.Filesystem, dependencies.Remove, dependencies.RemoveAll)
+	prompt := prepareRemovePrompt(dependencies.Prompt, dependencies.OpenTerminal)
 	selectTarget := dependencies.Select
 	if selectTarget == nil {
 		selectTarget = (&fzfcmd.Selector{Stderr: stderr}).Select
@@ -414,18 +373,11 @@ func removePrepareRuntime(dependencies RemoveDependencies) removeRuntime {
 		validateAssociation: dependencies.ValidateAssociation,
 		git:                 git,
 		filesystem:          dependencies.Filesystem,
-		fs: removeFilesystem{
-			readDir:      readDir,
-			lstat:        lstat,
-			evalSymlinks: evalSymlinks,
-			sameFile:     sameFile,
-			remove:       remove,
-			removeAll:    removeAll,
-		},
-		prompt:       prompt,
-		selectTarget: selectTarget,
-		stdout:       stdout,
-		stderr:       stderr,
+		fs:                  filesystem,
+		prompt:              prompt,
+		selectTarget:        selectTarget,
+		stdout:              stdout,
+		stderr:              stderr,
 	}
 }
 
@@ -470,7 +422,7 @@ func removePreflight(
 		selection.selector,
 	)
 	if err != nil {
-		return removePlan{}, removeNewUsageError(
+		return removePlan{}, newRepositoryUsageError(
 			fmt.Errorf("resolve repository %q: %w", selection.selector, err),
 		)
 	}
@@ -504,9 +456,7 @@ func removeRejectNestedRegistrations(plan removePlan, repositories []local.Repos
 	for _, linked := range plan.linked {
 		targets = append(targets, linked.Directory.Path)
 	}
-	if plan.whole {
-		targets = append(targets, plan.MainDirectory.Path)
-	}
+	targets = append(targets, plan.MainDirectory.Path)
 	return removeRejectNestedRegisteredPaths(plan.Repository.Identity, targets, repositories)
 }
 
@@ -552,7 +502,7 @@ func removeRejectNestedRegisteredPaths(
 
 func removePrepareCommon(ctx context.Context, commandRuntime removeRuntime, selection removeSelection, roots rootpkg.Result, repository local.Repository) (removePlan, error) {
 	observation, err := commandRuntime.observer().ObserveRepository(ctx, roots, repository)
-	return removePlan{RepositoryObservation: observation, selection: selection}, err
+	return removePlan{removeObservation: removeObservation{RepositoryObservation: observation}, selection: selection}, err
 }
 
 func removePreflightWhole(
@@ -677,7 +627,6 @@ func removePreflightWhole(
 	// Each linked slot cleans its own directory. The shared worktrees root
 	// is never a cleanup target during whole-repository removal.
 
-	plan.whole = true
 	return plan, nil
 }
 
@@ -843,9 +792,24 @@ func removeComparePlans(
 	filesystem removeFilesystem,
 	before, after removePlan,
 ) error {
-	if before.selection != after.selection || before.whole != after.whole {
-		return fmt.Errorf("%w: selected repository or removal mode changed", ErrRemoveSafety)
+	if before.selection != after.selection {
+		return fmt.Errorf("%w: selected repository changed", ErrRemoveSafety)
 	}
+	if !removal.SameWorktree(before.mainWorktree, after.mainWorktree) {
+		return fmt.Errorf("%w: main worktree registration changed", ErrRemoveSafety)
+	}
+	if err := removal.CompareNodeSlices(filesystem.observations(),
+		before.mainCleanup,
+		after.mainCleanup,
+		"main cleanup",
+	); err != nil {
+		return err
+	}
+
+	return removeCompareObservations(filesystem, before.removeObservation, after.removeObservation)
+}
+
+func removeCompareObservations(filesystem removeFilesystem, before, after removeObservation) error {
 	if err := removal.CompareRepository(filesystem.observations(), before.RepositoryObservation, after.RepositoryObservation); err != nil {
 		return err
 	}
@@ -860,23 +824,6 @@ func removeComparePlans(
 		); err != nil {
 			return err
 		}
-	}
-	if before.whole && !removal.SameWorktree(before.mainWorktree, after.mainWorktree) {
-		return fmt.Errorf("%w: main worktree registration changed", ErrRemoveSafety)
-	}
-	if err := removal.CompareNodeSlices(filesystem.observations(),
-		before.mainCleanup,
-		after.mainCleanup,
-		"main cleanup",
-	); err != nil {
-		return err
-	}
-	if err := removal.CompareNodeSlices(filesystem.observations(),
-		before.worktreeCleanup,
-		after.worktreeCleanup,
-		"worktree cleanup",
-	); err != nil {
-		return err
 	}
 
 	if len(before.linked) != len(after.linked) {
@@ -1084,10 +1031,7 @@ func removeRevalidateMainForDeletion(
 		return err
 	}
 
-	for _, node := range append(
-		append([]removeNode(nil), plan.mainCleanup...),
-		plan.worktreeCleanup...,
-	) {
+	for _, node := range plan.mainCleanup {
 		if err := removal.RevalidateNode(commandRuntime.fs.observations(), node, "cleanup directory"); err != nil {
 			return err
 		}
@@ -1111,9 +1055,7 @@ func removeNewMutationState(plan removePlan) *removeMutationState {
 	for _, target := range plan.linked {
 		planned = append(planned, target.Directory.Path)
 	}
-	if plan.whole {
-		planned = append(planned, plan.MainDirectory.Path)
-	}
+	planned = append(planned, plan.MainDirectory.Path)
 	return &removeMutationState{
 		planned: planned,
 		removed: make(map[string]bool, len(planned)),
@@ -1178,13 +1120,7 @@ func removeWritePlan(writer io.Writer, plan removePlan) error {
 			removeOutputPath(target.Directory.Path),
 		)
 	}
-	if plan.whole {
-		_, _ = fmt.Fprintf(
-			&output,
-			"  main repository: %s\n",
-			removeOutputPath(plan.MainDirectory.Path),
-		)
-	}
+	_, _ = fmt.Fprintf(&output, "  main repository: %s\n", removeOutputPath(plan.MainDirectory.Path))
 	return commandWriteAll(writer, output.Bytes())
 }
 
@@ -1249,24 +1185,6 @@ func removeReasonSuffix(reason string) string {
 		return ""
 	}
 	return ": " + reason
-}
-
-func removeNewUsageError(err error) error {
-	if err == nil {
-		return nil
-	}
-	var usage *removeUsageError
-	if errors.As(err, &usage) {
-		return err
-	}
-	return &removeUsageError{err: err}
-}
-
-func removeWrapError(operation string, err error) error {
-	if err == nil {
-		return nil
-	}
-	return fmt.Errorf("%s: %w", operation, err)
 }
 
 func (filesystem removeFilesystem) observations() removal.Filesystem {

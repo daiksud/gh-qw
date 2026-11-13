@@ -76,7 +76,7 @@ func removeCandidates(ctx context.Context, commandRuntime removeRuntime, filter 
 	if filter.repositorySet {
 		selectedRepository, err = local.ResolveRepository(repositories, filter.repositorySelector)
 		if err != nil {
-			return nil, worktreeRemoveNewUsageError(fmt.Errorf("resolve repository %q: %w", filter.repositorySelector, err))
+			return nil, newRepositoryUsageError(fmt.Errorf("resolve repository %q: %w", filter.repositorySelector, err))
 		}
 	}
 

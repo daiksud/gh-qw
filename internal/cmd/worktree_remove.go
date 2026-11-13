@@ -116,19 +116,11 @@ type worktreeRemoveRequest struct {
 	selected    *removeCandidate
 }
 
-type worktreeRemoveUsageError = repositoryUsageError
-
 func worktreeRemovePrepareRuntime(
 	dependencies WorktreeRemoveDependencies,
 ) worktreeRemoveRuntime {
-	stdout := dependencies.Stdout
-	if stdout == nil {
-		stdout = os.Stdout
-	}
-	stderr := dependencies.Stderr
-	if stderr == nil {
-		stderr = os.Stderr
-	}
+	stdout := commandStdout(dependencies.Stdout)
+	stderr := commandStderr(dependencies.Stderr)
 
 	resolver := dependencies.Resolver
 	if resolver == nil {
@@ -158,36 +150,8 @@ func worktreeRemovePrepareRuntime(
 	if getwd == nil {
 		getwd = os.Getwd
 	}
-	remove := dependencies.Remove
-	if remove == nil {
-		remove = os.Remove
-	}
-	readDir := dependencies.Filesystem.ReadDir
-	if readDir == nil {
-		readDir = os.ReadDir
-	}
-	lstat := dependencies.Filesystem.Lstat
-	if lstat == nil {
-		lstat = os.Lstat
-	}
-	evalSymlinks := dependencies.Filesystem.EvalSymlinks
-	if evalSymlinks == nil {
-		evalSymlinks = filepath.EvalSymlinks
-	}
-	sameFile := dependencies.Filesystem.SameFile
-	if sameFile == nil {
-		sameFile = os.SameFile
-	}
-	openTerminal := dependencies.OpenTerminal
-	if openTerminal == nil {
-		openTerminal = removeOpenControllingTerminal
-	}
-	prompt := dependencies.Prompt
-	if prompt == nil {
-		prompt = func(ctx context.Context, writer io.Writer, message string) (bool, error) {
-			return removeConfirm(ctx, writer, message, openTerminal)
-		}
-	}
+	filesystem := prepareRemoveFilesystem(dependencies.Filesystem, dependencies.Remove, nil)
+	prompt := prepareRemovePrompt(dependencies.Prompt, dependencies.OpenTerminal)
 	return worktreeRemoveRuntime{
 		resolver:            resolver,
 		registry:            commandRegistry(dependencies.Registry),
@@ -197,18 +161,11 @@ func worktreeRemovePrepareRuntime(
 		validateAssociation: dependencies.ValidateAssociation,
 		git:                 git,
 		filesystem:          dependencies.Filesystem,
-		fs: removeFilesystem{
-			readDir:      readDir,
-			lstat:        lstat,
-			evalSymlinks: evalSymlinks,
-			sameFile:     sameFile,
-			remove:       remove,
-			removeAll:    os.RemoveAll,
-		},
-		prompt: prompt,
-		getwd:  getwd,
-		stdout: stdout,
-		stderr: stderr,
+		fs:                  filesystem,
+		prompt:              prompt,
+		getwd:               getwd,
+		stdout:              stdout,
+		stderr:              stderr,
 	}
 }
 
@@ -380,7 +337,7 @@ func worktreeRemoveSelectRepository(
 	if selectorSet {
 		repository, err := local.ResolveRepository(repositories, selector)
 		if err != nil {
-			return local.Repository{}, worktreeRemoveNewUsageError(
+			return local.Repository{}, newRepositoryUsageError(
 				fmt.Errorf("resolve repository %q: %w", selector, err),
 			)
 		}
@@ -402,7 +359,7 @@ func worktreeRemoveSelectRepository(
 		},
 	)
 	if err != nil {
-		return local.Repository{}, worktreeRemoveNewUsageError(
+		return local.Repository{}, newRepositoryUsageError(
 			fmt.Errorf(
 				"resolve repository from current directory (use -R outside a discovered repository): %w",
 				err,
@@ -411,7 +368,7 @@ func worktreeRemoveSelectRepository(
 	}
 
 	if err := local.ValidateRepository(current.Repository); err != nil {
-		return local.Repository{}, worktreeRemoveNewUsageError(
+		return local.Repository{}, newRepositoryUsageError(
 			fmt.Errorf("validate current repository for mutation: %w", err),
 		)
 	}
@@ -464,10 +421,6 @@ func worktreeRemoveWriteDiagnostic(writer io.Writer, normalizedPath string) erro
 		writer,
 		[]byte(fmt.Sprintf("removed worktree %s\n", normalizedPath)),
 	)
-}
-
-func worktreeRemoveNewUsageError(err error) error {
-	return &worktreeRemoveUsageError{err: err}
 }
 
 func worktreeRemoveWrapError(operation string, err error) error {

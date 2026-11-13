@@ -52,8 +52,6 @@ type listEntry struct {
 	path     string
 }
 
-type listUsageError = repositoryUsageError
-
 // NewListCommand returns the command that lists registered repositories and
 // their registered worktrees.
 func NewListCommand(deps ListDependencies) *cobra.Command {
@@ -74,15 +72,15 @@ func NewListCommand(deps ListDependencies) *cobra.Command {
 		SilenceUsage:  true,
 		PreRunE: func(_ *cobra.Command, _ []string) error {
 			if fullPath && unique {
-				return &listUsageError{
+				return &repositoryUsageError{
 					message: "--full-path and --unique are mutually exclusive",
 				}
 			}
 			if worktreesOnly && all {
-				return &listUsageError{message: "--worktree and --all are mutually exclusive"}
+				return &repositoryUsageError{message: "--worktree and --all are mutually exclusive"}
 			}
 			if gone && !worktreesOnly {
-				return &listUsageError{message: "--gone requires --worktree"}
+				return &repositoryUsageError{message: "--gone requires --worktree"}
 			}
 			return nil
 		},
